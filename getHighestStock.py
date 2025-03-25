@@ -4,6 +4,7 @@ import akshare as ak
 import pandas as pd
 
 import util
+import xlsxwriter
 
 
 
@@ -12,7 +13,7 @@ pd.set_option('display.max_columns', None)  # 设置显示无限制列
 pd.set_option('display.width', None)  # 自动检测控制台的宽度
 pd.set_option('display.max_colwidth', 50)  # 设置列的最大宽度为50
 
-date = "20250321"
+date = "20250325"
 df = ak.stock_zt_pool_em(date)
 df['流通市值'] = round(df['流通市值'] / 100000000)
 df['换手率'] = round(df['换手率'])

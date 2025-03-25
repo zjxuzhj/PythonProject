@@ -18,7 +18,3 @@ def calculate_growth_rate(today_num, yesterday_num):
     growth_rate = ((today_num - yesterday_num) / yesterday_num) * 100
     return round(growth_rate, 2)  # 保留两位小数
 
-# 示例
-date = "20250321"
-yesterday = get_yesterday(date)
-print(f"输入日期: {date}, 昨天日期: {yesterday}")
