@@ -1,8 +1,12 @@
 import time
-from datetime import datetime
+import datetime
 
 import akshare as ak
 import pandas as pd
+
+import getAllStockCsv as stockCsv
+import util
+from serverchan_sdk import sc_send
 
 # 配置参数
 SYMBOL = "603881"  # 股票代码
@@ -11,21 +15,27 @@ STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)
 CHECK_INTERVAL = 10  # 检查间隔(秒)
 
+today_str = datetime.datetime.now().strftime("%Y-%m-%d")
 
-def fetch_intraday_data():
+def fetch_intraday_data(df, isOld=False):
     """获取并预处理分时数据
        拿到的是一个DataFrame 对象 二列，多行
     """
     try:
-        df = ak.stock_intraday_em(symbol=SYMBOL)
         if df.empty:
             raise ValueError("返回数据为空")
         # print("时间："+df['时间'])
         # 字段标准化，屁用没有，转换为 datetime 类型：使用 pd.to_datetime 将拼接后的字符串转换为 Pandas 的 datetime 类型，便于后续时间操作。
-        df['时间'] = pd.to_datetime(datetime.now().strftime("%Y-%m-%d ") + df['时间'])
+        if isOld:
+            df['时间'] = pd.to_datetime(df['时间'])
+        else:
+            df['时间'] = pd.to_datetime(datetime.datetime.now().strftime("%Y-%m-%d ") + df['时间'])
         # 这里拿到的时间是list，直接打印伤不起
         # 将 DataFrame 中的列名从 成交价 改为 close，从 手数 改为 volume。nplace=True 表示直接在原 DataFrame 上修改，而非返回一个新的 DataFrame。
-        df.rename(columns={'成交价': 'close', '手数': 'volume'}, inplace=True)
+        if isOld:
+            df.rename(columns={'收盘': 'close', '成交量': 'volume'}, inplace=True)
+        else:
+            df.rename(columns={'成交价': 'close', '手数': 'volume'}, inplace=True)
         # 将 时间 列设为 DataFrame 的索引（行标签），按时间顺序对 DataFrame 进行排序（也就是时间）。仅保留 close 和 volume 两列。
         return df.set_index('时间').sort_index()[['close', 'volume']]
     except Exception as e:
@@ -64,7 +74,7 @@ def calculate_boll(df):
     # 计算 close 列的 20 周期移动平均线（中轨）。
     df['MA20'] = df['close'].rolling(BOLL_WINDOW).mean()
     # 计算 close 列的 20 周期标准差。
-    std = df['close'].rolling(BOLL_WINDOW).std()
+    std = df['close'].rolling(BOLL_WINDOW).std(ddof=0)  # 关键参数修正[5,6](@ref)
     # 计算布林带上轨（中轨 + 2 倍标准差），并保留两位小数。
     df['Upper'] = (df['MA20'] + STD_DEV * std).round(2)  # 保留两位小数
     # 计算布林带下轨（中轨 - 2 倍标准差），并保留两位小数。
@@ -74,34 +84,35 @@ def calculate_boll(df):
 
 def check_alert(current_price, upper, lower):
     """触轨检测"""
-    if current_price >= upper * (1 - ALERT_THRESHOLD):
+    if current_price >= upper * (1):
         return f"⚠️ 触及上轨 | 当前价：{current_price:.2f} | 上轨：{upper:.2f}"
-    elif current_price <= lower * (1 + ALERT_THRESHOLD):
+    elif current_price <= lower * (1):
         return f"⚠️ 触及下轨 | 当前价：{current_price:.2f} | 下轨：{lower:.2f}"
     return f"未触及 | 当前价：{current_price:.2f} | 上轨：{upper:.2f} | 下轨：{lower:.2f}"
 
 
 def trading_time_check():
-    """交易时段验证"""
-    now = datetime.now().time()
-    morning = (time(9, 30), time(11, 30))
-    afternoon = (time(13, 0), time(15, 0))
+    now = datetime.datetime.now().time()
+    morning = (datetime.time(9, 30), datetime.time(11, 30))
+    afternoon = (datetime.time(13, 0), datetime.time(15, 0))
     return (morning[0] <= now <= morning[1]) or (afternoon[0] <= now <= afternoon[1])
-
 
 def main_loop():
     """主监控循环"""
     historical_data = pd.DataFrame()
 
     while True:
-        # if not trading_time_check():
-        #     print("当前为非交易时段，暂停监控")
-        #     time.sleep(3600)
-        #     continue
+        if not trading_time_check():
+            print("当前为非交易时段，暂停监控")
+            time.sleep(300)
+            continue
 
         try:
             # 获取并处理数据
-            raw_data = fetch_intraday_data()
+            df = ak.stock_intraday_em(symbol=SYMBOL)
+            newdf = df.copy()  # 强制生成独立副本
+            newdf = newdf[newdf['时间'] >= '09:30:00']
+            raw_data = fetch_intraday_data(newdf, False)
             if raw_data.empty:
                 time.sleep(60)
                 continue
@@ -117,6 +128,24 @@ def main_loop():
             # if not historical_data.empty:
             #     new_5m_data = new_5m_data[new_5m_data.index > historical_data.index[-1]]
             # historical_data = pd.concat([historical_data, new_5m_data]).drop_duplicates()
+            historical_data = new_5m_data
+            if len(historical_data) < BOLL_WINDOW:
+                print("当天数据不够，合并前一天k线数据")
+                time.sleep(5)
+                yesToday_str=util.get_yesterdayNew(today_str)
+                # 前一天的数据
+                dayBeforeDf = ak.stock_zh_a_hist_min_em(
+                    symbol=SYMBOL,
+                    start_date=f"{yesToday_str} 09:30:00",
+                    end_date=f"{yesToday_str} 15:00:00",
+                    period="5",
+                    adjust="qfq",
+                )
+                raw_dayBeforeData = fetch_intraday_data(dayBeforeDf, True)
+                new_5m_dayBeforeData = resample_5min(raw_dayBeforeData)
+                # 新增合并逻辑
+                historical_data = pd.concat([new_5m_dayBeforeData, historical_data]).sort_index()
+                historical_data = historical_data[~historical_data.index.duplicated()]  # 去重（避免时间重叠）
 
             # 计算BOLL指标
             if len(historical_data) >= BOLL_WINDOW:
@@ -129,15 +158,17 @@ def main_loop():
                     alert_msg = check_alert(latest['close'], latest['Upper'], latest['Lower'])
                     if "⚠️" in str(alert_msg):
                         print("\n" + "=" * 40)
-                        print(f"【{SYMBOL}】{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"【{SYMBOL}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
                         print("最新3根K线：")
                         print(boll_data[['close', 'Upper', 'Lower']].tail(3))
                         print("=" * 40 + "\n")
                     else:
-                        print(f"【{SYMBOL}】{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"【{SYMBOL}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
             # 等待下次检查
+            else:
+                print("K线数量不满足绘制条件")
             time.sleep(CHECK_INTERVAL)
 
         except Exception as e:
@@ -147,4 +178,17 @@ def main_loop():
 
 if __name__ == "__main__":
     print(f"启动{SYMBOL}股票5分钟BOLL监控...")
-    main_loop()
+    # 初始化查询器
+
+    query_tool = stockCsv.StockQuery()
+    print(query_tool.get_name_by_code(stockCsv.add_stock_prefix("603881")))  # 输出代码对应名称
+    print(query_tool.get_code_by_name("数据港"))  # 输出：603881
+
+    # main_loop()
+    # 发送消息
+    # sendkey = "SCT248551TKIaBVraC3CpN1ei1cqTJJhXU"
+    # title = f"{SYMBOL}股票，5分钟BOLL监控..."
+    # desp = ""
+    # options = {"tags": "服务器报警|图片"}  # 可选参数
+    #
+    # response = sc_send(sendkey, title, desp, options)
