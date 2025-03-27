@@ -68,6 +68,9 @@ class StockQuery:
             return result['data']['value']
         return "未找到对应名称"
 
+    def get_simple_by_code(self, code):
+        return code[2:]
+
     def _build_mapping(self):
         """构建双向映射关系"""
         # 代码到名称（1对1）

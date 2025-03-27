@@ -1,21 +1,23 @@
-import time
 import datetime
+import time
 
 import akshare as ak
 import pandas as pd
+from serverchan_sdk import sc_send
 
 import getAllStockCsv as stockCsv
 import util
-from serverchan_sdk import sc_send
 
 # 配置参数
-SYMBOL = "603881"  # 股票代码
+SYMBOL = "688981"  # 股票代码
 BOLL_WINDOW = 20  # BOLL计算周期
 STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)
 CHECK_INTERVAL = 10  # 检查间隔(秒)
 
 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+query_tool = stockCsv.StockQuery()
+
 
 def fetch_intraday_data(df, isOld=False):
     """获取并预处理分时数据
@@ -75,6 +77,7 @@ def calculate_boll(df):
     df['MA20'] = df['close'].rolling(BOLL_WINDOW).mean()
     # 计算 close 列的 20 周期标准差。
     std = df['close'].rolling(BOLL_WINDOW).std(ddof=0)  # 关键参数修正[5,6](@ref)
+    df['std'] = std
     # 计算布林带上轨（中轨 + 2 倍标准差），并保留两位小数。
     df['Upper'] = (df['MA20'] + STD_DEV * std).round(2)  # 保留两位小数
     # 计算布林带下轨（中轨 - 2 倍标准差），并保留两位小数。
@@ -82,12 +85,20 @@ def calculate_boll(df):
     return df.dropna()
 
 
-def check_alert(current_price, upper, lower):
+def check_alert(current_price, upper, lower, std):
     """触轨检测"""
-    if current_price >= upper * (1):
-        return f"⚠️ 触及上轨 | 当前价：{current_price:.2f} | 上轨：{upper:.2f}"
-    elif current_price <= lower * (1):
-        return f"⚠️ 触及下轨 | 当前价：{current_price:.2f} | 下轨：{lower:.2f}"
+    if current_price >= upper:
+        # 计算标准差（通过上轨公式反推），计算是几倍的两倍标准差
+        # 0.5倍标准差：温和偏离，可能为趋势延续信号。也就是0.25
+        # 1倍标准差：显著超买，需警惕回调风险。也就是0.5
+        # 2倍标准差：极端波动（统计学上概率＜5%），通常预示价格回归均值。也就是1
+        deviation = ((current_price - upper) / 2 * std)
+        deviation_rounded = round(deviation, 1)
+        return f"⚠️ 触及上轨 | 当前价：{current_price:.2f} | 上轨：{upper:.2f} | 超出：{deviation_rounded:.1f}倍"
+    elif current_price <= lower:
+        deviation = ((lower - current_price) / 2 * std)
+        deviation_rounded = round(deviation, 1)
+        return f"⚠️ 触及下轨 | 当前价：{current_price:.2f} | 下轨：{lower:.2f} | 超出：{deviation_rounded:.1f}倍"
     return f"未触及 | 当前价：{current_price:.2f} | 上轨：{upper:.2f} | 下轨：{lower:.2f}"
 
 
@@ -97,8 +108,14 @@ def trading_time_check():
     afternoon = (datetime.time(13, 0), datetime.time(15, 0))
     return (morning[0] <= now <= morning[1]) or (afternoon[0] <= now <= afternoon[1])
 
+
+# 在全局区域添加时间记录变量
+LAST_SEND_TIME = 0  # 初始化最后发送时间戳[1](@ref)
+
+
 def main_loop():
     """主监控循环"""
+    global LAST_SEND_TIME  # 声明全局变量
     historical_data = pd.DataFrame()
 
     while True:
@@ -132,7 +149,7 @@ def main_loop():
             if len(historical_data) < BOLL_WINDOW:
                 print("当天数据不够，合并前一天k线数据")
                 time.sleep(5)
-                yesToday_str=util.get_yesterdayNew(today_str)
+                yesToday_str = util.get_yesterdayNew(today_str)
                 # 前一天的数据
                 dayBeforeDf = ak.stock_zh_a_hist_min_em(
                     symbol=SYMBOL,
@@ -155,14 +172,25 @@ def main_loop():
                     latest = boll_data.iloc[-1]
 
                     # 触发警报检测
-                    alert_msg = check_alert(latest['close'], latest['Upper'], latest['Lower'])
+                    alert_msg = check_alert(latest['close'], latest['Upper'], latest['Lower'], latest['std'])
                     if "⚠️" in str(alert_msg):
                         print("\n" + "=" * 40)
-                        print(f"【{SYMBOL}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(
+                            f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
                         print("最新3根K线：")
                         print(boll_data[['close', 'Upper', 'Lower']].tail(3))
                         print("=" * 40 + "\n")
+
+                        current_time = time.time()
+                        # 频率控制逻辑（60秒间隔）
+                        if current_time - LAST_SEND_TIME >= 60:
+                            # 发送消息并更新最后发送时间
+                            title = f"{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}" + alert_msg
+                            response = sc_send("SCT248551TKIaBVraC3CpN1ei1cqTJJhXU", title)
+                            LAST_SEND_TIME = current_time  # 更新发送时间戳[1](@ref)
+                        else:
+                            print(f"消息发送冷却中（剩余{60 - (current_time - LAST_SEND_TIME):.0f}秒）")
                     else:
                         print(f"【{SYMBOL}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
@@ -180,15 +208,7 @@ if __name__ == "__main__":
     print(f"启动{SYMBOL}股票5分钟BOLL监控...")
     # 初始化查询器
 
-    query_tool = stockCsv.StockQuery()
-    print(query_tool.get_name_by_code(stockCsv.add_stock_prefix("603881")))  # 输出代码对应名称
-    print(query_tool.get_code_by_name("数据港"))  # 输出：603881
+    # print(query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL)))  # 输出代码对应名称
+    # print(query_tool.get_code_by_name("数据港"))  # 输出：603881
 
-    # main_loop()
-    # 发送消息
-    # sendkey = "SCT248551TKIaBVraC3CpN1ei1cqTJJhXU"
-    # title = f"{SYMBOL}股票，5分钟BOLL监控..."
-    # desp = ""
-    # options = {"tags": "服务器报警|图片"}  # 可选参数
-    #
-    # response = sc_send(sendkey, title, desp, options)
+    main_loop()
