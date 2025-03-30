@@ -7,13 +7,19 @@ from serverchan_sdk import sc_send
 
 import getAllStockCsv as stockCsv
 import util
+import os
 
 # 配置参数
-SYMBOL = "688981"  # 股票代码
+SYMBOL = "603881"  # 股票代码
 BOLL_WINDOW = 20  # BOLL计算周期
 STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)
 CHECK_INTERVAL = 10  # 检查间隔(秒)
+
+# 在代码全局区域添加
+DATA_FOLDER = "stock_data"
+if not os.path.exists(DATA_FOLDER):
+    os.makedirs(DATA_FOLDER)
 
 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
 query_tool = stockCsv.StockQuery()
@@ -88,7 +94,7 @@ def calculate_boll(df):
 def check_alert(current_price, upper, lower, std):
     """触轨检测"""
     if current_price >= upper:
-        # 计算标准差（通过上轨公式反推），计算是几倍的两倍标准差
+        # 计算标准差
         # 0.5倍标准差：温和偏离，可能为趋势延续信号。也就是0.25
         # 1倍标准差：显著超买，需警惕回调风险。也就是0.5
         # 2倍标准差：极端波动（统计学上概率＜5%），通常预示价格回归均值。也就是1
@@ -101,6 +107,23 @@ def check_alert(current_price, upper, lower, std):
         return f"⚠️ 触及下轨 | 当前价：{current_price:.2f} | 下轨：{lower:.2f} | 超出：{deviation_rounded:.1f}倍"
     return f"未触及 | 当前价：{current_price:.2f} | 上轨：{upper:.2f} | 下轨：{lower:.2f}"
 
+def get_stock_filepath(symbol):
+    return f"{DATA_FOLDER}/{symbol}.csv"
+
+def save_historical_data(symbol, df):
+    """保存历史数据到CSV"""
+    filepath = get_stock_filepath(symbol)
+    # 追加模式写入，首次写入包含表头
+    df.to_csv(filepath, mode='a', header=not os.path.exists(filepath), index=True)
+    print(f"已保存{len(df)}条数据到 {filepath}")
+
+def load_historical_data(symbol):
+    """从CSV加载历史数据"""
+    filepath = get_stock_filepath(symbol)
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath, parse_dates=['时间'], index_col='时间')
+        return df.sort_index()
+    return pd.DataFrame()
 
 def trading_time_check():
     now = datetime.datetime.now().time()
@@ -150,16 +173,29 @@ def main_loop():
                 print("当天数据不够，合并前一天k线数据")
                 time.sleep(5)
                 yesToday_str = util.get_yesterdayNew(today_str)
-                # 前一天的数据
-                dayBeforeDf = ak.stock_zh_a_hist_min_em(
-                    symbol=SYMBOL,
-                    start_date=f"{yesToday_str} 09:30:00",
-                    end_date=f"{yesToday_str} 15:00:00",
-                    period="5",
-                    adjust="qfq",
-                )
-                raw_dayBeforeData = fetch_intraday_data(dayBeforeDf, True)
-                new_5m_dayBeforeData = resample_5min(raw_dayBeforeData)
+                filepath = get_stock_filepath(SYMBOL)
+
+                if os.path.exists(filepath):
+                    # 从本地加载前一天的数据
+                    new_5m_dayBeforeData = load_historical_data(SYMBOL)
+                else:
+                    # 从API获取并保存前一天的数据
+                    dayBeforeDf = ak.stock_zh_a_hist_min_em(
+                        symbol=SYMBOL,
+                        start_date=f"{yesToday_str} 09:30:00",
+                        end_date=f"{yesToday_str} 15:00:00",
+                        period="5",
+                        adjust="qfq",
+                    )
+                    raw_dayBeforeData = fetch_intraday_data(dayBeforeDf, True)
+                    new_5m_dayBeforeData = resample_5min(raw_dayBeforeData)
+                    try:
+                        save_historical_data(SYMBOL, new_5m_dayBeforeData)
+                    except PermissionError:
+                        print(f"文件 {filepath} 被占用，保存失败")
+                    except Exception as e:
+                        print(f"存储异常: {str(e)}")
+
                 # 新增合并逻辑
                 historical_data = pd.concat([new_5m_dayBeforeData, historical_data]).sort_index()
                 historical_data = historical_data[~historical_data.index.duplicated()]  # 去重（避免时间重叠）

@@ -155,8 +155,12 @@ if __name__ == "__main__":
     query_tool = StockQuery()
 
     # 精确查询示例
-    print(query_tool.get_name_by_code(add_stock_prefix("603881")))  # 输出代码对应名称
-    print(query_tool.get_code_by_name("数据港"))  # 输出名称对应代码
+    # print(query_tool.get_name_by_code(add_stock_prefix("603881")))  # 输出代码对应名称
+    # print(query_tool.get_code_by_name("数据港"))  # 输出名称对应代码
 
     # 模糊查询示例
-    print(query_tool.query("茅台", exact_match=False))  # 返回所有包含"茅台"的股票代码
+    # print(query_tool.query("茅台", exact_match=False))  # 返回所有包含"茅台"的股票代码
+
+    stock_industry_sina_df = ak.stock_sector_spot(indicator="新浪行业")
+    print(stock_industry_sina_df)
+

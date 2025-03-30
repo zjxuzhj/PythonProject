@@ -1,34 +1,83 @@
 import akshare as ak
 import numpy as np
 import pandas as pd
-
+import os
 import getAllStockCsv as stockCsv
 
+def calculate_returns(df, days_list):
+    """预计算各持有期收益率"""
+    for days in days_list:
+        df[f'return_{days}d'] = df['close'].shift(-days) / df['close'] - 1
+    return df
 
-def get_stock_data(symbol, start_date):
-    if len(symbol)>6:
-        symbol = stockCsv.StockQuery().get_simple_by_code(symbol)
+def get_stock_data(symbol, start_date, force_update=False):
+    """带本地缓存的数据获取"""
+    # 生成唯一文件名（网页1）
+    file_name = f"stock_{symbol}_{start_date}.parquet"
+    cache_path = os.path.join("data_cache", file_name)
 
-    """获取日线数据（复权处理）"""
-    df = ak.stock_zh_a_hist(
-        symbol=symbol,
-        period="daily",
-        start_date=start_date,
-        adjust="qfq"  # 前复权
-    )
-    df.rename(columns={
-        '日期': 'date',
-        '开盘': 'open',
-        '最高': 'high',
-        '最低': 'low',
-        '收盘': 'close',
-        '成交量': 'volume'
-    }, inplace=True)
-    df['date'] = pd.to_datetime(df['date'])
-    return df.set_index('date').sort_index()
+    # 非强制更新时尝试读取缓存
+    if not force_update and os.path.exists(cache_path):
+        try:
+            df = pd.read_parquet(cache_path, engine='fastparquet')
+            print(f"从缓存加载数据：{symbol}")
+            return df, True  # 返回缓存标记
+        except Exception as e:
+            print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
+
+    # 强制更新或缓存不存在时获取新数据（网页7）
+    try:
+        if len(symbol) > 6:
+            symbol = stockCsv.StockQuery().get_simple_by_code(symbol)
+
+        """获取日线数据（复权处理）"""
+        df = ak.stock_zh_a_hist(
+            symbol=symbol,
+            period="daily",
+            start_date=start_date,
+            adjust="qfq"
+        )
+        # 数据标准化处理
+        df.rename(columns={
+            '日期': 'date',
+            '开盘': 'open',
+            '最高': 'high',
+            '最低': 'low',
+            '收盘': 'close',
+            '成交量': 'volume'
+        }, inplace=True)
+        df['date'] = pd.to_datetime(df['date'])
+        # 保存到本地（网页3）
+        os.makedirs("data_cache", exist_ok=True)
+        df.set_index('date').to_parquet(  # 保存时带索引[6](@ref)
+            cache_path,
+            engine='fastparquet',
+            compression='snappy'
+        )
+        print(f"新数据已缓存：{symbol}")
+
+    except Exception as e:
+        print(f"数据获取失败：{symbol} - {str(e)}")
+        return pd.DataFrame(), False
+
+    return df.set_index('date').sort_index(), False  # 返回API标记
+
 
 def calculate_ema(series, window):
     return series.ewm(span=window, adjust=False).mean()
+
+def calculate_moving_averages(df):
+    """计算各类均线指标"""
+    # 短期均线 (30天=6周，60天=12周)
+    df['MA30'] = df['close'].rolling(30).mean().round(2)
+    df['MA60'] = df['close'].rolling(60).mean().round(2)
+
+    # 30周均线（约150个交易日，按5天/周计算）
+    df['MA30W'] = df['close'].rolling(30 * 5).mean().round(2)
+
+    # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
+    df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
+    return df
 
 def calculate_macd(df, fast=5, slow=13, signal=7):
     """MACD指标计算"""
@@ -41,7 +90,7 @@ def calculate_macd(df, fast=5, slow=13, signal=7):
     return df
 
 
-def detect_divergence(df, lookback=90):
+def detect_divergence(symbol,df, lookback=90, bd_signal=False):
     """背离检测主逻辑"""
     # 极值计算
     df['lowest_macd'] = df['macd'].rolling(lookback).min()
@@ -49,43 +98,61 @@ def detect_divergence(df, lookback=90):
     df['highest_price'] = df['high'].rolling(lookback).max()
     df['highest_macd'] = df['macd'].rolling(lookback).max()
 
-    # 顶背离条件
-    top_cond = (
-            (df['close'] >= df['highest_price'] * 0.99) &  # 价格接近周期高点
-            (df['macd'] <= df['highest_macd'] * 0.9)  # MACD低于周期高点90%
-    )
-
     # 底背离条件
     bottom_cond = (
             (df['close'] <= df['lowest_price'] * 1.01) &  # 价格接近周期低点
-            (df['macd'] >= df['lowest_macd'] * 1.1)  # MACD高于周期低点110%
+            (df['macd'] >= df['lowest_macd'] * 1.1)
+            &  # MACD高于周期低点110%
+            (df['above_30week'])  # 新增均线过滤
     )
-
-    # 标记信号
-    df['预顶'] = np.where(top_cond, df['macd'], np.nan)
     df['预底'] = np.where(bottom_cond, df['macd'], np.nan)
+    if bd_signal:
+        return df[['预底']].dropna(how='all')
+    else:
+        top_cond = (
+                (df['close'] >= df['highest_price'] * 0.99) &  # 价格接近周期高点
+                (df['macd'] <= df['highest_macd'] * 0.9) &  # MACD低于周期高点90%
+                (df['above_30week'])  # 新增均线过滤
+        )
+        # 顶背离条件
+        df['预顶'] = np.where(top_cond, df['macd'], np.nan)
+        return df[['预顶', '预底']].dropna(how='all')
 
-    return df[['预顶', '预底']].dropna(how='all')
 
 
 if __name__ == '__main__':
     # 参数设置
-    symbol = 'sh603650'  # 平安银行
-    start_date = '20241001'
+    symbol = '600563'  # 平安银行
+    start_date = '20240501'
+    hold_periods = [1, 3, 5, 10]  # 需计算的持有周期
 
     # 获取数据
-    df = get_stock_data(symbol, start_date)
+    df, is_cached = get_stock_data(symbol, start_date)
 
+    # 添加均线计算
+    df = calculate_moving_averages(df)
     # 计算MACD
     macd_df = calculate_macd(df)
+    # 新增收益预计算
+    df = calculate_returns(macd_df, hold_periods)
 
     # 检测背离
-    signals = detect_divergence(macd_df)
+    signals = detect_divergence(symbol, macd_df,60,True)
 
+    query_tool = stockCsv.StockQuery()
     # 格式化输出
-    print("背离信号检测结果：")
+    print(f"\n背离信号收益分析报告：{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}")
     for date, row in signals.iterrows():
-        if not pd.isna(row['预顶']):
-            print(f"{date.strftime('%Y-%m-%d')} 预顶信号 | MACD值：{row['预顶']:.2f}")
         if not pd.isna(row['预底']):
-            print(f"{date.strftime('%Y-%m-%d')} 预底信号 | MACD值：{row['预底']:.2f}")
+            buy_price = df.loc[date, 'close']
+            report = f"{date.strftime('%Y-%m-%d')} | 买入价：{buy_price:.2f}"
+
+            # 遍历所有持有周期
+            for days in hold_periods:
+                ret = df.loc[date, f'return_{days}d']
+                if pd.isna(ret):
+                    report += f" | {days}天：数据不足"
+                else:
+                    report += f" | {days}天：{ret:.2%}"
+
+            print(report)
