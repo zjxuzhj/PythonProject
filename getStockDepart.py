@@ -90,6 +90,19 @@ def calculate_macd(df, fast=5, slow=13, signal=7):
     return df
 
 
+def calculate_rsi(df, window=6):
+    """计算RSI指标（网页3公式实现）"""
+    delta = df['close'].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+
+    avg_gain = gain.rolling(window).mean()
+    avg_loss = loss.rolling(window).mean()
+
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    return df
+
 def detect_divergence(symbol,df, lookback=90, bd_signal=False):
     """背离检测主逻辑"""
     # 极值计算
@@ -98,12 +111,36 @@ def detect_divergence(symbol,df, lookback=90, bd_signal=False):
     df['highest_price'] = df['high'].rolling(lookback).max()
     df['highest_macd'] = df['macd'].rolling(lookback).max()
 
+    # ========== 新增成交量缩量条件 ==========
+    # 计算20日成交量中位数（网页7基准量逻辑）
+    df['vol_median_20'] = df['volume'].rolling(20, min_periods=20).median().shift(1)
+    # 缩量条件：当日成交量<基准量50%（网页2动态参数优化思想）
+    volume_cond = (df['volume'] <= df['vol_median_20'] * 0.9)
+
+    # ====== 新增代码段：3日阶梯缩量验证 ======
+    # 计算连续3日成交量递减（网页5阶梯递减指标原理）
+    df['vol_decrease'] = df['volume'].rolling(3, min_periods=3).apply(
+        lambda x: (x[0] > x[1]) | (x[1] > x[2]), raw=True
+    ).shift(1)  # 避免未来函数
+
+    # 严格模式：连续3日绝对递减（网页2动态参数优化）
+    volume_decline_cond = df['vol_decrease'] == True
+
+    # ========== 新增RSI条件 ==========
+    df = calculate_rsi(df)  # 计算RSI指标
+
     # 底背离条件
     bottom_cond = (
             (df['close'] <= df['lowest_price'] * 1.01) &  # 价格接近周期低点
             (df['macd'] >= df['lowest_macd'] * 1.1)
             &  # MACD高于周期低点110%
             (df['above_30week'])  # 新增均线过滤
+            # &  # 缩量条件
+            # (volume_cond)
+            # &  # 新增阶梯缩量
+            # (volume_decline_cond)
+            &  # 超卖区域
+            (df['RSI'] < 30)
     )
     df['预底'] = np.where(bottom_cond, df['macd'], np.nan)
     if bd_signal:

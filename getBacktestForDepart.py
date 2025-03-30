@@ -8,7 +8,7 @@ import getStockDepart as depart
 STRATEGY_CONFIG = {
     'holding_periods': [1, 3, 5, 10],  # 动态收益周期配置[3,5](@ref)
     'dynamic_stop_loss': {
-        'max_holding_days': 20,        # 最大持仓天数[4](@ref)
+        'max_holding_days': 10,        # 最大持仓天数[4](@ref)
         'first_day_stop': -0.03,       # 首日止损阈值[4](@ref)
         'trailing_stop_ratio': 0.02     # 移动止损回撤比例[4](@ref)
     }
