@@ -78,7 +78,7 @@ def calculate_moving_averages(df):
     df['MA60'] = df['close'].rolling(60).mean().round(2)
 
     # 30周均线（约150个交易日，按5天/周计算）
-    df['MA30W'] = df['close'].rolling(30 * 5).mean().round(2)
+    df['MA30W'] = df['close'].rolling(50 * 5).mean().round(2)
 
     # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
     df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
@@ -110,7 +110,7 @@ def calculate_rsi(df, window=6):
     return df
 
 
-def detect_divergence(stockQuery,symbol, df, lookback=90, bd_signal=False):
+def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
     """背离检测主逻辑"""
     # 极值计算
     df['lowest_macd'] = df['macd'].rolling(lookback).min()
@@ -120,21 +120,21 @@ def detect_divergence(stockQuery,symbol, df, lookback=90, bd_signal=False):
 
     # ========== 新增成交量缩量条件 ==========
     # 计算20日成交量中位数（网页7基准量逻辑）
-    df['vol_median_20'] = df['volume'].rolling(20, min_periods=20).median().shift(1)
-    # 缩量条件：当日成交量<基准量50%（网页2动态参数优化思想）
-    volume_cond = (df['volume'] <= df['vol_median_20'] * 0.9)
+    # df['vol_median_20'] = df['volume'].rolling(20, min_periods=20).median().shift(1)
+    # 缩量条件：当日成交量<基准量60%（网页2动态参数优化思想）
+    # volume_cond = (df['volume'] > df['vol_median_20'] * 0.6)
 
     # ====== 新增代码段：3日阶梯缩量验证 ======
     # 计算连续3日成交量递减（网页5阶梯递减指标原理）
-    df['vol_decrease'] = df['volume'].rolling(3, min_periods=3).apply(
-        lambda x: (x[0] > x[1]) | (x[1] > x[2]), raw=True
-    ).shift(1)  # 避免未来函数
+    # df['vol_decrease'] = df['volume'].rolling(3, min_periods=3).apply(
+    #     lambda x: (x[0] < x[1]) | (x[1] < x[2]), raw=True
+    # ).shift(1)  # 避免未来函数
 
     # 严格模式：连续3日绝对递减（网页2动态参数优化）
-    volume_decline_cond = df['vol_decrease'] == True
+    # volume_decline_cond = df['vol_decrease'] == True
 
     # ========== 新增RSI条件 ==========
-    df = calculate_rsi(df)  # 计算RSI指标
+    # df = calculate_rsi(df)  # 计算RSI指标
 
     roe = stockQuery.getStockRoe(stockQuery.get_simple_by_code(symbol))
     # 修改后（假设roe是标量）
@@ -150,8 +150,8 @@ def detect_divergence(stockQuery,symbol, df, lookback=90, bd_signal=False):
             # (volume_cond)
             # &  # 新增阶梯缩量
             # (volume_decline_cond)
-            &  # 超卖区域
-            (df['RSI'] < 30)
+            # &  # 超卖区域
+            # (df['RSI'] < 30)
             &  # roe
             roe_condition
     )

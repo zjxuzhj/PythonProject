@@ -69,7 +69,8 @@ def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx')
     # 获取当前日期（去除时分秒）
     current_date = pd.Timestamp.now().normalize()
     # 计算时间窗口边界，5天内的信号
-    signals_start_date = current_date - pd.Timedelta(days=30)
+    signalDay=250
+    signals_start_date = current_date - pd.Timedelta(days=signalDay)
     signals_end_date = current_date
 
     total = len(stock_list)
@@ -97,7 +98,7 @@ def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx')
                 if not signals.empty:
                     # 筛选时间窗口内的信号
                     recent_signals = signals.loc[signals_start_date:signals_end_date]
-                    logger.info(f"🚩 发现近5天信号：{len(recent_signals)}条（总信号{len(signals)}条）")
+                    logger.info(f"🚩 发现近{signalDay}天信号：{len(recent_signals)}条（总信号{len(signals)}条）")
                 else:
                     recent_signals = pd.DataFrame()
 

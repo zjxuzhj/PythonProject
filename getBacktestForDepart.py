@@ -75,7 +75,7 @@ def calculate_performance(df, periods):
 
         # 新增最大回撤计算 [4,7](@ref)
         mdd = max_drawdown(returns) if len(returns) > 0 else np.nan
-
+        print(f'最大回撤:{mdd}')
         stats[period] = {
             '算术平均': f"{arithmetic_mean:.2%}",
             '几何平均': f"{geometric_mean:.2%}" if not np.isnan(geometric_mean) else "N/A",
