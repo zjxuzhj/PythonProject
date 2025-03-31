@@ -171,15 +171,15 @@ def main_loop():
             historical_data = new_5m_data
             if len(historical_data) < BOLL_WINDOW:
                 print("当天数据不够，合并前一天k线数据")
-                time.sleep(5)
-                yesToday_str = util.get_yesterdayNew(today_str)
+                yesToday_str = util.get_previous_trading_day(today_str)
                 filepath = get_stock_filepath(SYMBOL)
 
                 if os.path.exists(filepath):
                     # 从本地加载前一天的数据
                     new_5m_dayBeforeData = load_historical_data(SYMBOL)
                 else:
-                    # 从API获取并保存前一天的数据
+                    # 从API获取并保存前一天的数据，延迟五秒
+                    time.sleep(5)
                     dayBeforeDf = ak.stock_zh_a_hist_min_em(
                         symbol=SYMBOL,
                         start_date=f"{yesToday_str} 09:30:00",
@@ -247,4 +247,7 @@ if __name__ == "__main__":
     # print(query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL)))  # 输出代码对应名称
     # print(query_tool.get_code_by_name("数据港"))  # 输出：603881
 
+    # today_str = "2025-03-31"  # 假设周一
+    # previous_trading_day = util.get_previous_trading_day(today_str)
+    # print(f"上一个交易日: {previous_trading_day}")  # 输出: 2024-04-30（跳过五一假期）
     main_loop()
