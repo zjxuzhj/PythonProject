@@ -1,14 +1,18 @@
+import os
+
 import akshare as ak
 import numpy as np
 import pandas as pd
-import os
+
 import getAllStockCsv as stockCsv
+
 
 def calculate_returns(df, days_list):
     """预计算各持有期收益率"""
     for days in days_list:
         df[f'return_{days}d'] = df['close'].shift(-days) / df['close'] - 1
     return df
+
 
 def get_stock_data(symbol, start_date, force_update=False):
     """带本地缓存的数据获取"""
@@ -66,6 +70,7 @@ def get_stock_data(symbol, start_date, force_update=False):
 def calculate_ema(series, window):
     return series.ewm(span=window, adjust=False).mean()
 
+
 def calculate_moving_averages(df):
     """计算各类均线指标"""
     # 短期均线 (30天=6周，60天=12周)
@@ -78,6 +83,7 @@ def calculate_moving_averages(df):
     # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
     df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
     return df
+
 
 def calculate_macd(df, fast=5, slow=13, signal=7):
     """MACD指标计算"""
@@ -103,7 +109,8 @@ def calculate_rsi(df, window=6):
     df['RSI'] = 100 - (100 / (1 + rs))
     return df
 
-def detect_divergence(symbol,df, lookback=90, bd_signal=False):
+
+def detect_divergence(stockQuery,symbol, df, lookback=90, bd_signal=False):
     """背离检测主逻辑"""
     # 极值计算
     df['lowest_macd'] = df['macd'].rolling(lookback).min()
@@ -129,6 +136,10 @@ def detect_divergence(symbol,df, lookback=90, bd_signal=False):
     # ========== 新增RSI条件 ==========
     df = calculate_rsi(df)  # 计算RSI指标
 
+    roe = stockQuery.getStockRoe(stockQuery.get_simple_by_code(symbol))
+    # 修改后（假设roe是标量）
+    roe_condition = (roe is not None) & (pd.notna(roe)) & (roe >= 5)  # 标量处理
+
     # 底背离条件
     bottom_cond = (
             (df['close'] <= df['lowest_price'] * 1.01) &  # 价格接近周期低点
@@ -141,6 +152,8 @@ def detect_divergence(symbol,df, lookback=90, bd_signal=False):
             # (volume_decline_cond)
             &  # 超卖区域
             (df['RSI'] < 30)
+            &  # roe
+            roe_condition
     )
     df['预底'] = np.where(bottom_cond, df['macd'], np.nan)
     if bd_signal:
@@ -156,10 +169,9 @@ def detect_divergence(symbol,df, lookback=90, bd_signal=False):
         return df[['预顶', '预底']].dropna(how='all')
 
 
-
 if __name__ == '__main__':
     # 参数设置
-    symbol = '600563'  # 平安银行
+    symbol = 'sh600563'  # 平安银行
     start_date = '20240501'
     hold_periods = [1, 3, 5, 10]  # 需计算的持有周期
 
@@ -172,11 +184,10 @@ if __name__ == '__main__':
     macd_df = calculate_macd(df)
     # 新增收益预计算
     df = calculate_returns(macd_df, hold_periods)
-
-    # 检测背离
-    signals = detect_divergence(symbol, macd_df,60,True)
-
     query_tool = stockCsv.StockQuery()
+    # 检测背离
+    signals = detect_divergence(query_tool,symbol, macd_df, 60, True)
+
     # 格式化输出
     print(f"\n背离信号收益分析报告：{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}")
     for date, row in signals.iterrows():

@@ -6,21 +6,27 @@ import pandas as pd
 from fastparquet import write
 from fastparquet import ParquetFile
 
-def updateStockData(symbol, start_date):
-    file_name = f"stock_{symbol}_{start_date}.parquet"
-    cache_path = os.path.join("data_cache", file_name)
-
 def addStockData(symbol, start_date):
     file_name = f"stock_{symbol}_{start_date}.parquet"
     cache_path = os.path.join("data_cache", file_name)
-    df = pd.read_parquet(cache_path).reset_index()
+
+    # 读取数据并保留索引
+    try:
+        df = pd.read_parquet(cache_path)
+        # 若原数据没有date索引，则创建索引
+        if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+            df = df.set_index('date')
+    except FileNotFoundError:
+        df = pd.DataFrame()
+
+    # 新数据准备（带日期索引）
+    new_date = pd.to_datetime("2025-03-29")
     # 新增数据构建（网页2的DataFrame创建方法）
-    new_row = {
-        "date": pd.to_datetime("2025-3-29"),
-        "股票代码": "600563",
-        "open": 98.5,
-        "close": 98.8,
-        "high": 99.3,
+    new_data = {
+        "股票代码": symbol,
+        "open": 101,
+        "close": 102,
+        "high": 103,
         "low": 97.9,
         "volume": 19500,
         "成交额": 192000000,
@@ -29,24 +35,126 @@ def addStockData(symbol, start_date):
         "涨跌额": 1.2,
         "换手率": 0.91
     }
-    # 追加数据
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    # 保存（带日期索引）
-    df.set_index('date').to_parquet(
+
+    # 索引存在性检查
+    if not df.empty and new_date in df.index:
+        # 更新模式（保留原始数据类型）
+        df.loc[new_date, list(new_data.keys())] = list(new_data.values())
+        print(f"已更新 {symbol} {new_date} 数据")
+    else:
+        # 追加模式（带索引创建）
+        new_row = pd.DataFrame([new_data], index=[new_date])
+        df = pd.concat([df, new_row])
+        print(f"已新增 {symbol} {new_date} 数据")
+
+    # 保存时保持索引
+    df.to_parquet(
         cache_path,
         engine='fastparquet',
         compression='snappy'
     )
 
 
+def get_stock_prefix(code):
+    code_str = str(code).zfill(6)  # 确保6位字符串，如输入"688131"→"688131"
+    prefix = ""
+
+    # 判断逻辑
+    if code_str.startswith("688"):
+        prefix = "sh"
+    elif code_str.startswith(("600", "601", "603", "605")):
+        prefix = "sh"
+    elif code_str.startswith(("000", "001", "002")):
+        prefix = "sz"
+    elif code_str.startswith("300"):
+        prefix = "sz"
+    elif code_str.startswith(("430", "830", "870", "880", "899")):
+        prefix = "bj"
+    else:
+        prefix = "未知"
+
+    return f"{prefix}{code_str}"
 
 
 # 使用示例（单独执行此类时）
 if __name__ == "__main__":
-    addStockData('600563','20240501')
 
-    file_name = f"stock_600563_20240501.parquet"
-    cache_path = os.path.join("data_cache", file_name)
-    existing_data = pd.read_parquet(cache_path, engine='fastparquet')
+    # 获取实时数据
+    spot_df = ak.stock_zh_a_spot_em()  # 东财接口更稳定[6](@ref)
+    # 字段映射表（中文→英文）
+    column_mapping = {
+        '代码': 'symbol',
+        '最新价': 'close',
+        '今开': 'open',
+        '最高': 'high',
+        '最低': 'low',
+        '成交量': 'volume',
+        '成交额': 'amount',
+        '涨跌幅': 'pct_chg',
+        '涨跌额': 'change',
+        '换手率': 'turnover_rate'
+    }
+
+    # 遍历处理每只股票（网页3的遍历方法）
+    for idx, row in spot_df.iterrows():
+        try:
+            # 提取标准化代码（处理带交易所前缀的情况）
+            symbol = row['代码'].split('.')[0]  # 如"600519.SH"→"600519"
+
+
+
+            file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
+            cache_path = os.path.join("data_cache", file_name)
+
+            # 读取数据并保留索引
+            try:
+                df = pd.read_parquet(cache_path, engine='fastparquet')
+                # 若原数据没有date索引，则创建索引
+                if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+                    df = df.set_index('date')
+            except FileNotFoundError:
+                df = pd.DataFrame()
+
+            today = time.strftime("%Y-%m-%d", time.localtime())
+            # 新数据准备（带日期索引）
+            new_date = pd.to_datetime(today)
+            # 新增数据构建（网页2的DataFrame创建方法）
+            # 构建新数据字典（网页6的字段转换逻辑）
+            new_data = {
+                "股票代码": symbol,
+                "open": row['今开'],
+                "close": row['最新价'],
+                "high": row['最高'],
+                "low": row['最低'],
+                "volume": row['成交量'],
+                "成交额": row['成交额'],
+                "振幅": row['振幅'],
+                "涨跌幅": row['涨跌幅'],
+                "涨跌额": row['涨跌额'],
+                "换手率": row['换手率']
+            }
+
+            # 索引存在性检查
+            if not df.empty and new_date in df.index:
+                # 更新模式（保留原始数据类型）
+                df.loc[new_date, list(new_data.keys())] = list(new_data.values())
+                print(f"已更新 {symbol} {new_date} 数据")
+            else:
+                # 追加模式（带索引创建）
+                new_row = pd.DataFrame([new_data], index=[new_date])
+                df = pd.concat([df, new_row])
+                print(f"已新增 {symbol} {new_date} 数据")
+
+            # 保存时保持索引
+            df.to_parquet(
+                cache_path,
+                engine='fastparquet',
+                compression='snappy'
+            )
+
+        except Exception as e:
+            print(f"处理 {row['代码']} 失败：{str(e)}")
+
+    print("全市场数据更新完成")
     print("111")
 

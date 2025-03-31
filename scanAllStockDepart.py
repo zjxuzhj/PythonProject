@@ -3,7 +3,7 @@ import os
 import time
 import pandas as pd
 import getStockDepart
-
+import getAllStockCsv as stockCsv
 
 def setup_logger():
     logger = logging.getLogger('stock_analysis')
@@ -47,6 +47,7 @@ def save_final(data, output_file, temp_file):
         # 应用格式设置...
     os.remove(temp_file)  # 删除临时文件
 
+query_tool = stockCsv.StockQuery()
 
 # 带频率控制的批量处理
 def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx'):
@@ -90,7 +91,7 @@ def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx')
                 df = getStockDepart.calculate_moving_averages(df)
                 # 计算MACD
                 macd_df = getStockDepart.calculate_macd(df)
-                signals = getStockDepart.detect_divergence(code,macd_df,lookback=60, bd_signal=bd_signal)
+                signals = getStockDepart.detect_divergence(query_tool,code,macd_df,lookback=60, bd_signal=bd_signal)
 
                 logger.debug(f"🔍 检测到{len(signals)}条信号")
                 if not signals.empty:
@@ -138,12 +139,19 @@ def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx')
 
 if __name__ == '__main__':
     setup_logger()
+
+    # 记录总耗时起点
+    total_start = time.perf_counter()
+
     # 加载股票列表并过滤
     all_stocks = pd.read_csv('stock_code_name.csv')
     filtered_stocks = filter_stocks(all_stocks)
 
     # 分批处理
     result_df = batch_process(filtered_stocks[['stock_code', 'stock_name']].values)
+
+    # Excel格式输出部分
+    excel_start = time.perf_counter()
 
     # 格式化输出
     writer = pd.ExcelWriter('signals.xlsx', engine='xlsxwriter')
@@ -168,3 +176,14 @@ if __name__ == '__main__':
         'format': format_green
     })
     writer.close()
+    excel_duration = time.perf_counter() - excel_start
+
+    # 计算总耗时
+    total_duration = time.perf_counter() - total_start
+
+    # 输出耗时统计（带人性化格式）
+    logger.info("\n" + "=" * 50)
+    logger.info(f"Excel格式处理耗时: {excel_duration:.2f}s")
+    logger.info(
+        f"总耗时: {total_duration // 3600:.0f}h {(total_duration % 3600) // 60:.0f}m {total_duration % 60:.2f}s")
+    logger.info("=" * 50)

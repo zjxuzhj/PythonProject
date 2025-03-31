@@ -173,13 +173,13 @@ def main_loop():
                 print("当天数据不够，合并前一天k线数据")
                 yesToday_str = util.get_previous_trading_day(today_str)
                 filepath = get_stock_filepath(SYMBOL)
-
+                time.sleep(5)
                 if os.path.exists(filepath):
                     # 从本地加载前一天的数据
                     new_5m_dayBeforeData = load_historical_data(SYMBOL)
                 else:
                     # 从API获取并保存前一天的数据，延迟五秒
-                    time.sleep(5)
+                    # time.sleep(5)
                     dayBeforeDf = ak.stock_zh_a_hist_min_em(
                         symbol=SYMBOL,
                         start_date=f"{yesToday_str} 09:30:00",

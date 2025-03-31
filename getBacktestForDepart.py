@@ -5,6 +5,8 @@ from tqdm import tqdm  # 进度条支持
 import getAllStockCsv as stockCsv
 import getStockDepart as depart
 
+### 分析当前底背离筛选股票列表的收益率
+
 STRATEGY_CONFIG = {
     'holding_periods': [1, 3, 5, 10],  # 动态收益周期配置[3,5](@ref)
     'dynamic_stop_loss': {
@@ -125,7 +127,7 @@ def batch_process(input_path, output_path):
             df = depart.calculate_moving_averages(df)
             macd_df = depart.calculate_macd(df)
             df = depart.calculate_returns(macd_df, periods)# 动态传入周期参数
-            signals = depart.detect_divergence(symbol,df, 60,True)  # 60日回溯期
+            signals = depart.detect_divergence(query_tool,symbol,df, 60,True)  # 60日回溯期
 
             # 结果格式化（新增动态止损计算）
             for date, signal_row in signals.iterrows():
