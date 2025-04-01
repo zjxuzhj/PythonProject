@@ -8,13 +8,24 @@ from serverchan_sdk import sc_send
 import getAllStockCsv as stockCsv
 import util
 import os
+import asyncio
 
 # 配置参数
-SYMBOL = "603881"  # 股票代码
+SYMBOL = "002261"  # 股票代码
+SYMBOLS = ["600519", "002261"]  # 股票代码列表
 BOLL_WINDOW = 20  # BOLL计算周期
 STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)
 CHECK_INTERVAL = 10  # 检查间隔(秒)
+
+# 使用字典存储各股数据
+historical_data = {
+    symbol: pd.DataFrame()
+    for symbol in SYMBOLS
+}
+
+# 独立记录各股的最后发送时间
+last_send_times = {symbol: 0 for symbol in SYMBOLS}
 
 # 在代码全局区域添加
 DATA_FOLDER = "stock_data"
@@ -136,6 +147,34 @@ def trading_time_check():
 LAST_SEND_TIME = 0  # 初始化最后发送时间戳[1](@ref)
 
 
+def monitor_stock(symbol):
+    """封装单支股票监控逻辑"""
+    global historical_data, last_send_times
+
+    # 数据获取与处理（需增加异常处理分支）
+    try:
+        df = ak.stock_intraday_em(symbol=symbol)
+        processed_data = process_data(df, symbol, BOLL_WINDOW)
+
+        if not processed_data.empty:
+            check_alerts(processed_data, symbol, STD_DEV)
+    except Exception as e:
+        print(f"{symbol}监控异常: {str(e)}")
+
+
+async def async_monitor():
+    tasks = []
+    loop = asyncio.get_event_loop()
+
+    for symbol in SYMBOLS:
+        # 使用线程池执行阻塞IO操作
+        task = loop.run_in_executor(
+            None, monitor_stock, symbol
+        )
+        tasks.append(task)
+
+    await asyncio.gather(*tasks)
+
 def main_loop():
     """主监控循环"""
     global LAST_SEND_TIME  # 声明全局变量
@@ -228,7 +267,7 @@ def main_loop():
                         else:
                             print(f"消息发送冷却中（剩余{60 - (current_time - LAST_SEND_TIME):.0f}秒）")
                     else:
-                        print(f"【{SYMBOL}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
             # 等待下次检查
             else:
