@@ -71,6 +71,39 @@ def calculate_ema(series, window):
     return series.ewm(span=window, adjust=False).mean()
 
 
+def calculate_volatility(df, window=20):
+    """计算波动性指标"""
+    # 振幅指标（网页6）
+    df['amplitude'] = (df['high'] - df['low']) / df['open']  # 日振幅率
+    df['amplitude_ma'] = df['amplitude'].rolling(window).mean()  # 20日平均振幅
+
+    # 布林带带宽（网页3）
+    df['boll_width'] = (df['upper_band'] - df['lower_band']) / df['MA20']
+    return df
+
+# 织布机走势判断条件（网页3）
+def is_chop_market(df, lookback=30):
+    """判断是否织布机行情"""
+    chop_cond = (
+        (df['amplitude_ma'] < 0.015) &  # 平均振幅<1.5%
+        (df['boll_width'] < 0.02)   # 布林带带宽<2%
+        # &      # 布林带带宽<2%
+        # (df['volume'] < df['volume'].rolling(30).mean().shift(1))  # 成交量低于30日均量
+    )
+    return chop_cond
+
+def big_red_line_filter(df, window=60):
+    """大阴线频率筛选"""
+    # 大阴线定义（网页5）
+    big_red_cond = (
+        (df['close'] < df['open'] * 0.95) # 跌幅>5%
+        # &
+        # ((df['open'] - df['close']) > 2 * (df['high'] - df['open']).abs())  # 实体>2倍上影线
+    )
+    # 统计60日内大阴线次数
+    df['big_red_count'] = big_red_cond.rolling(window).sum()
+    return df
+
 def calculate_moving_averages(df):
     """计算各类均线指标"""
     # 短期均线 (30天=6周，60天=12周)
@@ -82,6 +115,14 @@ def calculate_moving_averages(df):
 
     # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
     df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
+
+    # 计算 20 日均线（MA20）
+    df['MA20'] = df['close'].rolling(window=20).mean()
+    # 计算 20 日标准差
+    df['std20'] = df['close'].rolling(window=20).std()
+    # 计算布林线上轨和下轨（通常用 2 倍标准差）
+    df['upper_band'] = df['MA20'] + 2 * df['std20']  # 确保此步骤已执行
+    df['lower_band'] = df['MA20'] - 2 * df['std20']  # 确保此步骤已执行
     return df
 
 
@@ -117,6 +158,20 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
     df['lowest_price'] = df['close'].rolling(lookback).min()
     df['highest_price'] = df['high'].rolling(lookback).max()
     df['highest_macd'] = df['macd'].rolling(lookback).max()
+
+    # ========== 新增股性过滤层 ==========
+    # 计算波动性指标
+    df = calculate_volatility(df)
+    # 计算大阴线频率
+    df = big_red_line_filter(df)
+
+    # 股性优质条件（网页7）
+    good_character_cond = (
+        (df['amplitude_ma'] > 0.02) &              # 20日平均振幅>2%
+        (~is_chop_market(df)) # 排除织布机走势
+        # &
+        # (df['big_red_count'] < 3)                  # 60日内大阴线<3次
+    )
 
     # ========== 新增成交量缩量条件 ==========
     # 计算20日成交量中位数（网页7基准量逻辑）
@@ -154,6 +209,8 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
             # (df['RSI'] < 30)
             &  # roe
             roe_condition
+            &  # 新增股性过滤
+            good_character_cond
     )
     df['预底'] = np.where(bottom_cond, df['macd'], np.nan)
     if bd_signal:
