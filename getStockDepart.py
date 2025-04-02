@@ -97,8 +97,8 @@ def big_red_line_filter(df, window=60):
     # 大阴线定义（网页5）
     big_red_cond = (
         (df['close'] < df['open'] * 0.95) # 跌幅>5%
-        # &
-        # ((df['open'] - df['close']) > 2 * (df['high'] - df['open']).abs())  # 实体>2倍上影线
+        &
+        ((df['open'] - df['close']) > 2 * (df['high'] - df['open']).abs())  # 实体>2倍上影线
     )
     # 统计60日内大阴线次数
     df['big_red_count'] = big_red_cond.rolling(window).sum()
@@ -167,10 +167,10 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
 
     # 股性优质条件（网页7）
     good_character_cond = (
-        (df['amplitude_ma'] > 0.02) &              # 20日平均振幅>2%
+        (df['amplitude_ma'] > 0.03) &              # 20日平均振幅>2%
         (~is_chop_market(df)) # 排除织布机走势
-        # &
-        # (df['big_red_count'] < 3)                  # 60日内大阴线<3次
+        &
+        (df['big_red_count'] < 6)                  # 60日内大阴线<6次
     )
 
     # ========== 新增成交量缩量条件 ==========
@@ -191,7 +191,7 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
     # ========== 新增RSI条件 ==========
     # df = calculate_rsi(df)  # 计算RSI指标
 
-    roe = stockQuery.getStockRoe(stockQuery.get_simple_by_code(symbol))
+    roe = stockQuery.get_stock_roe(stockQuery.get_simple_by_code(symbol))
     # 修改后（假设roe是标量）
     roe_condition = (roe is not None) & (pd.notna(roe)) & (roe >= 5)  # 标量处理
 

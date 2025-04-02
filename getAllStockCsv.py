@@ -24,6 +24,8 @@ class StockQuery:
         self._build_mapping()
         self.roe_cache = None  # 类级缓存
         self._init_roe_data()  # 初始化时加载
+        self.industry_cache = None  # 新增行业缓存
+        self._init_industry_data()  # 新增初始化方法
 
     def _init_roe_data(self):
         """预加载ROE数据到内存[3,5](@ref)"""
@@ -42,6 +44,22 @@ class StockQuery:
         except Exception as e:
             print(f"ROE数据初始化失败: {str(e)}")
             self.roe_cache = {}
+
+    def _init_industry_data(self):
+        """加载行业数据到内存"""
+        try:
+            df = pd.read_csv(
+                "merged_report_2024Q3.csv",
+                dtype={'股票代码': str},
+                usecols=['股票代码', '所处行业']  # 明确指定需要加载的列
+            )
+            # 清理股票代码格式（去掉可能的.0后缀）
+            df['股票代码'] = df['股票代码'].str.replace(r'\.0$', '', regex=True)
+            # 转换为字典加速查询（键为股票代码，值为行业）
+            self.industry_cache = df.set_index('股票代码')['所处行业'].to_dict()
+        except Exception as e:
+            print(f"行业数据初始化失败: {str(e)}")
+            self.industry_cache = {}
 
     @classmethod
     def _refresh_data(cls):
@@ -104,24 +122,7 @@ class StockQuery:
         except Exception as e:
             print(f"接口调用失败: {str(e)}")
 
-    # def getStockRoe(self,symbol):
-    #     try:
-    #         # 读取文件（注意编码格式）
-    #         df = pd.read_csv("merged_report_2024Q3.csv", dtype={'股票代码': str})  # 中文编码兼容
-    #         # 精确匹配目标股票（网页1示例）
-    #         target_stock = df[df['股票代码'] == symbol].copy()
-    #         # 中文字段名（可能存在的变体）
-    #         roe_columns = [
-    #             '净资产收益率',  # 直接字段（网页1显示4.01%）
-    #         ]
-    #         # 自动检测有效字段
-    #         roe_value = target_stock['净资产收益率'].values[0]
-    #         return roe_value
-    #
-    #     except Exception as e:
-    #         return 0
-
-    def getStockRoe(self, symbol):
+    def get_stock_roe(self, symbol):
         """字典直查法（O(1)时间复杂度）[5](@ref)"""
         try:
             # 统一代码格式（处理带交易所前缀的情况）
@@ -130,6 +131,18 @@ class StockQuery:
         except Exception as e:
             print(f"ROE查询异常: {symbol} - {str(e)}")
             return 0.0  # 明确返回None代替0[1](@ref)
+
+    def get_stock_industry(self, symbol):
+        try:
+            # 统一代码格式（去掉交易所前缀）
+            clean_code = self.get_simple_by_code(symbol)
+            # 从缓存中查询（默认返回'未知行业'）
+            return self.industry_cache.get(clean_code, "未知行业")
+        except KeyError:
+            return "未知行业"
+        except Exception as e:
+            print(f"行业查询异常: {symbol} - {str(e)}")
+            return "未知行业"
 
     def _load_data(self):
         """加载本地数据"""
@@ -242,7 +255,7 @@ if __name__ == "__main__":
     # 模糊查询示例
     # print(query_tool.query("茅台", exact_match=False))  # 返回所有包含"茅台"的股票代码
 
-    query_tool.getStockRoe('603881')
+    query_tool.get_stock_roe('sh603881')
 
     # stock_yjbb_em_df = ak.stock_yjbb_em(date="20240930")
     # print(stock_yjbb_em_df)

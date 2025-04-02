@@ -95,5 +95,7 @@ if __name__ == '__main__':
     # 示例调用
     # print(is_top30_industry("半导体"))  # 假设半导体在top30则返回True
     # visualize_top30()
-    topIndustry = TopIndustry()
-    topIndustry.is_top30_industry("半导体")
+    # topIndustry = TopIndustry()
+    # topIndustry.is_top30_industry("半导体")
+
+    get_top_industry()

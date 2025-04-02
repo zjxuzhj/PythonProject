@@ -4,17 +4,19 @@ from tqdm import tqdm  # 进度条支持
 
 import getAllStockCsv as stockCsv
 import getStockDepart as depart
+import getTopIndustry as industry
 
 ### 分析当前底背离筛选股票列表的收益率
 
 STRATEGY_CONFIG = {
     'holding_periods': [1, 3, 5, 10],  # 动态收益周期配置[3,5](@ref)
     'dynamic_stop_loss': {
-        'max_holding_days': 10,        # 最大持仓天数[4](@ref)
-        'first_day_stop': -0.03,       # 首日止损阈值[4](@ref)
-        'trailing_stop_ratio': 0.02     # 移动止损回撤比例[4](@ref)
+        'max_holding_days': 10,  # 最大持仓天数[4](@ref)
+        'first_day_stop': -0.03,  # 首日止损阈值[4](@ref)
+        'trailing_stop_ratio': 0.02  # 移动止损回撤比例[4](@ref)
     }
 }
+
 
 def calculate_returns(df, periods):
     """动态周期收益率计算[3](@ref)"""
@@ -22,11 +24,12 @@ def calculate_returns(df, periods):
         df[f'return_{n}d'] = df['close'].pct_change(n)
     return df
 
+
 def format_percentage(df, columns, decimal=2):
     """保持数值类型，仅修改显示格式"""
     for col in columns:
         df[col] = df[col].apply(
-            lambda x: round(x, decimal+2) if pd.notnull(x) else np.nan
+            lambda x: round(x, decimal + 2) if pd.notnull(x) else np.nan
         )
     return df
 
@@ -38,6 +41,7 @@ def calculate_performance(df, periods):
     period_cols = [f'{n}日收益' for n in periods] + ['动态止损收益']
 
     stats = {}
+
     # 新增最大回撤计算函数 [1,4,8](@ref)
     def max_drawdown(returns_series):
         """优化后的最大回撤计算方法（O(n)时间复杂度）"""
@@ -85,7 +89,7 @@ def calculate_performance(df, periods):
             '夏普比率': f"{sharpe_ratio:.2f}" if not np.isnan(sharpe_ratio) else "N/A",
             '最大回撤': f"{mdd:.2%}" if not np.isnan(mdd) else "N/A",
             '持股周期': f"{period}天" if period != '动态止损收益' \
-            else f"{df['持有天数'].mean():.1f}天"
+                else f"{df['持有天数'].mean():.1f}天"
         }
 
         # 新增动态周期天数映射
@@ -96,7 +100,6 @@ def calculate_performance(df, periods):
 
         stats[period]['持股周期'] = f"{days:.1f}天"
     return pd.DataFrame(stats).T.reset_index().rename(columns={'index': '周期'})
-
 
 
 def batch_process(input_path, output_path):
@@ -112,6 +115,7 @@ def batch_process(input_path, output_path):
 
     # 创建股票查询工具实例
     query_tool = stockCsv.StockQuery()
+    industry_tooll = industry.TopIndustry()
 
     # 遍历所有股票代码（带进度条）
     for _, row in tqdm(df_input.iterrows(), total=len(df_input)):
@@ -126,8 +130,8 @@ def batch_process(input_path, output_path):
             # 技术指标计算
             df = depart.calculate_moving_averages(df)
             macd_df = depart.calculate_macd(df)
-            df = depart.calculate_returns(macd_df, periods)# 动态传入周期参数
-            signals = depart.detect_divergence(query_tool,symbol,df, 60,True)  # 60日回溯期
+            df = depart.calculate_returns(macd_df, periods)  # 动态传入周期参数
+            signals = depart.detect_divergence(query_tool, symbol, df, 60, True)  # 60日回溯期
 
             # 结果格式化（新增动态止损计算）
             for date, signal_row in signals.iterrows():
@@ -181,7 +185,9 @@ def batch_process(input_path, output_path):
                         **{f'{n}日收益': df.loc[date, f'return_{n}d'] for n in periods},
                         '动态止损收益': dynamic_return,
                         '持有天数': i + 1 if trigger_reason != "到期平仓" else 10,  # 新增字段[2,6](@ref)
-                        '触发原因': trigger_reason
+                        '触发原因': trigger_reason,
+                        '所处行业': query_tool.get_stock_industry(symbol),
+                        'Top行业': industry_tooll.is_top30_industry(query_tool.get_stock_industry(symbol))
                     }
                     results.append(record)
 
@@ -210,29 +216,43 @@ def batch_process(input_path, output_path):
         except:
             return ''
 
+    def highlight_top_industry(val):
+        """根据行业排名设置颜色"""
+        try:
+            if val == True:  # 顶级行业
+                return 'background-color: red'
+            elif val == False:
+                return 'background-color: #90EE90'
+        except:
+            return ''
+
     # 新增性能统计
     performance_df = calculate_performance(result_df, periods)
 
     # 结果输出
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        (result_df.style
-         .format("{:.2%}", subset=percentage_cols)  # 数值转百分比格式[6,7](@ref)
-         .map(color_negative_green, subset=percentage_cols)  # 应用颜色
-         .to_excel(
-             writer,
-             sheet_name='收益报告',
-             index=False,
-             engine='openpyxl'
-         ))
+        styled_df = (
+            result_df.style
+            .format("{:.2%}", subset=percentage_cols)  # 数值转百分比格式[6,7](@ref)
+            .map(color_negative_green, subset=percentage_cols)  # 应用颜色
+            .map(highlight_top_industry, subset=['Top行业'])  # 新增此行[3](@ref)
+        )
+        # 设置列宽（网页[1]格式优化建议）
+        styled_df = styled_df.set_properties(
+            subset=['名称', '所处行业'],
+            **{'width': '200px'}
+        )
+        styled_df.to_excel(writer, sheet_name='收益报告', index=False, engine='openpyxl')
+
         # 新增策略评估表[2,6](@ref)
         performance_style = (
             performance_df.style
             .format({'胜率': '{:.2%}', '盈亏比': '{:.2f}:1', '夏普比率': '{:.2f}'})
             .set_properties(**{'text-align': 'center'})
         )
-        performance_style.to_excel(writer, sheet_name='策略评估', index=False)
-    print(f"\n处理完成！结果已保存至：{output_path}")
 
+        performance_style.to_excel(writer, sheet_name='策略评估', index=False)
+        print(f"\n处理完成！结果已保存至：{output_path}")
 
 if __name__ == '__main__':
     batch_process(
