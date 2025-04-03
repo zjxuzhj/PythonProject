@@ -10,7 +10,7 @@ import util
 import os
 
 # 配置参数
-SYMBOL = "002335"  # 股票代码
+SYMBOL = "603881"  # 股票代码
 BOLL_WINDOW = 20  # BOLL计算周期
 STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)

@@ -167,10 +167,10 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
 
     # 股性优质条件（网页7）
     good_character_cond = (
-        (df['amplitude_ma'] > 0.03) &              # 20日平均振幅>2%
+        (df['amplitude_ma'] > 0.025) &              # 20日平均振幅>2%
         (~is_chop_market(df)) # 排除织布机走势
-        &
-        (df['big_red_count'] < 6)                  # 60日内大阴线<6次
+        # &
+        # (df['big_red_count'] < 6)                  # 60日内大阴线<6次
     )
 
     # ========== 新增成交量缩量条件 ==========
