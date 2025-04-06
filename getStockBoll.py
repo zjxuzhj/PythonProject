@@ -8,9 +8,14 @@ from serverchan_sdk import sc_send
 import getAllStockCsv as stockCsv
 import util
 import os
+from concurrent.futures import ThreadPoolExecutor
+import random
 
 # 配置参数
 SYMBOL = "603881"  # 股票代码
+SYMBOLS = ["603881", "600519", "000858"]  # 数据港、茅台、五粮液
+# 原全局变量（改为字典存储）
+LAST_SEND_TIME = {symbol: 0 for symbol in SYMBOLS}  # 每个股票独立计时
 BOLL_WINDOW = 20  # BOLL计算周期
 STD_DEV = 2  # 标准差倍数
 ALERT_THRESHOLD = 0.005  # 触轨阈值(0.5%)
@@ -136,10 +141,9 @@ def trading_time_check():
 LAST_SEND_TIME = 0  # 初始化最后发送时间戳[1](@ref)
 
 
-def main_loop():
-    """主监控循环"""
-    global LAST_SEND_TIME  # 声明全局变量
-    historical_data = pd.DataFrame()
+def monitor_single_stock(symbol):
+    """单个股票监控线程"""
+    historical_data = load_historical_data(symbol)
 
     while True:
         if not trading_time_check():
@@ -149,7 +153,8 @@ def main_loop():
 
         try:
             # 获取并处理数据
-            df = ak.stock_intraday_em(symbol=SYMBOL)
+            time.sleep(random.uniform(1, 5))
+            df = ak.stock_intraday_em(symbol=symbol)
             newdf = df.copy()  # 强制生成独立副本
             newdf = newdf[newdf['时间'] >= '09:30:00']
             raw_data = fetch_intraday_data(newdf, False)
@@ -172,32 +177,31 @@ def main_loop():
             if len(historical_data) < BOLL_WINDOW:
                 print("当天数据不够，合并前一天k线数据")
                 yesToday_str = util.get_previous_trading_day(today_str)
-                filepath = get_stock_filepath(SYMBOL)
-                time.sleep(5)
+                filepath = get_stock_filepath(symbol)
                 if os.path.exists(filepath):
                     # 从本地加载前一天的数据
-                    new_5m_dayBeforeData = load_historical_data(SYMBOL)
+                    new_5m_day_before_data = load_historical_data(symbol)
                 else:
                     # 从API获取并保存前一天的数据，延迟五秒
-                    # time.sleep(5)
-                    dayBeforeDf = ak.stock_zh_a_hist_min_em(
-                        symbol=SYMBOL,
+                    time.sleep(random.uniform(1, 5))
+                    day_before_df = ak.stock_zh_a_hist_min_em(
+                        symbol=symbol,
                         start_date=f"{yesToday_str} 09:30:00",
                         end_date=f"{yesToday_str} 15:00:00",
                         period="5",
                         adjust="qfq",
                     )
-                    raw_dayBeforeData = fetch_intraday_data(dayBeforeDf, True)
-                    new_5m_dayBeforeData = resample_5min(raw_dayBeforeData)
+                    raw_day_before_data = fetch_intraday_data(day_before_df, True)
+                    new_5m_day_before_data = resample_5min(raw_day_before_data)
                     try:
-                        save_historical_data(SYMBOL, new_5m_dayBeforeData)
+                        save_historical_data(symbol, new_5m_day_before_data)
                     except PermissionError:
                         print(f"文件 {filepath} 被占用，保存失败")
                     except Exception as e:
                         print(f"存储异常: {str(e)}")
 
                 # 新增合并逻辑
-                historical_data = pd.concat([new_5m_dayBeforeData, historical_data]).sort_index()
+                historical_data = pd.concat([new_5m_day_before_data, historical_data]).sort_index()
                 historical_data = historical_data[~historical_data.index.duplicated()]  # 去重（避免时间重叠）
 
             # 计算BOLL指标
@@ -212,23 +216,23 @@ def main_loop():
                     if "⚠️" in str(alert_msg):
                         print("\n" + "=" * 40)
                         print(
-                            f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                            f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
                         print("最新3根K线：")
                         print(boll_data[['close', 'Upper', 'Lower']].tail(3))
                         print("=" * 40 + "\n")
 
-                        current_time = time.time()
+                        current_time = int(time.time())
                         # 频率控制逻辑（60秒间隔）
-                        if current_time - LAST_SEND_TIME >= 60:
+                        if current_time - LAST_SEND_TIME[symbol] >= 60:
                             # 发送消息并更新最后发送时间
-                            title = f"{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}" + alert_msg
+                            title = f"{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}" + alert_msg
                             response = sc_send("SCT248551TKIaBVraC3CpN1ei1cqTJJhXU", title)
-                            LAST_SEND_TIME = current_time  # 更新发送时间戳[1](@ref)
+                            LAST_SEND_TIME[symbol] = current_time
                         else:
                             print(f"消息发送冷却中（剩余{60 - (current_time - LAST_SEND_TIME):.0f}秒）")
                     else:
-                        print(f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(SYMBOL))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
             # 等待下次检查
             else:
@@ -238,6 +242,15 @@ def main_loop():
         except Exception as e:
             print(f"监控异常：{str(e)}")
             time.sleep(60)
+
+def main_loop():
+    """主监控循环"""
+    global LAST_SEND_TIME  # 声明全局变量
+    """多线程启动器"""
+    with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as executor:
+        executor.map(monitor_single_stock, SYMBOLS)
+
+
 
 
 if __name__ == "__main__":
