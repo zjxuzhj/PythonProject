@@ -205,6 +205,8 @@ def batch_process(input_path, output_path):
     result_df = pd.DataFrame(results)
     percentage_cols = [f'{n}日收益' for n in periods] + ['动态止损收益']
     result_df = format_percentage(result_df, percentage_cols)
+    # 按日期降序
+    result_df = result_df.sort_values(by='信号日期', ascending=False)
 
     # 增加样式格式化函数
     def color_negative_green(val):
@@ -243,12 +245,13 @@ def batch_process(input_path, output_path):
             .map(color_negative_green, subset=percentage_cols)  # 应用颜色
             .map(highlight_top_industry, subset=['Top行业'])  # 新增此行[3](@ref)
         )
-        # 设置列宽（网页[1]格式优化建议）
-        styled_df = styled_df.set_properties(
-            subset=['名称', '所处行业'],
-            **{'width': '200px'}
-        )
         styled_df.to_excel(writer, sheet_name='收益报告', index=False, engine='openpyxl')
+
+        # 获取工作表
+        worksheet = writer.sheets['收益报告']
+
+        # 手动设置列宽（单位：字符数）
+        worksheet.column_dimensions['C'].width = 12  # 信号日期列
 
         # 新增策略评估表[2,6](@ref)
         performance_style = (

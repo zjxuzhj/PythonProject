@@ -70,7 +70,7 @@ def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx')
     # 获取当前日期（去除时分秒）
     current_date = pd.Timestamp.now().normalize()
     # 计算时间窗口边界，5天内的信号
-    signalDay=250
+    signalDay=100
     signals_start_date = current_date - pd.Timedelta(days=signalDay)
     signals_end_date = current_date
 
