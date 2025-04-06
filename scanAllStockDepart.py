@@ -4,6 +4,7 @@ import time
 import pandas as pd
 import getStockDepart
 import getAllStockCsv as stockCsv
+import getBacktestForDepart as backtestForDepart
 
 def setup_logger():
     logger = logging.getLogger('stock_analysis')
@@ -188,3 +189,9 @@ if __name__ == '__main__':
     logger.info(
         f"总耗时: {total_duration // 3600:.0f}h {(total_duration % 3600) // 60:.0f}m {total_duration % 60:.2f}s")
     logger.info("=" * 50)
+
+    time.sleep(3)
+    backtestForDepart.batch_process(
+        input_path="signals.xlsx",  # 输入文件路径
+        output_path="output_20250329.xlsx"  # 带日期的输出文件名
+    )

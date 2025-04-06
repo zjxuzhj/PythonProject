@@ -111,7 +111,7 @@ def calculate_moving_averages(df):
     df['MA60'] = df['close'].rolling(60).mean().round(2)
 
     # 30周均线（约150个交易日，按5天/周计算）
-    df['MA30W'] = df['close'].rolling(50 * 5).mean().round(2)
+    df['MA30W'] = df['close'].rolling(30 * 5).mean().round(2)
 
     # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
     df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
@@ -191,9 +191,9 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
     # ========== 新增RSI条件 ==========
     # df = calculate_rsi(df)  # 计算RSI指标
 
-    roe = stockQuery.get_stock_roe(stockQuery.get_simple_by_code(symbol))
+    # roe = stockQuery.get_stock_roe(stockQuery.get_simple_by_code(symbol))
     # 修改后（假设roe是标量）
-    roe_condition = (roe is not None) & (pd.notna(roe)) & (roe >= 5)  # 标量处理
+    # roe_condition = (roe is not None) & (pd.notna(roe)) & (roe >= 5)  # 标量处理
 
     # 底背离条件
     bottom_cond = (
@@ -201,16 +201,18 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
             (df['macd'] >= df['lowest_macd'] * 1.1)
             &  # MACD高于周期低点110%
             (df['above_30week'])  # 新增均线过滤
+            # &  # 布林带宽度
+            # (df['boll_width'] >= 0.4)
             # &  # 缩量条件
             # (volume_cond)
             # &  # 新增阶梯缩量
             # (volume_decline_cond)
             # &  # 超卖区域
             # (df['RSI'] < 30)
-            &  # roe
-            roe_condition
-            &  # 新增股性过滤
-            good_character_cond
+            # &  # roe
+            # roe_condition
+            &  # 20日平均振幅>2%
+            (df['amplitude_ma'] > 0.035)
     )
     df['预底'] = np.where(bottom_cond, df['macd'], np.nan)
     if bd_signal:

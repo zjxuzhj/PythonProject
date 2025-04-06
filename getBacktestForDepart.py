@@ -1,6 +1,9 @@
+import time
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm  # 进度条支持
+import os
 
 import getAllStockCsv as stockCsv
 import getStockDepart as depart
@@ -196,6 +199,9 @@ def batch_process(input_path, output_path):
             continue
 
     # 结果输出前增加格式化处理
+    if len(results) == 0:
+        print(f"\n当前底背离标志数为空")
+        return ''
     result_df = pd.DataFrame(results)
     percentage_cols = [f'{n}日收益' for n in periods] + ['动态止损收益']
     result_df = format_percentage(result_df, percentage_cols)
@@ -253,6 +259,9 @@ def batch_process(input_path, output_path):
 
         performance_style.to_excel(writer, sheet_name='策略评估', index=False)
         print(f"\n处理完成！结果已保存至：{output_path}")
+
+        time.sleep(3)
+        os.startfile(output_path)  # 自动使用系统关联程序（若已设置WPS为默认则生效）
 
 if __name__ == '__main__':
     batch_process(
