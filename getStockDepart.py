@@ -111,7 +111,7 @@ def calculate_moving_averages(df):
     df['MA60'] = df['close'].rolling(60).mean().round(2)
 
     # 30周均线（约150个交易日，按5天/周计算）
-    df['MA30W'] = df['close'].rolling(50 * 5).mean().round(2)
+    df['MA30W'] = df['close'].rolling(30 * 5).mean().round(2)
 
     # 当前价格与30周均线关系，30周均线反映市场中长期趋势方向，当股价位于其上方时，说明中期趋势未破坏。此时若出现底背离，往往意味着短期调整可能结束，长期趋势将延续
     df['above_30week'] = df['close'] > df['MA30W']  # 价格在均线上方
@@ -199,13 +199,13 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
 
     # 底背离条件
     bottom_cond = (
-            (date_filter) &  # 新增日期条件[3](@ref)
+            # (date_filter) &  # 新增日期条件[3](@ref)
             (df['close'] <= df['lowest_price'] * 1.01) &  # 价格接近周期低点
             (df['macd'] >= df['lowest_macd'] * 1.1)
             &  # MACD高于周期低点110%
             (df['above_30week'])  # 新增均线过滤
             &  # 布林带宽度
-            (df['boll_width'] >= 0.25)
+            (df['boll_width'] >= 0.3)
             # &  # 缩量条件
             # (volume_cond)
             # &  # 新增阶梯缩量

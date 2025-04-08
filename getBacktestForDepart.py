@@ -8,6 +8,8 @@ import os
 import getAllStockCsv as stockCsv
 import getStockDepart as depart
 import getTopIndustry as industry
+import sys
+import subprocess
 
 ### 分析当前底背离筛选股票列表的收益率
 
@@ -264,7 +266,15 @@ def batch_process(input_path, output_path):
         print(f"\n处理完成！结果已保存至：{output_path}")
 
         time.sleep(3)
-        os.startfile(output_path)  # 自动使用系统关联程序（若已设置WPS为默认则生效）
+        if sys.platform == "win32":
+            # Windows环境
+            os.startfile(output_path)  # 自动使用系统关联程序（若已设置WPS为默认则生效）
+        else:
+            # macOS/Linux环境
+            subprocess.run(["open", output_path])
+            # 若需指定WPS打开：
+            # subprocess.run(["open", "-a", "WPS Office.app", output_path])
+
 
 if __name__ == '__main__':
     batch_process(
