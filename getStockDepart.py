@@ -205,7 +205,7 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
             &  # MACD高于周期低点110%
             (df['above_30week'])  # 新增均线过滤
             &  # 布林带宽度
-            (df['boll_width'] >= 0.3)
+            (df['boll_width'] >= 0.25)
             # &  # 缩量条件
             # (volume_cond)
             # &  # 新增阶梯缩量
