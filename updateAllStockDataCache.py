@@ -5,6 +5,9 @@ import akshare as ak
 import pandas as pd
 from fastparquet import write
 from fastparquet import ParquetFile
+import getTopIndustry as getTopIndustry
+import getBacktestForDepart as backtestForDepart
+import scanAllStockDepart as scan
 
 def addStockData(symbol, start_date):
     file_name = f"stock_{symbol}_{start_date}.parquet"
@@ -106,4 +109,62 @@ if __name__ == "__main__":
             print(f"处理 {row['代码']} 失败：{str(e)}")
 
     print("全市场数据更新完成")
+
+    getTopIndustry.get_top_industry()
+
+    scan.setup_logger()
+
+    # 记录总耗时起点
+    total_start = time.perf_counter()
+
+    # 加载股票列表并过滤
+    all_stocks = pd.read_csv('stock_code_name.csv')
+    filtered_stocks = scan.filter_stocks(all_stocks)
+
+    # 分批处理
+    result_df = scan.batch_process(filtered_stocks[['stock_code', 'stock_name']].values)
+
+    # Excel格式输出部分
+    excel_start = time.perf_counter()
+
+    # 格式化输出
+    writer = pd.ExcelWriter('signals.xlsx', engine='xlsxwriter')
+    result_df.to_excel(writer, index=False, sheet_name='背离信号')
+
+    # 设置Excel格式
+    workbook = writer.book
+    format_red = workbook.add_format({'font_color': '#FF0000'})
+    format_green = workbook.add_format({'font_color': '#00B050'})
+
+    worksheet = writer.sheets['背离信号']
+    worksheet.conditional_format('D2:D1000', {
+        'type': 'text',
+        'criteria': 'containing',
+        'value': '顶',
+        'format': format_red
+    })
+    worksheet.conditional_format('D2:D1000', {
+        'type': 'text',
+        'criteria': 'containing',
+        'value': '底',
+        'format': format_green
+    })
+    writer.close()
+    excel_duration = time.perf_counter() - excel_start
+
+    # 计算总耗时
+    total_duration = time.perf_counter() - total_start
+
+    # 输出耗时统计（带人性化格式）
+    scan.logger.info("\n" + "=" * 50)
+    scan.logger.info(f"Excel格式处理耗时: {excel_duration:.2f}s")
+    scan.logger.info(
+        f"总耗时: {total_duration // 3600:.0f}h {(total_duration % 3600) // 60:.0f}m {total_duration % 60:.2f}s")
+    scan.logger.info("=" * 50)
+
+    time.sleep(3)
+    backtestForDepart.batch_process(
+        input_path="signals.xlsx",  # 输入文件路径
+        output_path="output_20250329.xlsx"  # 带日期的输出文件名
+    )
 
