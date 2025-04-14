@@ -13,7 +13,8 @@ import random
 
 # 配置参数
 SYMBOL = "603881"  # 股票代码
-SYMBOLS = ["603881", "600519", "000858"]  # 数据港、茅台、五粮液
+# SYMBOLS = ["603881", "600519", "000858"]  # 数据港、茅台、五粮液
+SYMBOLS = ["600598"]  # 数据港、茅台、五粮液
 # 原全局变量（改为字典存储）
 LAST_SEND_TIME = {symbol: 0 for symbol in SYMBOLS}  # 每个股票独立计时
 BOLL_WINDOW = 20  # BOLL计算周期
@@ -137,11 +138,9 @@ def trading_time_check():
     return (morning[0] <= now <= morning[1]) or (afternoon[0] <= now <= afternoon[1])
 
 
-# 在全局区域添加时间记录变量
-LAST_SEND_TIME = 0  # 初始化最后发送时间戳[1](@ref)
-
 
 def monitor_single_stock(symbol):
+    global LAST_SEND_TIME  # 声明为全局字典（或改用线程安全结构）
     """单个股票监控线程"""
     historical_data = load_historical_data(symbol)
 
@@ -246,9 +245,11 @@ def monitor_single_stock(symbol):
 def main_loop():
     """主监控循环"""
     global LAST_SEND_TIME  # 声明全局变量
+
+    monitor_single_stock("600598")
     """多线程启动器"""
-    with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as executor:
-        executor.map(monitor_single_stock, SYMBOLS)
+    # with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as executor:
+    #     executor.map(monitor_single_stock, SYMBOLS)
 
 
 

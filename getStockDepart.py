@@ -152,7 +152,7 @@ def calculate_rsi(df, window=6):
 
 
 def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
-    start_date='20250303'
+    start_date='20250210'
     date_filter = (df.index >= pd.to_datetime(start_date))
     """背离检测主逻辑"""
     # 极值计算
@@ -199,13 +199,13 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
 
     # 底背离条件
     bottom_cond = (
-            # (date_filter) &  # 新增日期条件[3](@ref)
+            (date_filter) &  # 新增日期条件[3](@ref)
             (df['close'] <= df['lowest_price'] * 1.01) &  # 价格接近周期低点
             (df['macd'] >= df['lowest_macd'] * 1.1)
             &  # MACD高于周期低点110%
             (df['above_30week'])  # 新增均线过滤
             &  # 布林带宽度
-            (df['boll_width'] >= 0.3)
+            (df['boll_width'] >= 0.25)
             # &  # 缩量条件
             # (volume_cond)
             # &  # 新增阶梯缩量
