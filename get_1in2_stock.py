@@ -9,6 +9,13 @@ def is_first_limit_up(symbol, df):
         print("数据不足，至少需要3个交易日数据")
         return False
 
+    # 获取最新交易日的换手率（新增）
+    latest_turnover = df.iloc[-1]['换手率']  # 假设列名为"换手率"，取当日数据
+
+    # 换手率验证（新增核心条件）
+    if not (3 <= latest_turnover <= 20):  # 网页2[2](@ref)/网页4[4](@ref)建议的阈值范围
+        return False
+
     # 获取市场类型（网页6的涨跌幅规则）
     market_type = "科创板" if symbol.startswith(("688", "689")) else \
         "创业板" if symbol.startswith(("300", "301")) else "主板"
@@ -48,7 +55,12 @@ def is_first_limit_up(symbol, df):
     # 判断条件：
     # 1. 当前涨停且前一日未涨停（首板涨停条件）
     # 2. 近3日累计涨幅≤25%
-    return (is_current_day_limit_up and not is_prev_day_limit_up) and (cumulative_return <= 0.25)
+    return (
+            is_current_day_limit_up
+            and not is_prev_day_limit_up
+            and (cumulative_return <= 0.25)
+            and (3 <= latest_turnover <= 20)  # 网页5[5](@ref)对换手率区间的验证要求
+    )
 
 
 def get_stock_data(symbol, start_date, force_update=False):
