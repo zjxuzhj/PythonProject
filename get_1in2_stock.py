@@ -85,7 +85,7 @@ def get_stock_data(symbol, start_date, force_update=False):
 
 def filter_stocks(df):
     df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
-    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92'))
+    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92','30','68'))
     is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
     return df[~is_bse & ~is_st]
 
