@@ -1,7 +1,47 @@
 import os
-
+import numpy as np
 import pandas as pd
+import akshare as ak
+from datetime import datetime
+import re
 
+def calculate_premium_rate(symbol, df, days=100, method='open'):
+    """计算指定天数内的平均涨停次日溢价率（支持多种计算方式）"""
+    # 参数校验
+    if len(df) < 2:
+        return 0.0  # 数据不足时返回默认值
+
+    # 获取市场类型
+    market_type = "科创板" if symbol.startswith(("688", "689")) else \
+        "创业板" if symbol.startswith(("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+
+    # 遍历历史数据识别涨停日[1](@ref)
+    limit_up_dates = []
+    for i in range(2, len(df)):
+        prev_close = df.iloc[i - 2]['close']
+        current_close = df.iloc[i - 1]['close']
+        # 涨停价计算（精确到分）[7](@ref)
+        limit_price = round(prev_close * (1 + limit_rate), 2)
+        if current_close >= limit_price:
+            limit_up_dates.append(df.index[i - 1])
+
+    # 计算每个涨停次日的溢价率
+    premiums = []
+    premium = 0.0
+    for date in limit_up_dates[-days:]:  # 取最近days天
+        # 查找次日数据[2](@ref)
+        next_day = df[df.index > date].iloc[0] if not df[df.index > date].empty else None
+        if next_day is not None:
+            limit_price = round(df[df.index == date]['close'].values[0], 2)
+            # 选择计算方式[3](@ref)
+            if method == 'open':
+                premium = (next_day['open'] - limit_price) / limit_price * 100
+            elif method == 'close':
+                premium = (next_day['close'] - limit_price) / limit_price * 100
+            premiums.append(premium)
+
+    return round(np.mean(premiums), 2) if premiums else 0.0
 
 def is_first_limit_up(symbol, df):
     """综合判断股票当日是否涨停（支持实时与历史数据）"""
@@ -83,6 +123,26 @@ def get_stock_data(symbol, start_date, force_update=False):
     return pd.DataFrame()
 
 
+def format_limit_time(time_str):
+    """格式化六位数字为HH:MM:SS"""
+    try:
+        # 基础校验：6位纯数字
+        if len(time_str) != 6 or not time_str.isdigit():
+            return "09:25:00"  # 默认值
+
+        # 提取时分秒
+        hour = int(time_str[:2])
+        minute = int(time_str[2:4])
+        second = int(time_str[4:6])
+
+        # 合法性校验
+        if 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59:
+            return f"{hour:02d}:{minute:02d}:{second:02d}"
+        else:
+            return "09:25:00"  # 非法时间返回默认值
+    except:
+        return "09:25:00"
+
 def filter_stocks(df):
     df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
     is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92','30','68'))
@@ -91,6 +151,16 @@ def filter_stocks(df):
 
 
 if __name__ == '__main__':
+    # 获取当日涨停数据（新增）
+    today = datetime.now().strftime("%Y%m%d")
+    zt_df = ak.stock_zt_pool_em(date=today)
+
+    # 创建代码映射字典（关键优化）
+    zt_time_map = dict(zip(
+        zt_df['代码'].astype(str),  # 确保代码为字符串类型
+        zt_df['首次封板时间']
+    ))
+
     # 参数设置
     symbol = 'sh601086'  # 平安银行
     start_date = '20240201'
@@ -104,25 +174,30 @@ if __name__ == '__main__':
     total = len(stock_list)
 
     for idx, (code, name) in enumerate(stock_list, 1):
-        try:
+        # try:
             # 获取含今日的最新行情（网页1、网页3）
             df, _ = get_stock_data(code, start_date=start_date)  # 获取近两日数据
 
             # 执行涨停判断（网页2）
             if is_first_limit_up(code, df):
-                limit_up_stocks.append((code, name))
+                premium_rate = calculate_premium_rate(code, df, days=100, method='open')
+                limit_up_stocks.append((code, name,premium_rate))
                 print(f"\033[32m涨停发现：{name}({code})\033[0m")
 
             # 进度提示（每50只提示）
             if idx % 50 == 0:
                 print(f"已扫描{idx}/{len(stock_list)}只，当前涨停数：{len(limit_up_stocks)}")
 
-        except Exception as e:
-            print(f"处理异常：{name}({code}) - {str(e)}")
-            continue
+        # except Exception as e:
+        #     print(f"处理异常：{name}({code}) - {str(e)}")
+        #     continue
 
         # 结果输出（网页5）
     print("\n\033[1m===== 今日涨停统计 =====\033[0m")
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
-    for code, name in limit_up_stocks:
-        print(f"· {name}({code})")
+    # 新增排序逻辑
+    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)
+    for code, name, premium_rate in sorted_stocks:
+        clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
+        first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
+        print(f"· {name}({code}) ｜ 百日溢价率：{premium_rate}% ｜ 涨停时间：{format_limit_time(first_time)}")
