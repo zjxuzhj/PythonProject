@@ -4,6 +4,7 @@ import pandas as pd
 import akshare as ak
 from datetime import datetime
 import re
+import getAllStockCsv
 
 def calculate_premium_rate(symbol, df, days=100, method='open'):
     """计算指定天数内的平均涨停次日溢价率（支持多种计算方式）"""
@@ -43,7 +44,7 @@ def calculate_premium_rate(symbol, df, days=100, method='open'):
 
     return round(np.mean(premiums), 2) if premiums else 0.0
 
-def is_first_limit_up(symbol, df):
+def is_first_limit_up(symbol, df, query_tool):
     """综合判断股票当日是否涨停（支持实时与历史数据）"""
     if len(df) < 3:
         print("数据不足，至少需要3个交易日数据")
@@ -92,15 +93,19 @@ def is_first_limit_up(symbol, df):
     # 首板判断条件
     # return is_current_day_limit_up and not is_prev_day_limit_up
 
+    market_value = query_tool.get_stock_market_value(query_tool.get_simple_by_code(symbol))
+
     # 判断条件：
     # 1. 当前涨停且前一日未涨停（首板涨停条件）
     # 2. 近3日累计涨幅≤25%
     # 3. 首板3%≤换手率≤20%
+    # 4. 股票10<市值<150
     return (
             is_current_day_limit_up
             and not is_prev_day_limit_up
             and (cumulative_return <= 0.25)
             and (3 <= latest_turnover <= 20)
+            and (10 <= market_value <= 150)
     )
 
 
@@ -173,6 +178,7 @@ if __name__ == '__main__':
     filtered_stocks = filter_stocks(all_stocks)
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
+    query_tool = getAllStockCsv.StockQuery()
 
     for idx, (code, name) in enumerate(stock_list, 1):
         # try:
@@ -180,7 +186,7 @@ if __name__ == '__main__':
             df, _ = get_stock_data(code, start_date=start_date)  # 获取近两日数据
 
             # 执行涨停判断（网页2）
-            if is_first_limit_up(code, df):
+            if is_first_limit_up(code, df, query_tool):
                 premium_rate = calculate_premium_rate(code, df, days=100, method='open')
                 limit_up_stocks.append((code, name,premium_rate))
                 print(f"\033[32m涨停发现：{name}({code})\033[0m")

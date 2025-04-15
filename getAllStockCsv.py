@@ -8,6 +8,7 @@ import pandas as pd
 class StockQuery:
     # 类属性定义文件路径
     CSV_PATH = os.path.join(os.path.dirname(__file__), 'stock_code_name.csv')
+    REPORT_CSV_PATH = os.path.join(os.path.dirname(__file__), 'merged_report_2024Q3.csv')
 
     def get_simple_by_code(self, code):
         return code[2:]
@@ -26,6 +27,8 @@ class StockQuery:
         self._init_roe_data()  # 初始化时加载
         self.industry_cache = None  # 新增行业缓存
         self._init_industry_data()  # 新增初始化方法
+        self.market_value_cache = None  # 新增流通市值缓存
+        self._init_market_value_data()  # 新增初始化方法
 
     def _init_roe_data(self):
         """预加载ROE数据到内存[3,5](@ref)"""
@@ -61,6 +64,25 @@ class StockQuery:
             print(f"行业数据初始化失败: {str(e)}")
             self.industry_cache = {}
 
+    def _init_market_value_data(self):
+        """加载流通市值数据到内存"""
+        try:
+            df = pd.read_csv(
+                "merged_report_2024Q3.csv",
+                dtype={'股票代码': str},
+                usecols=['股票代码', '流通市值'],  # 明确指定需要加载的列
+                converters={
+                    '流通市值': lambda x: round(float(x) / 1e8, 2)  # 元→亿元并保留两位小数[1,4](@ref)
+                }
+            )
+            # 清理股票代码格式（去掉可能的.0后缀）
+            df['股票代码'] = df['股票代码'].str.replace(r'\.0$', '', regex=True)
+            # 转换为字典加速查询（键为股票代码，值为行业）
+            self.market_value_cache = df.set_index('股票代码')['流通市值'].to_dict()
+        except Exception as e:
+            print(f"流动市值初始化失败: {str(e)}")
+            self.market_value_cache = {}
+
     @classmethod
     def _refresh_data(cls):
         """获取并更新股票数据"""
@@ -88,6 +110,34 @@ class StockQuery:
             print(f"数据更新失败: {str(e)}")
             raise
 
+    # 给财报数据列新增总市值和流通市值
+    def addStockYjbbEm(self):
+        df_csv = pd.read_csv(self.REPORT_CSV_PATH)
+
+        # 2. 获取全市场实时数据（含动态市盈率、市净率、总市值、流通市值）
+        spot_data = ak.stock_zh_a_spot_em()
+
+        # 3. 预处理股票代码
+        df_csv['clean_code'] = df_csv['stock_code'].str.extract(r'(\d{6})')[0]
+
+        # 4. 合并数据（根据股票代码匹配）
+        merged_df = pd.merge(
+            df_csv,
+            spot_data[['代码', '市盈率-动态', '市净率', '总市值', '流通市值']],
+            left_on='clean_code',
+            right_on='代码',
+            how='left'
+        )
+
+        # 5. 填充目标字段
+        merged_df['市盈率-动态'] = merged_df['市盈率-动态'].fillna('-')
+        merged_df['市净率'] = merged_df['市净率'].fillna('-')
+        merged_df['总市值'] = merged_df['总市值'].fillna('-')
+        merged_df['流通市值'] = merged_df['流通市值'].fillna('-')
+
+        # 6. 保存更新后的 CSV（删除临时列）
+        merged_df.drop(['clean_code', '代码'], axis=1).to_csv(self.REPORT_CSV_PATH, index=False)
+
     # 更新财报数据
     def updateStockYjbbEm(self):
         df_csv = pd.read_csv(self.CSV_PATH)
@@ -110,10 +160,10 @@ class StockQuery:
 
             # 字段筛选
             required_columns = [
-                'stock_code', 'stock_name','股票代码',
-                '每股收益', '营业总收入-营业总收入','营业总收入-同比增长','营业总收入-季度环比增长',
-                '净利润-净利润','净利润-同比增长','净利润-季度环比增长',
-                '净资产收益率', '每股经营现金流量','销售毛利率','所处行业', '最新公告日期'
+                'stock_code', 'stock_name', '股票代码',
+                '每股收益', '营业总收入-营业总收入', '营业总收入-同比增长', '营业总收入-季度环比增长',
+                '净利润-净利润', '净利润-同比增长', '净利润-季度环比增长',
+                '净资产收益率', '每股经营现金流量', '销售毛利率', '所处行业', '最新公告日期'
             ]
             merged_df = merged_df[required_columns]
 
@@ -143,6 +193,15 @@ class StockQuery:
         except Exception as e:
             print(f"行业查询异常: {symbol} - {str(e)}")
             return "未知行业"
+
+    def get_stock_market_value(self, symbol):
+        """字典直查法（O(1)时间复杂度）[5](@ref)"""
+        try:
+            return self.market_value_cache.get(symbol, 0.0)  # 无匹配返回None
+
+        except Exception as e:
+            print(f"流通市值查询异常: {symbol} - {str(e)}")
+            return 0.0  # 明确返回None代替0[1](@ref)
 
     def _load_data(self):
         """加载本地数据"""
@@ -255,7 +314,8 @@ if __name__ == "__main__":
     # 模糊查询示例
     # print(query_tool.query("茅台", exact_match=False))  # 返回所有包含"茅台"的股票代码
 
-    query_tool.get_stock_roe('sh603881')
+    # query_tool.get_stock_roe('sh603881')
+    query_tool.addStockYjbbEm()
 
     # stock_yjbb_em_df = ak.stock_yjbb_em(date="20240930")
     # print(stock_yjbb_em_df)
