@@ -193,7 +193,7 @@ def detect_divergence(stockQuery, symbol, df, lookback=90, bd_signal=False):
     # ========== 新增RSI条件 ==========
     # df = calculate_rsi(df)  # 计算RSI指标
 
-    roe = stockQuery.get_stock_roe(stockQuery.get_simple_by_code(symbol))
+    roe = stockQuery.get_stock_roe(symbol)
     # 修改后（假设roe是标量）
     roe_condition = (roe is not None) & (pd.notna(roe)) & (roe >= 5)  # 标量处理
 
@@ -251,7 +251,7 @@ if __name__ == '__main__':
     signals = detect_divergence(query_tool,symbol, macd_df, 60, True)
 
     # 格式化输出
-    print(f"\n背离信号收益分析报告：{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}")
+    print(f"\n背离信号收益分析报告：{query_tool.get_name_by_code(symbol)}")
     for date, row in signals.iterrows():
         if not pd.isna(row['预底']):
             buy_price = df.loc[date, 'close']

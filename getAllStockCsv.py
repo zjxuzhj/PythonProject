@@ -36,13 +36,12 @@ class StockQuery:
             # 单次读取并预处理
             df = pd.read_csv(
                 "merged_report_2024Q3.csv",
-                dtype={'股票代码': str},  # 强制字符串类型[3](@ref)
-                usecols=['股票代码', '净资产收益率']  # 仅读取必要列[5](@ref)
+                dtype={'stock_code': str},  # 强制字符串类型[3](@ref)
+                usecols=['stock_code', '净资产收益率']  # 仅读取必要列[5](@ref)
             )
-            # 清理股票代码（处理可能的.0后缀）
-            df['股票代码'] = df['股票代码'].str.replace(r'\.0$', '', regex=True)
+            df['stock_code'] = self.get_simple_by_code(df['stock_code'])
             # 转换为字典加速查询
-            self.roe_cache = df.set_index('股票代码')['净资产收益率'].to_dict()
+            self.roe_cache = df.set_index('stock_code')['净资产收益率'].to_dict()
 
         except Exception as e:
             print(f"ROE数据初始化失败: {str(e)}")
@@ -53,13 +52,12 @@ class StockQuery:
         try:
             df = pd.read_csv(
                 "merged_report_2024Q3.csv",
-                dtype={'股票代码': str},
-                usecols=['股票代码', '所处行业']  # 明确指定需要加载的列
+                dtype={'stock_code': str},
+                usecols=['stock_code', '所处行业']  # 明确指定需要加载的列
             )
-            # 清理股票代码格式（去掉可能的.0后缀）
-            df['股票代码'] = df['股票代码'].str.replace(r'\.0$', '', regex=True)
+            df['stock_code'] = self.get_simple_by_code(df['stock_code'])
             # 转换为字典加速查询（键为股票代码，值为行业）
-            self.industry_cache = df.set_index('股票代码')['所处行业'].to_dict()
+            self.industry_cache = df.set_index('stock_code')['所处行业'].to_dict()
         except Exception as e:
             print(f"行业数据初始化失败: {str(e)}")
             self.industry_cache = {}
@@ -75,7 +73,6 @@ class StockQuery:
                     '流通市值': lambda x: round(float(x) / 1e8, 2)  # 元→亿元并保留两位小数[1,4](@ref)
                 }
             )
-            # 清理股票代码格式（去掉可能的.0后缀）
             df['stock_code'] = self.get_simple_by_code(df['stock_code'])
             # 转换为字典加速查询（键为股票代码，值为行业）
             self.market_value_cache = df.set_index('stock_code')['流通市值'].to_dict()
