@@ -69,16 +69,16 @@ class StockQuery:
         try:
             df = pd.read_csv(
                 "merged_report_2024Q3.csv",
-                dtype={'股票代码': str},
-                usecols=['股票代码', '流通市值'],  # 明确指定需要加载的列
+                dtype={'stock_code': str},
+                usecols=['stock_code', '流通市值'],  # 明确指定需要加载的列
                 converters={
                     '流通市值': lambda x: round(float(x) / 1e8, 2)  # 元→亿元并保留两位小数[1,4](@ref)
                 }
             )
             # 清理股票代码格式（去掉可能的.0后缀）
-            df['股票代码'] = df['股票代码'].str.replace(r'\.0$', '', regex=True)
+            df['stock_code'] = self.get_simple_by_code(df['stock_code'])
             # 转换为字典加速查询（键为股票代码，值为行业）
-            self.market_value_cache = df.set_index('股票代码')['流通市值'].to_dict()
+            self.market_value_cache = df.set_index('stock_code')['流通市值'].to_dict()
         except Exception as e:
             print(f"流动市值初始化失败: {str(e)}")
             self.market_value_cache = {}

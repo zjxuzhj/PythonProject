@@ -93,7 +93,7 @@ def is_first_limit_up(symbol, df, query_tool):
     # 首板判断条件
     # return is_current_day_limit_up and not is_prev_day_limit_up
 
-    market_value = query_tool.get_stock_market_value(query_tool.get_simple_by_code(symbol))
+    market_value = query_tool.get_stock_market_value(symbol)
 
     # 判断条件：
     # 1. 当前涨停且前一日未涨停（首板涨停条件）
