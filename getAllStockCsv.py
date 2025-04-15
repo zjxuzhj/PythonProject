@@ -181,10 +181,8 @@ class StockQuery:
 
     def get_stock_industry(self, symbol):
         try:
-            # 统一代码格式（去掉交易所前缀）
-            clean_code = self.get_simple_by_code(symbol)
             # 从缓存中查询（默认返回'未知行业'）
-            return self.industry_cache.get(clean_code, "未知行业")
+            return self.industry_cache.get(symbol, "未知行业")
         except KeyError:
             return "未知行业"
         except Exception as e:
