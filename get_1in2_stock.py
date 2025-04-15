@@ -95,11 +95,12 @@ def is_first_limit_up(symbol, df):
     # 判断条件：
     # 1. 当前涨停且前一日未涨停（首板涨停条件）
     # 2. 近3日累计涨幅≤25%
+    # 3. 首板3%≤换手率≤20%
     return (
             is_current_day_limit_up
             and not is_prev_day_limit_up
             and (cumulative_return <= 0.25)
-            and (3 <= latest_turnover <= 20)  # 网页5[5](@ref)对换手率区间的验证要求
+            and (3 <= latest_turnover <= 20)
     )
 
 
