@@ -128,13 +128,13 @@ def is_first_limit_up(symbol, df, query_tool):
 
     # 判断条件：
     # 1. 当前涨停且前一日未涨停（首板涨停条件）
-    # 2. 近3日累计涨幅≤25%
+    # 2. 近3日累计涨幅≤25%（强势股会超过，去掉）
     # 3. 首板3%≤换手率≤20%
     # 4. 股票10<市值<150
     return (
             is_current_day_limit_up
             and not is_prev_day_limit_up
-            and (cumulative_return <= 0.25)
+            #and (cumulative_return <= 0.25)
             and (3 <= latest_turnover <= 20)
             and (10 <= market_value <= 150)
     )
