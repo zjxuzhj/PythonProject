@@ -6,6 +6,37 @@ from datetime import datetime
 import re
 import getAllStockCsv
 
+
+def calculate_continuation_rate(symbol, df, days=100):
+    """计算百日连板率：涨停次日继续涨停的概率"""
+    if len(df) < 3:
+        return 0.0
+
+    # 识别所有涨停日
+    market_type = "科创板" if symbol.startswith(("688", "689")) else \
+        "创业板" if symbol.startswith(("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+
+    # 向量化计算涨停日（优化性能）
+    df['prev_close'] = df['close'].shift(2)
+    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
+    limit_up_days = df[df['close'] >= df['limit_price']].index.tolist()
+
+    # 统计有效涨停日（过滤新股）
+    valid_days = [d for d in limit_up_days[-days:] if pd.notnull(df.loc[d]['prev_close'])]
+
+    # 计算连板次数
+    continuation_count = 0
+    for date in valid_days:
+        next_day = df[df.index > date]
+        if len(next_day) > 0:
+            next_close = next_day.iloc[0]['close']
+            next_limit_price = round(df.loc[date]['close'] * (1 + limit_rate), 2)
+            if next_close >= next_limit_price:
+                continuation_count += 1
+
+    return round(continuation_count/len(valid_days) * 100, 2) if valid_days else 0.0
+
 def calculate_premium_rate(symbol, df, days=100, method='open'):
     """计算指定天数内的平均涨停次日溢价率（支持多种计算方式）"""
     # 参数校验
@@ -188,7 +219,8 @@ if __name__ == '__main__':
             # 执行涨停判断（网页2）
             if is_first_limit_up(code, df, query_tool):
                 premium_rate = calculate_premium_rate(code, df, days=100, method='open')
-                limit_up_stocks.append((code, name,premium_rate))
+                continuation_rate = calculate_continuation_rate(code, df)
+                limit_up_stocks.append((code, name, premium_rate, continuation_rate))
                 print(f"\033[32m涨停发现：{name}({code})\033[0m")
 
             # 进度提示（每50只提示）
@@ -204,7 +236,8 @@ if __name__ == '__main__':
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
     # 新增排序逻辑
     sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)
-    for code, name, premium_rate in sorted_stocks:
+    for code, name, premium_rate,continuation_rate in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
-        print(f"· {name}({code}) ｜ 百日溢价率：{premium_rate}% ｜ 涨停时间：{format_limit_time(first_time)}")
+        print(
+            f"· {name}({code}) ｜ 百日溢价率：{premium_rate}% ｜ 百日连板率：{continuation_rate}% ｜ 涨停时间：{format_limit_time(first_time)}")
