@@ -193,10 +193,8 @@ if __name__ == '__main__':
     zt_df = ak.stock_zt_pool_em(date=today)
 
     # 创建代码映射字典（关键优化）
-    zt_time_map = dict(zip(
-        zt_df['代码'].astype(str),  # 确保代码为字符串类型
-        zt_df['首次封板时间']
-    ))
+    zt_time_map = dict(zip(zt_df['代码'].astype(str),  zt_df['首次封板时间']))
+    zt_zb_map = dict(zip(zt_df['代码'].astype(str), zt_df['炸板次数']))  # 新增炸板次数映射
 
     # 参数设置
     symbol = 'sh601086'  # 平安银行
@@ -239,5 +237,11 @@ if __name__ == '__main__':
     for code, name, premium_rate,continuation_rate in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
-        print(
-            f"· {name}({code}) ｜ 百日溢价率：{premium_rate}% ｜ 百日连板率：{continuation_rate}% ｜ 涨停时间：{format_limit_time(first_time)}")
+        zb_count = zt_zb_map.get(clean_code, 0)  # 获取炸板次数
+        # 动态构建输出内容
+        output_parts = [f"· {name}({code})", f"百日溢价率：{premium_rate}%", f"百日连板率：{continuation_rate}%",
+                        f"涨停时间：{format_limit_time(first_time)}"]
+        if zb_count > 0:
+            output_parts.append(f"炸板次数：{zb_count}次")
+
+        print(" ｜ ".join(output_parts))
