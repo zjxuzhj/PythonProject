@@ -235,7 +235,7 @@ if __name__ == '__main__':
     print("\n\033[1m===== 今日涨停统计 =====\033[0m")
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
     # 新增排序逻辑
-    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)
+    sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
     for code, name, premium_rate,continuation_rate in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
