@@ -1,10 +1,40 @@
 import os
+import re
+from datetime import datetime, timedelta
+
+import akshare as ak
 import numpy as np
 import pandas as pd
-import akshare as ak
-from datetime import datetime
-import re
+
 import getAllStockCsv
+
+
+def calculate_today_change(df):
+    """计算今日涨跌幅（与前收盘价对比）"""
+    if len(df) < 2:  # 至少需要昨日和今日数据
+        return 0.0, 0.0
+
+    # 获取昨日收盘价和今日收盘价[1,2](@ref)
+    prev_close = df.iloc[-2]['close']  # 昨日收盘价
+    today_close = df.iloc[-1]['close']  # 今日收盘价
+
+    # 计算涨跌幅[4,7](@ref)
+    change = (today_close - prev_close) / prev_close * 100
+    return round(change, 2)
+
+
+def calculate_auction_return(df):
+    """计算竞价买入到收盘的收益率"""
+    if len(df) < 1:  # 至少需要今日数据
+        return 0.0
+
+    # 获取今日开盘价和收盘价[3,8](@ref)
+    today_open = df.iloc[-1]['open']  # 今日开盘价（竞价买入价）
+    today_close = df.iloc[-1]['close']  # 今日收盘价
+
+    # 计算收益率[5](@ref)
+    return_rate = (today_close - today_open) / today_open * 100
+    return round(return_rate, 2)
 
 
 def calculate_continuation_rate(symbol, df, days=100):
@@ -35,7 +65,8 @@ def calculate_continuation_rate(symbol, df, days=100):
             if next_close >= next_limit_price:
                 continuation_count += 1
 
-    return round(continuation_count/len(valid_days) * 100, 2) if valid_days else 0.0
+    return round(continuation_count / len(valid_days) * 100, 2) if valid_days else 0.0
+
 
 def calculate_premium_rate(symbol, df, days=100, method='open'):
     """计算指定天数内的平均涨停次日溢价率（支持多种计算方式）"""
@@ -75,14 +106,17 @@ def calculate_premium_rate(symbol, df, days=100, method='open'):
 
     return round(np.mean(premiums), 2) if premiums else 0.0
 
-def is_first_limit_up(symbol, df, query_tool):
+
+def is_first_limit_up(symbol, df, query_tool, isBackTest=False):
+    day = 0
+    if isBackTest: day = 1
     """综合判断股票当日是否涨停（支持实时与历史数据）"""
     if len(df) < 3:
         print("数据不足，至少需要3个交易日数据")
         return False
 
     # 获取最新交易日的换手率（新增）
-    latest_turnover = df.iloc[-1]['换手率']  # 假设列名为"换手率"，取当日数据
+    latest_turnover = df.iloc[-(1 + day)]['换手率']  # 假设列名为"换手率"，取当日数据
 
     # 换手率验证（新增核心条件）
     if not (3 <= latest_turnover <= 20):  # 网页2[2](@ref)/网页4[4](@ref)建议的阈值范围
@@ -101,23 +135,23 @@ def is_first_limit_up(symbol, df, query_tool):
     limit_rate = limit_map[market_type]
 
     # 计算前一个交易日的涨停价
-    prev_close = df.iloc[-3]['close']  # 倒数第3个交易日的收盘价
+    prev_close = df.iloc[-(3 + day)]['close']  # 倒数第3个交易日的收盘价
     limit_up_price_prev = round(prev_close * (1 + limit_rate), 2)
 
     # 计算当前交易日的涨停价
-    current_prev_close = df.iloc[-2]['close']  # 倒数第2个交易日的收盘价
+    current_prev_close = df.iloc[-(2 + day)]['close']  # 倒数第2个交易日的收盘价
     limit_up_price_current = round(current_prev_close * (1 + limit_rate), 2)
 
     # 判断前一个交易日是否涨停
-    prev_day_close = df.iloc[-2]['close']  # 前一个交易日的收盘价
+    prev_day_close = df.iloc[-(2 + day)]['close']  # 前一个交易日的收盘价
     is_prev_day_limit_up = prev_day_close >= limit_up_price_prev
 
     # 判断当前交易日是否涨停
-    latest = df.iloc[-1]  # 当前交易日的数据
+    latest = df.iloc[-(1 + day)]  # 当前交易日的数据
     is_current_day_limit_up = latest['close'] >= limit_up_price_current
 
     # 计算近3日累计涨幅（从倒数第4个交易日到当前交易日）
-    start_close = df.iloc[-4]['close']  # 倒数第4个交易日的收盘价
+    start_close = df.iloc[-(4 + day)]['close']  # 倒数第4个交易日的收盘价
     end_close = latest['close']  # 当前交易日的收盘价
     cumulative_return = (end_close - start_close) / start_close
 
@@ -134,7 +168,7 @@ def is_first_limit_up(symbol, df, query_tool):
     return (
             is_current_day_limit_up
             and not is_prev_day_limit_up
-            #and (cumulative_return <= 0.25)
+            # and (cumulative_return <= 0.25)
             and (3 <= latest_turnover <= 20)
             and (10 <= market_value <= 150)
     )
@@ -180,20 +214,25 @@ def format_limit_time(time_str):
     except:
         return "09:25:00"
 
+
 def filter_stocks(df):
     df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
-    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92','30','68'))
+    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '30', '68'))
     is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
     return df[~is_bse & ~is_st]
 
 
 if __name__ == '__main__':
     # 获取当日涨停数据（新增）
-    today = datetime.now().strftime("%Y%m%d")
-    zt_df = ak.stock_zt_pool_em(date=today)
+    today = datetime.now()
+    todayStr = today.strftime("%Y%m%d")
+    yesterday = today - timedelta(days=1)
+    yesterday_str = yesterday.strftime("%Y%m%d")
+
+    zt_df = ak.stock_zt_pool_em(date=yesterday_str)
 
     # 创建代码映射字典（关键优化）
-    zt_time_map = dict(zip(zt_df['代码'].astype(str),  zt_df['首次封板时间']))
+    zt_time_map = dict(zip(zt_df['代码'].astype(str), zt_df['首次封板时间']))
     zt_zb_map = dict(zip(zt_df['代码'].astype(str), zt_df['炸板次数']))  # 新增炸板次数映射
 
     # 参数设置
@@ -211,36 +250,59 @@ if __name__ == '__main__':
 
     for idx, (code, name) in enumerate(stock_list, 1):
         # try:
-            # 获取含今日的最新行情（网页1、网页3）
-            df, _ = get_stock_data(code, start_date=start_date)  # 获取近两日数据
+        # 获取含今日的最新行情（网页1、网页3）
+        df, _ = get_stock_data(code, start_date=start_date)  # 获取近两日数据
 
-            # 执行涨停判断（网页2）
-            if is_first_limit_up(code, df, query_tool):
-                premium_rate = calculate_premium_rate(code, df, days=100, method='open')
-                continuation_rate = calculate_continuation_rate(code, df)
-                limit_up_stocks.append((code, name, premium_rate, continuation_rate))
-                print(f"\033[32m涨停发现：{name}({code})\033[0m")
+        # 执行涨停判断（网页2）
+        if is_first_limit_up(code, df, query_tool, True):
+            premium_rate = calculate_premium_rate(code, df, days=100, method='open')
+            continuation_rate = calculate_continuation_rate(code, df)
+            today_change = calculate_today_change(df)
+            auction_ret = calculate_auction_return(df)
+            limit_up_stocks.append((code, name, premium_rate, continuation_rate, today_change, auction_ret))
+            print(f"\033[32m涨停发现：{name}({code})\033[0m")
 
-            # 进度提示（每50只提示）
-            if idx % 50 == 0:
-                print(f"已扫描{idx}/{len(stock_list)}只，当前涨停数：{len(limit_up_stocks)}")
+        # 进度提示（每50只提示）
+        if idx % 50 == 0:
+            print(f"已扫描{idx}/{len(stock_list)}只，当前涨停数：{len(limit_up_stocks)}")
 
-        # except Exception as e:
-        #     print(f"处理异常：{name}({code}) - {str(e)}")
-        #     continue
+    # except Exception as e:
+    #     print(f"处理异常：{name}({code}) - {str(e)}")
+    #     continue
 
-        # 结果输出（网页5）
+    # 结果输出（网页5）
     print("\n\033[1m===== 今日涨停统计 =====\033[0m")
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
-    # 新增排序逻辑
+    # 按涨停时间排序
     sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
-    for code, name, premium_rate,continuation_rate in sorted_stocks:
+
+    # 按百日溢价率降序排序
+    # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)  # x[2]对应premium_rate
+
+    # 按百日连板率降序排序
+    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
+
+    for code, name, premium_rate, continuation_rate, today_change, auction_ret in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
         zb_count = zt_zb_map.get(clean_code, 0)  # 获取炸板次数
+
+        # 新增颜色控制逻辑[1,5](@ref)
+        RED = '\033[31m'
+        GREEN = '\033[32m'
+        RESET = '\033[0m'
+
+        # 处理今日涨幅颜色
+        today_color = RED if today_change > 0 else GREEN if today_change < 0 else ''
+        today_display = f"{today_color}今日涨幅：{today_change}%{RESET if today_color else ''}"
+
+        # 处理竞价收益颜色
+        auction_color = RED if auction_ret > 0 else GREEN if auction_ret < 0 else ''
+        auction_display = f"{auction_color}竞价收益：{auction_ret}%{RESET if auction_color else ''}"
+
         # 动态构建输出内容
         output_parts = [f"· {name}({code})", f"百日溢价率：{premium_rate}%", f"百日连板率：{continuation_rate}%",
-                        f"涨停时间：{format_limit_time(first_time)}"]
+                        f"涨停时间：{format_limit_time(first_time)}", today_display, auction_display]
         if zb_count > 0:
             output_parts.append(f"炸板次数：{zb_count}次")
 
