@@ -222,14 +222,19 @@ def filter_stocks(df):
     return df[~is_bse & ~is_st]
 
 
+isBackTest = False
+
 if __name__ == '__main__':
     # 获取当日涨停数据（新增）
     today = datetime.now()
-    todayStr = today.strftime("%Y%m%d")
+    today_str = today.strftime("%Y%m%d")
     yesterday = today - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
 
-    zt_df = ak.stock_zt_pool_em(date=yesterday_str)
+    if isBackTest:
+        zt_df = ak.stock_zt_pool_em(date=yesterday_str)
+    else:
+        zt_df = ak.stock_zt_pool_em(date=today_str)
 
     # 创建代码映射字典（关键优化）
     zt_time_map = dict(zip(zt_df['代码'].astype(str), zt_df['首次封板时间']))
@@ -254,7 +259,7 @@ if __name__ == '__main__':
         df, _ = get_stock_data(code, start_date=start_date)  # 获取近两日数据
 
         # 执行涨停判断（网页2）
-        if is_first_limit_up(code, df, query_tool, True):
+        if is_first_limit_up(code, df, query_tool, isBackTest):
             premium_rate = calculate_premium_rate(code, df, days=100, method='open')
             continuation_rate = calculate_continuation_rate(code, df)
             today_change = calculate_today_change(df)
@@ -280,7 +285,7 @@ if __name__ == '__main__':
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)  # x[2]对应premium_rate
 
     # 按百日连板率降序排序
-    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
+    # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
 
     for code, name, premium_rate, continuation_rate, today_change, auction_ret in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
