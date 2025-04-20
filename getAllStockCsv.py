@@ -13,6 +13,22 @@ class StockQuery:
     def get_simple_by_code(self, code):
         return code[2:]
 
+    def get_all_filter_stocks(self):
+        df_csv = pd.read_csv(self.REPORT_CSV_PATH)
+        filtered_stocks = self.filter_stocks(df_csv)
+        return filtered_stocks
+
+    def filter_stocks(self, df):
+        df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
+        is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '30', '68'))
+        is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
+
+        # 新增黑名单过滤
+        is_about_to_st = df['clean_code'].isin(self.blacklist['about_to_st'])
+        is_bad_shareholder = df['clean_code'].isin(self.blacklist['bad_shareholders'])
+
+        return df[~is_bse & ~is_st & ~is_about_to_st & ~is_bad_shareholder]
+
     def __init__(self, auto_update=False):
         """
         初始化股票查询工具
@@ -29,6 +45,12 @@ class StockQuery:
         self._init_industry_data()  # 新增初始化方法
         self.market_value_cache = None  # 新增流通市值缓存
         self._init_market_value_data()  # 新增初始化方法
+        self.blacklist = {
+            'about_to_st': {'600243', '002496','600696','003032','300561','000004','002762','603813','001270','002816','002848','002713','002898','600421','000595','600355',
+                            '600636','000518','603261','600753','000668','605081','002214','603268','002529','002305','002253','000820','002693','603389','000929','600130',
+                            '603838','002058','301288','000691','300093','600238','600228','688511','603789','600892','600193'},  # 即将ST的股票代码
+            'bad_shareholders': {}  # 股东劣迹股票代码
+        }
 
     def _init_roe_data(self):
         """预加载ROE数据到内存[3,5](@ref)"""

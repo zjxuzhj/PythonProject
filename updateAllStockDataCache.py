@@ -5,6 +5,8 @@ import akshare as ak
 import pandas as pd
 from fastparquet import write
 from fastparquet import ParquetFile
+
+import getAllStockCsv
 import getTopIndustry as getTopIndustry
 import getBacktestForDepart as backtestForDepart
 import scanAllStockDepart as scan
@@ -30,6 +32,8 @@ def get_stock_prefix(code):
 
     return f"{prefix}{code_str}"
 
+
+query_tool = getAllStockCsv.StockQuery()
 
 # 使用示例（单独执行此类时）
 if __name__ == "__main__":
@@ -118,8 +122,7 @@ if __name__ == "__main__":
     total_start = time.perf_counter()
 
     # 加载股票列表并过滤
-    all_stocks = pd.read_csv('stock_code_name.csv')
-    filtered_stocks = scan.filter_stocks(all_stocks)
+    filtered_stocks = query_tool.get_all_filter_stocks()
 
     # 分批处理
     result_df = scan.batch_process(filtered_stocks[['stock_code', 'stock_name']].values)

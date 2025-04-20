@@ -214,14 +214,6 @@ def format_limit_time(time_str):
     except:
         return "09:25:00"
 
-
-def filter_stocks(df):
-    df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
-    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '30', '68'))
-    is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
-    return df[~is_bse & ~is_st]
-
-
 isBackTest = False
 
 if __name__ == '__main__':
@@ -246,12 +238,13 @@ if __name__ == '__main__':
 
     # 初始化涨停股容器
     limit_up_stocks = []
+
+    query_tool = getAllStockCsv.StockQuery()
     # 加载股票列表并过滤
-    all_stocks = pd.read_csv('stock_code_name.csv')
-    filtered_stocks = filter_stocks(all_stocks)
+    filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
-    query_tool = getAllStockCsv.StockQuery()
+
 
     for idx, (code, name) in enumerate(stock_list, 1):
         # try:
@@ -305,9 +298,12 @@ if __name__ == '__main__':
         auction_color = RED if auction_ret > 0 else GREEN if auction_ret < 0 else ''
         auction_display = f"{auction_color}竞价收益：{auction_ret}%{RESET if auction_color else ''}"
 
-        # 动态构建输出内容
         output_parts = [f"· {name}({code})", f"百日溢价率：{premium_rate}%", f"百日连板率：{continuation_rate}%",
-                        f"涨停时间：{format_limit_time(first_time)}", today_display, auction_display]
+                        f"涨停时间：{format_limit_time(first_time)}"]
+        if isBackTest:
+            output_parts.append(today_display)
+            output_parts.append(auction_display)
+
         if zb_count > 0:
             output_parts.append(f"炸板次数：{zb_count}次")
 

@@ -2,9 +2,13 @@ import logging
 import os
 import time
 import pandas as pd
+
+import getAllStockCsv
 import getStockDepart
-import getAllStockCsv as stockCsv
 import getBacktestForDepart as backtestForDepart
+
+
+query_tool = getAllStockCsv.StockQuery()
 
 def setup_logger():
     logger = logging.getLogger('stock_analysis')
@@ -23,22 +27,11 @@ def setup_logger():
 
     return logger
 
-
 logger = setup_logger()
-
-
-# 过滤北交所和ST股票
-def filter_stocks(df):
-    df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
-    is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92'))
-    is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
-    return df[~is_bse & ~is_st]
-
 
 def save_temp(data, temp_file):
     """临时保存（无格式）"""
     pd.DataFrame(data).to_excel(temp_file, index=False, engine='openpyxl')
-
 
 def save_final(data, output_file, temp_file):
     """最终保存（带格式）"""
@@ -47,8 +40,6 @@ def save_final(data, output_file, temp_file):
         result_df.to_excel(writer, index=False, sheet_name='背离信号')
         # 应用格式设置...
     os.remove(temp_file)  # 删除临时文件
-
-query_tool = stockCsv.StockQuery()
 
 # 带频率控制的批量处理
 def batch_process(stock_list, batch_size=1, delay=3, output_file='signals.xlsx'):
@@ -146,8 +137,7 @@ if __name__ == '__main__':
     total_start = time.perf_counter()
 
     # 加载股票列表并过滤
-    all_stocks = pd.read_csv('stock_code_name.csv')
-    filtered_stocks = filter_stocks(all_stocks)
+    filtered_stocks = query_tool.get_all_filter_stocks()
 
     # 分批处理
     result_df = batch_process(filtered_stocks[['stock_code', 'stock_name']].values)
