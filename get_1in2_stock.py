@@ -9,6 +9,32 @@ import pandas as pd
 import getAllStockCsv
 
 
+def check_recent_limit_up(symbol, df, days=20, isBackTest=False):
+    day = 1
+    if isBackTest: day = 2
+    """检查最近N个交易日内是否有涨停"""
+    if len(df) < days:
+        return 0  # 数据不足时返回0
+
+    # 截取最近days个交易日的数据
+    recent_df = df.iloc[-(days+ day):-day]
+
+    # 获取市场类型
+    market_type = "科创板" if symbol.startswith(("688", "689")) else \
+        "创业板" if symbol.startswith(("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+
+    # 遍历判断每个交易日
+    limit_count = 0
+    for i in range(1, len(recent_df)):
+        prev_close = recent_df.iloc[i - 1]['close']
+        current_close = recent_df.iloc[i]['close']
+        limit_price = round(prev_close * (1 + limit_rate), 2)
+        if current_close >= limit_price:
+            limit_count += 1
+
+    return limit_count
+
 def calculate_today_change(df):
     """计算今日涨跌幅（与前收盘价对比）"""
     if len(df) < 2:  # 至少需要昨日和今日数据
@@ -222,6 +248,7 @@ if __name__ == '__main__':
     today_str = today.strftime("%Y%m%d")
     yesterday = today - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
+    # yesterday_str = yesterday.strftime("20250418")
 
     if isBackTest:
         zt_df = ak.stock_zt_pool_em(date=yesterday_str)
@@ -257,7 +284,9 @@ if __name__ == '__main__':
             continuation_rate = calculate_continuation_rate(code, df)
             today_change = calculate_today_change(df)
             auction_ret = calculate_auction_return(df)
-            limit_up_stocks.append((code, name, premium_rate, continuation_rate, today_change, auction_ret))
+            # 新增20日涨停次数统计
+            recent_limit = check_recent_limit_up(code, df, 10, isBackTest)
+            limit_up_stocks.append((code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit))
             print(f"\033[32m涨停发现：{name}({code})\033[0m")
 
         # 进度提示（每50只提示）
@@ -280,7 +309,7 @@ if __name__ == '__main__':
     # 按百日连板率降序排序
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
 
-    for code, name, premium_rate, continuation_rate, today_change, auction_ret in sorted_stocks:
+    for code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
         zb_count = zt_zb_map.get(clean_code, 0)  # 获取炸板次数
@@ -306,5 +335,8 @@ if __name__ == '__main__':
 
         if zb_count > 0:
             output_parts.append(f"炸板次数：{zb_count}次")
+
+        if recent_limit > 0:
+            output_parts.append(f"10日涨停：{recent_limit}次")
 
         print(" ｜ ".join(output_parts))
