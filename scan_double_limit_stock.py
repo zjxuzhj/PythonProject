@@ -49,7 +49,7 @@ def check_recent_limit_up(code, df, days=8):
         # if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
         # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
         # 确保比较运算生成完整的布尔序列
-        if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
+        if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks
