@@ -49,7 +49,7 @@ def check_recent_limit_up(code, df, days=8):
         # if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
         # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
         # 确保比较运算生成完整的布尔序列
-        if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
+        if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks
@@ -133,14 +133,29 @@ if __name__ == '__main__':
     # 按天数排序（网页3排序方法）
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0])
 
-    # 格式化输出（网页1分组展示）
+    # 修改后的输出部分代码（替换原tabulate部分）
     headers = ["股票代码", "股票名称", "最近涨停日"]
+    col_widths = [12, 16, 14]  # 列宽定义（单位：字符）
+
     for delta, stocks in sorted_days:
-        print(f"\n=== {delta}天前涨停的股票 ===")
-        print(tabulate.tabulate(
-            stocks,
-            headers=headers,
-            tablefmt="grid",
-            stralign="left"
-        ))
-    # ================================
+        # 打印分组标题
+        print(f"\n\033[1;33m▲ {delta}天前首板股票 ▼\033[0m")  # 黄色加粗标题
+
+        # 打印表头
+        header_str = "".join([h.ljust(w) for h, w in zip(headers, col_widths)])
+        print("\033[90m" + header_str + "\033[0m")  # 灰色表头
+
+        # 打印数据行
+        for stock in stocks:
+            code, name, date = stock
+            # 动态调整名称显示长度（网页3/8方案）
+            truncated_name = (name[:6] + "..") if len(name) > 8 else name.ljust(8)
+
+            # 构建带对齐的输出行（网页5/7建议）
+            line = f"{code.ljust(col_widths[0])}" \
+                   f"{truncated_name.ljust(col_widths[1])}" \
+                   f"{date.center(col_widths[2])}"
+
+            print(line)
+
+        # 打印分隔线（网页6增强可读性）
