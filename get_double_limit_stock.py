@@ -38,14 +38,19 @@ def find_double_limit_up(symbol, df, isBackTest=False):
         except IndexError:
             next_pct = None  # 次板为最新交易日时无数据
 
+        # 新增量比计算逻辑（参考网页4）
+        start_volume = df.loc[start_date, 'volume']
+        pre_volume = df.loc[df.index[df.index.get_loc(start_date) - 1], 'volume']
+        volume_ratio = round(start_volume / pre_volume, 2)
+
         # 形态验证
         if 1 <= interval <= 10:
             # 获取中间K线数据
             mid_df = df[(df.index > start_date) & (df.index < end_date)]
             # 调整期最低价不低于首板最低价
             if mid_df['close'].min() >= df.loc[start_date]['high']:
-                # if mid_df['close'].min() >= df.loc[start_date]['low']:
-                valid_pairs.append((start_date, end_date, next_pct))
+            # if mid_df['close'].min() >= df.loc[start_date]['low']:
+                valid_pairs.append((start_date, end_date, next_pct, volume_ratio))
     return valid_pairs
 
 
@@ -72,6 +77,9 @@ def get_stock_data(symbol, start_date, force_update=False):
 # 命令行显示效果
 def get_double_limit_text(result_df, limit_up_stocks):
     if limit_up_stocks:
+        # 新增首板放量统计（参考网页3）
+        result_df['放量标记'] = result_df['量比'] >= 1  # 1.5倍为标准
+
         # 数据清洗（网页3方法）
         result_df['有效涨幅'] = pd.to_numeric(
             result_df['次日涨幅'].str.replace('%', ''),
@@ -80,9 +88,10 @@ def get_double_limit_text(result_df, limit_up_stocks):
 
         # 分组统计（网页7标准）
         interval_stats = result_df.groupby('间隔天数').agg(
-            出现次数=('有效涨幅', 'count'),
+            出现次数=('量比', 'count'),
             平均涨幅=('有效涨幅', lambda x: round(x.mean(), 2)),
-            上涨概率=('有效涨幅', lambda x: round((x > 0).sum() / len(x) * 100, 1))
+            上涨概率=('有效涨幅', lambda x: round((x > 0).sum() / len(x) * 100, 1)),
+            首板放量率=('放量标记', lambda x: f"{round(x.mean() * 100, 1)}%")
         ).reset_index()
 
         # 过滤有效数据（网页4要求）
@@ -160,6 +169,74 @@ def get_double_limit_excel(result_df):
     print(f"\033[32m数据已保存至 {excel_name}，平均间隔天数：{avg_days:.1f}天\033[0m")
 
 
+def new_feature(symbol, df):
+    """新增功能核心逻辑"""
+    # 获取市场类型
+    market_type = "科创板" if symbol.startswith(("688", "689")) else "创业板" if symbol.startswith(
+        ("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+
+    # 识别所有涨停日
+    df['prev_close'] = df['close'].shift(1)
+    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
+    limit_days = df[df['close'] >= df['limit_price']].index.tolist()
+
+    results = []
+    for i in range(len(limit_days)):
+        base_date = limit_days[i]  # 首板日期
+        base_close = df.loc[base_date, 'close']
+
+        # 条件1：距离当前至少3个交易日[4](@ref)
+        current_pos = df.index.get_loc(base_date)
+        if (len(df) - current_pos) < 9:  # 至少需要3+6个交易日
+            continue
+
+        # 检查3日内未跌破首板收盘价
+        check_period = df.iloc[current_pos + 1: current_pos + 4]  # 首板后3个交易日
+        if (check_period['close'] < base_close).any():
+            continue
+
+        # 检查6日后的表现
+        sixth_day = df.index[current_pos + 7]  # 首板日+7（含首板日）
+        sixth_close = df.loc[sixth_day, 'close']
+        is_break = 1 if sixth_close < base_close else 0
+
+        results.append({
+            '代码': symbol,
+            '首板日': base_date.strftime('%Y-%m-%d'),
+            '首板收盘价': base_close,
+            '第六日收盘价': sixth_close,
+            '是否跌破': is_break
+        })
+    return results
+
+
+def calculate_probability(results):
+    """计算跌破概率"""
+    if not results:
+        return 0.0
+
+    total = len(results)
+    break_count = sum(item['是否跌破'] for item in results)
+
+    # 概率计算（保留两位小数）
+    probability = round(break_count / total * 100, 2)
+
+    # 生成统计报表（参考网页1/3的展示方式）
+    stat_df = pd.DataFrame(results)
+    print(f"\n\033[1m=== 跌破概率统计报表 ===\033[0m")
+    print(f"总样本数：{total}")
+    print(f"跌破次数：{break_count}")
+    print(f"跌破概率：{probability}%")
+
+    # 附加技术指标分析（参考网页2/6）
+    if total > 0:
+        print("\n\033[1m关联指标分析：\033[0m")
+        print("• 可结合RSI指标判断超买状态[2](@ref)")
+        print("• 建议观察MACD是否出现死叉[7](@ref)")
+
+    return probability
+
 isBackTest = False
 
 if __name__ == '__main__':
@@ -182,15 +259,19 @@ if __name__ == '__main__':
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
 
+    # 新增功能调用
+    break_results = []
+
     for idx, (code, name) in enumerate(stock_list, 1):
-        try:
+        # try:
             df, _ = get_stock_data(code, start_date=start_date)
             if df.empty:
                 continue
 
+            break_results.extend(new_feature(code, df))
             double_limits = find_double_limit_up(code, df, isBackTest)
             for pair in double_limits:
-                start, end, next_pct = pair
+                start, end, next_pct, volume_ratio  = pair
                 # 获取交易日间隔（网页3标准）
                 start_pos = df.index.get_loc(start)
                 end_pos = df.index.get_loc(end)
@@ -204,18 +285,21 @@ if __name__ == '__main__':
                     f"首板:{start.strftime('%Y-%m-%d')}",
                     f"次板:{end.strftime('%Y-%m-%d')}",
                     interval_days,
-                    pct_str  # 新增涨幅列
+                    pct_str,  # 新增涨幅列
+                    volume_ratio  # 新增量比值
                 ))
 
-        except Exception as e:
-            print(f"处理异常：{name}({code}) - {str(e)}")
-            continue
+        # except Exception as e:
+        #     print(f"处理异常：{name}({code}) - {str(e)}")
+        #     continue
 
             # 创建带统计信息的DataFrame
     result_df = pd.DataFrame(limit_up_stocks, columns=[
-        "代码", "名称", "首板日期", "次板日期", "间隔天数", "次日涨幅"
+        "代码", "名称", "首板日期", "次板日期", "间隔天数", "次日涨幅", "量比"
     ])
 
     get_double_limit_text(result_df, limit_up_stocks)
 
     # get_double_limit_excel(result_df)
+
+    # calculate_probability(break_results)

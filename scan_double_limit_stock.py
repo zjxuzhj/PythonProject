@@ -139,11 +139,11 @@ if __name__ == '__main__':
 
     for delta, stocks in sorted_days:
         # 打印分组标题
-        print(f"\n\033[1;33m▲ {delta}天前首板股票 ▼\033[0m")  # 黄色加粗标题
+        # print(f"\n\033[1;33m▲ {delta}天前首板股票 ▼\033[0m")  # 黄色加粗标题
 
         # 打印表头
-        header_str = "".join([h.ljust(w) for h, w in zip(headers, col_widths)])
-        print("\033[90m" + header_str + "\033[0m")  # 灰色表头
+        # header_str = "".join([h.ljust(w) for h, w in zip(headers, col_widths)])
+        # print("\033[90m" + header_str + "\033[0m")  # 灰色表头
 
         # 打印数据行
         for stock in stocks:
