@@ -8,6 +8,42 @@ import getAllStockCsv
 
 # import matplotlib.pyplot as plt
 
+def interval_statistics(df, limit_rate):
+    """统计间隔1-8天的涨停概率"""
+    # 识别所有涨停日
+    df['prev_close'] = df['close'].shift(1)
+    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
+    limit_days = df[df['close'] >= df['limit_price']].index.tolist()
+
+    # 初始化统计容器
+    stats = {i: {"success": 0, "total": 0} for i in range(1, 9)}
+
+    for i in range(len(limit_days) - 1):
+        base_date = limit_days[i]
+        next_limit = limit_days[i + 1]
+
+        # 计算间隔天数（剔除非交易日）
+        interval = (df.index.get_loc(next_limit) - df.index.get_loc(base_date) - 1)
+
+        if 1 <= interval <= 8:
+            stats[interval]["success"] += 1
+            # 统计该间隔天数内其他未成功的情况
+            for day in range(1, interval):
+                stats[day]["total"] += 1  # 未成功计数
+
+    # 计算概率
+    result = []
+    for day in stats:
+        total = stats[day]["total"] + stats[day]["success"]
+        success_rate = round(stats[day]["success"] / total * 100, 2) if total > 0 else 0
+        result.append({
+            "间隔天数": day,
+            "成功次数": stats[day]["success"],
+            "失败次数": total - stats[day]["success"],
+            "成功比例": f"{success_rate}%",
+            "失败比例": f"{100 - success_rate}%"
+        })
+    return pd.DataFrame(result)
 
 def find_double_limit_up(symbol, df, isBackTest=False):
     """识别涨停双响炮形态"""
