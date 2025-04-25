@@ -45,11 +45,16 @@ def check_recent_limit_up(code, df, days=8):
         # 修改后（收盘价>涨停日最高价）
         # 新增涨停日最高价获取
         highest_price = recent_df.loc[ld, 'high']  # 获取涨停日最高价
-        # 修改判断条件
-        # if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-        # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
-        # 确保比较运算生成完整的布尔序列
+        # 条件1：所有后续交易日收盘价 > 涨停日开盘价
+        all_days_above_open = (subsequent_df['close'] > open_price).all()
+        # 条件2：最后一天收盘价 < 涨停日最高价
+        last_day_below_high = subsequent_df.iloc[-1]['close'] < highest_price
+        subsequent_has_limit = (subsequent_df['close'] >= subsequent_df['limit_price']).any()
+
+        # 判断条件
         if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
+        # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
+        # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks

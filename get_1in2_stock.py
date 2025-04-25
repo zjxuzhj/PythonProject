@@ -253,7 +253,7 @@ if __name__ == '__main__':
     if isBackTest:
         zt_df = ak.stock_zt_pool_em(date=yesterday_str)
     else:
-        zt_df = ak.stock_zt_pool_em(date=today_str)
+        zt_df = ak.stock_zt_pool_em(date=yesterday_str)
 
     # 创建代码映射字典（关键优化）
     zt_time_map = dict(zip(zt_df['代码'].astype(str), zt_df['首次封板时间']))
