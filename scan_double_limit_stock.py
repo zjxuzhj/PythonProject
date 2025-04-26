@@ -1,18 +1,13 @@
 import os
 from datetime import datetime, timedelta
-
 import pandas as pd
-import tabulate
-
 import getAllStockCsv
 
-
-def check_recent_limit_up(code, df, days=8):
+def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
     """检测最近days个交易日内是否有涨停且后续收盘价达标"""
     # 获取市场类型
     market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(("300", "301")) else "主板"
     limit_rate = 0.20 if market in ["创业板", "科创板"] else 0.10
-    # 新增动态时间范围计算（网页8）
     if df.empty:
         return []
 
@@ -37,10 +32,23 @@ def check_recent_limit_up(code, df, days=8):
         open_price = recent_df.loc[ld, 'open']
         # 检查后续所有收盘价是否达标
         subsequent_df = recent_df[recent_df.index > ld].head(8)  # 取后续最多8个交易日
-        # 检测后续是否出现新涨停（网页2/5/7提到的RSI和资金面验证）
+        # 检测后续是否出现新涨停
         subsequent_limit_days = subsequent_df[subsequent_df['close'] >= subsequent_df['limit_price']]
         if not subsequent_limit_days.empty:
             continue  # 排除有后续涨停的情况
+
+        # 新增空值检查
+        if subsequent_df.empty:
+            continue  # 跳过无后续数据的交易日
+        if check_five_day_line:
+            # 计算五日移动平均线
+            subsequent_df['5ma'] = subsequent_df['close'].rolling(5, min_periods=1).mean()
+            # 获取最后一日的收盘价和五日线
+            last_close = subsequent_df.iloc[-1]['close']
+            last_5ma = subsequent_df.iloc[-1]['5ma']
+            # 新增条件：收盘价需在五日线上方
+            if last_close <= last_5ma:
+                continue  # 不满足则跳过
 
         # 修改后（收盘价>涨停日最高价）
         # 新增涨停日最高价获取
@@ -53,8 +61,8 @@ def check_recent_limit_up(code, df, days=8):
 
         # 判断条件
         if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-        # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
-        # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
+            # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
+            # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks
@@ -109,7 +117,7 @@ if __name__ == '__main__':
                 continue
 
             # 调用新检测函数
-            matched = check_recent_limit_up(code, df)
+            matched = check_recent_limit_up(code, df, check_five_day_line=False)
             if matched:
                 limit_up_stocks.extend(matched)
 
@@ -143,13 +151,6 @@ if __name__ == '__main__':
     col_widths = [12, 16, 14]  # 列宽定义（单位：字符）
 
     for delta, stocks in sorted_days:
-        # 打印分组标题
-        # print(f"\n\033[1;33m▲ {delta}天前首板股票 ▼\033[0m")  # 黄色加粗标题
-
-        # 打印表头
-        # header_str = "".join([h.ljust(w) for h, w in zip(headers, col_widths)])
-        # print("\033[90m" + header_str + "\033[0m")  # 灰色表头
-
         # 打印数据行
         for stock in stocks:
             code, name, date = stock
