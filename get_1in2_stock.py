@@ -248,12 +248,12 @@ if __name__ == '__main__':
     today_str = today.strftime("%Y%m%d")
     yesterday = today - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
-    # yesterday_str = yesterday.strftime("20250418")
+    # yesterday_str = yesterday.strftime("20250425")
 
     if isBackTest:
         zt_df = ak.stock_zt_pool_em(date=yesterday_str)
     else:
-        zt_df = ak.stock_zt_pool_em(date=yesterday_str)
+        zt_df = ak.stock_zt_pool_em(date=today_str)
 
     # 创建代码映射字典（关键优化）
     zt_time_map = dict(zip(zt_df['代码'].astype(str), zt_df['首次封板时间']))
@@ -336,7 +336,7 @@ if __name__ == '__main__':
         if zb_count > 0:
             output_parts.append(f"炸板次数：{zb_count}次")
 
-        if recent_limit > 0:
-            output_parts.append(f"10日涨停：{recent_limit}次")
+        # if recent_limit > 0:
+        #     output_parts.append(f"10日涨停：{recent_limit}次")
 
         print(" ｜ ".join(output_parts))
