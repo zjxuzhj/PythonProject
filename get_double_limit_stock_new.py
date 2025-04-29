@@ -57,12 +57,12 @@ def find_first_limit_up(symbol, df):
             continue
 
         # # 新增：前五日累计涨幅校验[1,2](@ref)
-        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change <= 15:  # 累计涨幅≥5%则排除
-                continue
+        # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
+        #     pre5_start = df.index[df.index.get_loc(day) - 5]
+        #     pre5_close = df.loc[pre5_start, 'close']
+        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+        #     if total_change <= 15:  # 累计涨幅≥5%则排除
+        #         continue
         valid_days.append(day)
     return valid_days
 
@@ -94,24 +94,29 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         # 新增：检查首板次日至买入前一日的收盘价
         price_valid = True
         for check_day in range(start_idx + 1, start_idx + offset):  # 遍历中间交易日
-            if df.iloc[check_day]['close'] < base_close:
+            current_close = df.iloc[check_day]['close']
+            if current_close < base_close:
                 price_valid = False
+                break
+            if current_close > base_close * 1.07:
+                price_valid = False
+                print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价6%")
                 break
 
         if not price_valid:
             continue  # 存在跌破阈值日则跳过
 
         # 新增55日线压制校验(网页6)
-        ma55_valid = True
-        for check_day in range(start_idx + 1, start_idx + offset):
-            current_close = df.iloc[check_day]['close']
-            current_ma55 = df.iloc[check_day]['ma55']
-            if current_close < current_ma55:
-                ma55_valid = False
-                break
-
-        if not ma55_valid:
-            continue  # 存在压制日则跳过
+        # ma55_valid = True
+        # for check_day in range(start_idx + 1, start_idx + offset):
+        #     current_close = df.iloc[check_day]['close']
+        #     current_ma55 = df.iloc[check_day]['ma55']
+        #     if current_close < current_ma55:
+        #         ma55_valid = False
+        #         break
+        #
+        # if not ma55_valid:
+        #     continue  # 存在压制日则跳过
 
         current_data = df.loc[current_day]
 
@@ -137,18 +142,18 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         #     continue  # 存在有效压制则跳过
 
         # 新增：首板后每日不破5日线校验（网页1][网页4]）
-        ma5_valid = True
-        for check_day in range(start_idx + 1, start_idx + offset):
-            current_close = df.iloc[check_day]['close']
-            current_ma5 = df.iloc[check_day]['ma5']
-
-            # 当日收盘价必须≥5日均线（网页2][网页5]）
-            if current_close < current_ma5:
-                ma5_valid = False
-                break
-
-        if not ma5_valid:
-            continue  # 存在破位日则跳过
+        # ma5_valid = True
+        # for check_day in range(start_idx + 1, start_idx + offset):
+        #     current_close = df.iloc[check_day]['close']
+        #     current_ma5 = df.iloc[check_day]['ma5']
+        #
+        #     # 当日收盘价必须≥5日均线（网页2][网页5]）
+        #     if current_close < current_ma5:
+        #         ma5_valid = False
+        #         break
+        #
+        # if not ma5_valid:
+        #     continue  # 存在破位日则跳过
 
 
         # 买入条件：盘中破首板价但收盘收复[3](@ref)
@@ -158,7 +163,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             current_data['close'] < current_data['limit_price'],  # 新增:非涨停收盘(网页3)
             (current_data['close'] - current_data['prev_close']) / current_data['prev_close'] <= 0.05,  # 新增:当日涨幅≤5%
             price_valid,  # 新增价格校验[6](@ref)
-            ma5_valid
+            # ma5_valid
         ]):
             buy_price = current_data['close']
             sell_info = None
