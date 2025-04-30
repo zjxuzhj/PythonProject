@@ -17,7 +17,7 @@ def check_recent_limit_up(symbol, df, days=20, isBackTest=False):
         return 0  # 数据不足时返回0
 
     # 截取最近days个交易日的数据
-    recent_df = df.iloc[-(days+ day):-day]
+    recent_df = df.iloc[-(days + day):-day]
 
     # 获取市场类型
     market_type = "科创板" if symbol.startswith(("688", "689")) else \
@@ -34,6 +34,7 @@ def check_recent_limit_up(symbol, df, days=20, isBackTest=False):
             limit_count += 1
 
     return limit_count
+
 
 def calculate_today_change(df):
     """计算今日涨跌幅（与前收盘价对比）"""
@@ -240,7 +241,8 @@ def format_limit_time(time_str):
     except:
         return "09:25:00"
 
-isBackTest = False
+
+isBackTest = True
 
 if __name__ == '__main__':
     # 获取当日涨停数据（新增）
@@ -272,7 +274,6 @@ if __name__ == '__main__':
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
 
-
     for idx, (code, name) in enumerate(stock_list, 1):
         # try:
         # 获取含今日的最新行情（网页1、网页3）
@@ -286,7 +287,9 @@ if __name__ == '__main__':
             auction_ret = calculate_auction_return(df)
             # 新增20日涨停次数统计
             recent_limit = check_recent_limit_up(code, df, 10, isBackTest)
-            limit_up_stocks.append((code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit))
+            zb_count = zt_zb_map.get(re.sub(r'\D', '', code), 0)  # 获取炸板次数
+            limit_up_stocks.append(
+                (code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit, zb_count))
             print(f"\033[32m涨停发现：{name}({code})\033[0m")
 
         # 进度提示（每50只提示）
@@ -301,7 +304,7 @@ if __name__ == '__main__':
     print("\n\033[1m===== 今日涨停统计 =====\033[0m")
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
     # 按涨停时间排序
-    sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
+    # sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
 
     # 按百日溢价率降序排序
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)  # x[2]对应premium_rate
@@ -309,10 +312,12 @@ if __name__ == '__main__':
     # 按百日连板率降序排序
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
 
-    for code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit in sorted_stocks:
+    # 纯炸板次数排序（降序）
+    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[7], reverse=True)  # [2,5](@ref)
+
+    for code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit, zb_count in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
         first_time = zt_time_map.get(clean_code, '09:25:00')  # 默认值处理
-        zb_count = zt_zb_map.get(clean_code, 0)  # 获取炸板次数
 
         # 新增颜色控制逻辑[1,5](@ref)
         RED = '\033[31m'

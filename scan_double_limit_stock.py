@@ -40,15 +40,16 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
         # 新增空值检查
         if subsequent_df.empty:
             continue  # 跳过无后续数据的交易日
-        if check_five_day_line:
-            # 计算五日移动平均线
-            subsequent_df['5ma'] = subsequent_df['close'].rolling(5, min_periods=1).mean()
-            # 获取最后一日的收盘价和五日线
-            last_close = subsequent_df.iloc[-1]['close']
-            last_5ma = subsequent_df.iloc[-1]['5ma']
-            # 新增条件：收盘价需在五日线上方
+        subsequent_df['5ma'] = subsequent_df['close'].rolling(5, min_periods=1).mean()
+        last_close = subsequent_df.iloc[-1]['close']
+        last_5ma = subsequent_df.iloc[-1]['5ma']
+
+        if check_five_day_line:  # True时保留五日线上方的股票
             if last_close <= last_5ma:
-                continue  # 不满足则跳过
+                continue
+        else:  # False时排除五日线上方的股票
+            if last_close > last_5ma:
+                continue
 
         # 修改后（收盘价>涨停日最高价）
         # 新增涨停日最高价获取
