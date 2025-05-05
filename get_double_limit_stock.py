@@ -153,7 +153,7 @@ def get_double_limit_excel(result_df):
     # 计算平均间隔天数并添加统计行
     avg_days = result_df['间隔天数'].astype(float).mean()
     stats_row = pd.DataFrame([["-", "统计", "-", "-",
-                               f"{avg_days:.1f}天", f"{avg_pct:.2f}%"]],
+                               f"{avg_days:.1f}天", f"{avg_pct:.2f}%", "-"]],  # 添加最后一个"-"
                              columns=result_df.columns)
     result_df = pd.concat([result_df, stats_row], ignore_index=True)
 
@@ -334,8 +334,8 @@ if __name__ == '__main__':
         "代码", "名称", "首板日期", "次板日期", "间隔天数", "次日涨幅", "量比"
     ])
 
-    get_double_limit_text(result_df, limit_up_stocks)
+    # get_double_limit_text(result_df, limit_up_stocks)
 
-    # get_double_limit_excel(result_df)
+    get_double_limit_excel(result_df)
 
     # calculate_probability(break_results)

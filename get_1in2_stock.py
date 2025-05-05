@@ -242,7 +242,7 @@ def format_limit_time(time_str):
         return "09:25:00"
 
 
-isBackTest = True
+isBackTest = False
 
 if __name__ == '__main__':
     # 获取当日涨停数据（新增）
@@ -304,7 +304,7 @@ if __name__ == '__main__':
     print("\n\033[1m===== 今日涨停统计 =====\033[0m")
     print(f"涨停总数：\033[31m{len(limit_up_stocks)}\033[0m只")
     # 按涨停时间排序
-    # sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
+    sorted_stocks = sorted(limit_up_stocks, key=lambda x: zt_time_map.get(re.sub(r'\D', '', x[0]), '09:25:00'))
 
     # 按百日溢价率降序排序
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[2], reverse=True)  # x[2]对应premium_rate
@@ -313,7 +313,7 @@ if __name__ == '__main__':
     # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[3], reverse=True)  # x[3]对应continuation_rate
 
     # 纯炸板次数排序（降序）
-    sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[7], reverse=True)  # [2,5](@ref)
+    # sorted_stocks = sorted(limit_up_stocks, key=lambda x: x[7], reverse=True)  # [2,5](@ref)
 
     for code, name, premium_rate, continuation_rate, today_change, auction_ret, recent_limit, zb_count in sorted_stocks:
         clean_code = re.sub(r'\D', '', code)  # 移除非数字字符
