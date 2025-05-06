@@ -250,7 +250,7 @@ if __name__ == '__main__':
     today_str = today.strftime("%Y%m%d")
     yesterday = today - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
-    # yesterday_str = yesterday.strftime("20250425")
+    # yesterday_str = yesterday.strftime("20250430")
 
     if isBackTest:
         zt_df = ak.stock_zt_pool_em(date=yesterday_str)

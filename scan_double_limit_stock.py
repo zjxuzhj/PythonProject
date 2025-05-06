@@ -118,7 +118,7 @@ if __name__ == '__main__':
                 continue
 
             # 调用新检测函数
-            matched = check_recent_limit_up(code, df, check_five_day_line=True)
+            matched = check_recent_limit_up(code, df, check_five_day_line=False)
             if matched:
                 limit_up_stocks.extend(matched)
 
