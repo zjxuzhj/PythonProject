@@ -145,7 +145,7 @@ if __name__ == '__main__':
         days_groups[delta_days].append(stock)
 
     # 按天数排序（网页3排序方法）
-    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=True)
+    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
     # 修改后的输出部分代码（替换原tabulate部分）
     headers = ["股票代码", "股票名称", "最近涨停日"]
