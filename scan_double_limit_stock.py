@@ -3,6 +3,24 @@ from datetime import datetime, timedelta
 import pandas as pd
 import getAllStockCsv
 
+
+def calculate_limit_count(df, days, market_type):
+    """基于最后N条数据计算涨停次数（强制模式）"""
+    if df.empty or days <= 0:
+        return 0
+
+    # 直接截取最后N条数据（网页1/2的核心方法）
+    df_slice = df.tail(days).copy()
+
+    # 计算涨停价（需处理首行prev_close为NaN的情况）
+    df_slice['prev_close'] = df_slice['close'].shift(1)
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+    df_slice['limit_price'] = (df_slice['prev_close'] * (1 + limit_rate)).round(2)
+
+    # 筛选有效数据（排除首行因shift导致的NaN）
+    valid_df = df_slice[df_slice['prev_close'].notna()]
+    return (valid_df['close'] >= valid_df['limit_price']).sum()
+
 def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
     """检测最近days个交易日内是否有涨停且后续收盘价达标"""
     # 获取市场类型
@@ -25,6 +43,7 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
     # 识别涨停日
     recent_df['prev_close'] = recent_df['close'].shift(1)
     recent_df['limit_price'] = (recent_df['prev_close'] * (1 + limit_rate)).round(2)
+    recent_df['5ma'] = recent_df['close'].rolling(5, min_periods=5).mean()
     limit_days = recent_df[recent_df['close'] >= recent_df['limit_price']].index.tolist()
 
     for ld in limit_days:
@@ -42,7 +61,8 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
             continue  # 跳过无后续数据的交易日
         subsequent_df['5ma'] = subsequent_df['close'].rolling(5, min_periods=1).mean()
         last_close = subsequent_df.iloc[-1]['close']
-        last_5ma = subsequent_df.iloc[-1]['5ma']
+        last_date = subsequent_df.index[-1]  # 获取最后一个有效日期
+        last_5ma = recent_df.loc[last_date, '5ma']  # 从完整序列中取对应日期的5日均线
 
         if check_five_day_line:  # True时保留五日线上方的股票
             if last_close <= last_5ma:
@@ -115,6 +135,16 @@ if __name__ == '__main__':
         try:
             df, _ = get_stock_data(code, start_date=start_date)
             if df.empty:
+                continue
+
+            # 判断市场类型（网页8阈值逻辑）
+            market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(
+                ("300", "301")) else "主板"
+
+            # 计算最近5天涨停次数（网页1核心逻辑）
+            limit_count = calculate_limit_count(df, days=5, market_type=market)
+            if limit_count >= 2:  # 网页5过滤条件
+                print(f"跳过{name}({code}): 五天内涨停{limit_count}次")
                 continue
 
             # 调用新检测函数
