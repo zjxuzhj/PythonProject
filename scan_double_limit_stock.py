@@ -4,6 +4,23 @@ import pandas as pd
 import getAllStockCsv
 
 
+def calculate_down_limit_count(df, days, market_type):
+    """计算最近days个交易日内跌停次数"""
+    if df.empty or days <= 0:
+        return 0
+
+    # 截取最后N条数据（同网页1/2逻辑）
+    df_slice = df.tail(days).copy()
+
+    # 计算跌停价（注意创业板/科创板规则）
+    down_limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+    df_slice['prev_close'] = df_slice['close'].shift(1)
+    df_slice['down_limit_price'] = (df_slice['prev_close'] * (1 - down_limit_rate)).round(2)
+
+    # 筛选有效数据
+    valid_df = df_slice[df_slice['prev_close'].notna()]
+    return (valid_df['close'] <= valid_df['down_limit_price']).sum()
+
 def calculate_limit_count(df, days, market_type):
     """基于最后N条数据计算涨停次数（强制模式）"""
     if df.empty or days <= 0:
@@ -140,6 +157,12 @@ if __name__ == '__main__':
             # 判断市场类型（网页8阈值逻辑）
             market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(
                 ("300", "301")) else "主板"
+
+            # 检查最近6日跌停情况（网页4/5的跌停判断逻辑）
+            down_limit_count = calculate_down_limit_count(df, days=6, market_type=market)
+            if down_limit_count > 0:
+                print(f"排除{name}({code}): 六天内出现{down_limit_count}次跌停")
+                continue
 
             # 计算最近5天涨停次数（网页1核心逻辑）
             limit_count = calculate_limit_count(df, days=5, market_type=market)
