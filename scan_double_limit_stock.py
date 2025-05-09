@@ -1,6 +1,8 @@
 import os
 from datetime import datetime, timedelta
+
 import pandas as pd
+
 import getAllStockCsv
 
 
@@ -21,6 +23,7 @@ def calculate_down_limit_count(df, days, market_type):
     valid_df = df_slice[df_slice['prev_close'].notna()]
     return (valid_df['close'] <= valid_df['down_limit_price']).sum()
 
+
 def calculate_limit_count(df, days, market_type):
     """基于最后N条数据计算涨停次数（强制模式）"""
     if df.empty or days <= 0:
@@ -37,6 +40,7 @@ def calculate_limit_count(df, days, market_type):
     # 筛选有效数据（排除首行因shift导致的NaN）
     valid_df = df_slice[df_slice['prev_close'].notna()]
     return (valid_df['close'] >= valid_df['limit_price']).sum()
+
 
 def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
     """检测最近days个交易日内是否有涨停且后续收盘价达标"""
@@ -99,8 +103,8 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
 
         # 判断条件
         if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-        # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
-        # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
+            # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
+            # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks
@@ -173,7 +177,19 @@ if __name__ == '__main__':
             # 调用新检测函数
             matched = check_recent_limit_up(code, df, check_five_day_line=True)
             if matched:
-                limit_up_stocks.extend(matched)
+                symbol = ('sh' + code if code.startswith(('6', '9', '688', '689'))
+                          else 'sz' + code if code.startswith(('0', '3', '300', '301'))
+                else code)
+                # 获取行业信息（含异常处理）
+                try:
+                    industry = query_tool.get_stock_industry(symbol) or "未知行业"
+                except:
+                    industry = "行业获取失败"
+                for item in matched:
+                    code, name, date = item
+                    limit_up_stocks.append((code, name, date, industry))
+
+                # limit_up_stocks.extend(matched)
 
 
         except Exception as e:
@@ -188,7 +204,7 @@ if __name__ == '__main__':
 
     for stock in limit_up_stocks:
         # 提取日期并转换为日期对象
-        code, name, limit_date = stock
+        code, name, limit_date, industry = stock
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
 
@@ -201,20 +217,24 @@ if __name__ == '__main__':
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
     # 修改后的输出部分代码（替换原tabulate部分）
-    headers = ["股票代码", "股票名称", "最近涨停日"]
-    col_widths = [12, 16, 14]  # 列宽定义（单位：字符）
+    headers = ["股票代码", "股票名称", "最近涨停日", "所属行业"]
+    col_widths = [12, 16, 14, 20]  # 第四列宽度设为20
 
     for delta, stocks in sorted_days:
         # 打印数据行
         for stock in stocks:
-            code, name, date = stock
+            code, name, date, industry = stock
             # 动态调整名称显示长度（网页3/8方案）
             truncated_name = (name[:6] + "..") if len(name) > 8 else name.ljust(8)
+            truncated_industry = (industry[:8] + "..") if len(industry) > 10 else industry.ljust(10)
 
             # 构建带对齐的输出行（网页5/7建议）
-            line = f"{code.ljust(col_widths[0])}" \
-                   f"{truncated_name.ljust(col_widths[1])}" \
-                   f"{date.center(col_widths[2])}"
+            line = (
+                f"{code.ljust(col_widths[0])}"
+                f"{truncated_name.ljust(col_widths[1])}"
+                f"{date.center(col_widths[2])}"
+                f"{truncated_industry.ljust(col_widths[3])}"  # 索引3已正确定义
+            )
 
             print(line)
 
