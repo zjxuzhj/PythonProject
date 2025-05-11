@@ -93,25 +93,25 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             if current_close < base_price:
                 price_valid = False
                 break
-            # if current_close > base_price * 1.07:
+            # if current_close > base_price * 1.04:
             #     price_valid = False
-            #     print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价6%")
+            #     print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价4%")
             #     break
 
         if not price_valid:
             continue  # 存在跌破阈值日则跳过
 
-        # ================ 新增条件1：前6日无跌停 ================
-        # 获取当前日的前6个交易日范围
-        # start_check_idx = max(0, start_idx + offset - 6)
+        # # ================ 新增条件1：前5日无跌停 ================
+        # # 获取当前日的前5个交易日范围
+        # start_check_idx = max(0, start_idx + offset - 5)
         # check_period = df.iloc[start_check_idx: start_idx + offset]
         # # 检查是否存在跌停(收盘价<=跌停价)
         # has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
         # if has_down_limit:
         #     continue
-
-        # ================ 新增条件2：前5日涨停次数≤1 ================
-        # 获取当前日的前5个交易日范围
+        #
+        # # ================ 新增条件2：前6日涨停次数≤1 ================
+        # # 获取当前日的前6个交易日范围
         # start_limit_check = max(0, start_idx + offset - 6)
         # limit_check_period = df.iloc[start_limit_check: start_idx + offset]
         # # 统计涨停次数(排除首板日自身)
