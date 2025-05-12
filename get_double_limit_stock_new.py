@@ -17,6 +17,8 @@ def get_stock_data(symbol, start_date, force_update=False):
     if not force_update and os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
+            # df['vol_ma5'] = df['volume'].rolling(5).mean()
+            # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
             print(f"从缓存加载数据：{symbol}")
             return df, True  # 返回缓存标记
         except Exception as e:
@@ -175,6 +177,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             # current_data['close'] >= base_price,  # 收盘收复
             # current_data['close'] < current_data['limit_price'],  # 非涨停收盘
             # (current_data['close'] - current_data['prev_close']) / current_data['prev_close'] <= 0.05,  # 当日涨幅≤5%
+            # current_data['volume_ratio'] < 0.7,
             price_valid,  # 新增价格校验
             # ma5_valid
         ]):
@@ -195,7 +198,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     sell_data['close'] < buy_price * 0.97,  # 原基于买入价的止损跌破3%
                     # sell_data['close'] < base_price * 0.97,  # 新基于首板收盘价的止损
                     sell_data['close'] >= sell_data['limit_price'],  # 涨停卖出
-                    (sell_data['close'] - buy_price) / buy_price >= 0.10,  # 盈利10%
+                    (sell_data['close'] - buy_price) / buy_price >= 0.15,  # 盈利10%
                     hold_days == 5  # 最大持有
                 ]):
                     sell_price = sell_data['close']
