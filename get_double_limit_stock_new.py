@@ -29,25 +29,18 @@ def get_stock_data(symbol, start_date, force_update=False):
 
 def find_first_limit_up(symbol, df):
     """识别首板涨停日并排除连板"""
-    # 获取市场类型及涨停规则[3,5](@ref)
     market_type = "科创板" if symbol.startswith(("688", "689")) else "创业板" if symbol.startswith(
         ("300", "301")) else "主板"
     limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
-
-    # 计算涨停价[4](@ref)
+    # 计算涨停价
     df['prev_close'] = df['close'].shift(1)
     df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
-
-    # 识别涨停日[5](@ref)
+    # 识别涨停日
     limit_days = df[df['close'] >= df['limit_price']].index.tolist()
 
-    # 筛选首板(前30日无涨停)[2,4](@ref)
     valid_days = []
     for day in limit_days:
-        prev_30 = df[df.index < day].tail(30)
-        if not prev_30[prev_30['close'] >= prev_30['limit_price']].empty:
-            continue
-        # 排除连板(次日不涨停)[2](@ref)
+        # 排除连板(次日不涨停)
         next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
         if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
             continue
@@ -56,7 +49,7 @@ def find_first_limit_up(symbol, df):
         if day < pd.Timestamp('2024-03-01'):
             continue
 
-        # # 新增：前五日累计涨幅校验[1,2](@ref)
+        # # 新增：前五日累计涨幅校验
         # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
         #     pre5_start = df.index[df.index.get_loc(day) - 5]
         #     pre5_close = df.loc[pre5_start, 'close']
@@ -70,41 +63,61 @@ def find_first_limit_up(symbol, df):
 def generate_signals(df, first_limit_day, stock_code, stock_name):
     """生成买卖信号"""
     signals = []
-    base_close = df.loc[first_limit_day, 'close'] # 首板收盘价
-    min_price_threshold = base_close * 0.97  # 最低允许价格[6](@ref)
+    market_type = "科创板" if stock_code.startswith(("688", "689")) else "创业板" if stock_code.startswith(
+        ("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
 
-    # 首板次日需收盘不破首板价[3](@ref)
+    base_price = df.loc[first_limit_day, 'close'] # 首板收盘价，最重要的位置，表示主力的支撑度
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 新增跌停价字段
+    min_price_threshold = base_price * 0.97  # 最低允许价格[6](@ref)
+
     start_idx = df.index.get_loc(first_limit_day)
-    if (start_idx + 1) >= len(df):  # 新增边界检查[3,5](@ref)
-        return signals  # 跳过无效情况
+    if (start_idx + 1) >= len(df):  # 新增边界检查，跳过无数据的情况
+        return signals
     day1 = df.index[start_idx + 1]
-    if df.loc[day1, 'close'] < base_close:
+    if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
         return signals
 
     df['ma55'] = df['close'].rolling(60).mean()
     df['ma30'] = df['close'].rolling(30).mean()
     df['ma5'] = df['close'].rolling(5).mean()
 
-    # 遍历后八日[7](@ref)
-    for offset in range(2, 6):  # 首板后第2-9日(共8日)
+    for offset in range(2, 6):  # 首板后第2-6日(共4日，不包括6)
         if start_idx + offset >= len(df):
             break
         current_day = df.index[start_idx + offset]
-
-        # 新增：检查首板次日至买入前一日的收盘价
+        # 检查首板次日至买入前一日的收盘价
         price_valid = True
         for check_day in range(start_idx + 1, start_idx + offset):  # 遍历中间交易日
             current_close = df.iloc[check_day]['close']
-            if current_close < base_close:
+            if current_close < base_price:
                 price_valid = False
                 break
-            if current_close > base_close * 1.07:
-                price_valid = False
-                print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价6%")
-                break
+            # if current_close > base_price * 1.04:
+            #     price_valid = False
+            #     print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价4%")
+            #     break
 
         if not price_valid:
             continue  # 存在跌破阈值日则跳过
+
+        # # ================ 新增条件1：前5日无跌停 ================
+        # # 获取当前日的前5个交易日范围
+        # start_check_idx = max(0, start_idx + offset - 5)
+        # check_period = df.iloc[start_check_idx: start_idx + offset]
+        # # 检查是否存在跌停(收盘价<=跌停价)
+        # has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
+        # if has_down_limit:
+        #     continue
+        #
+        # # ================ 新增条件2：前6日涨停次数≤1 ================
+        # # 获取当前日的前6个交易日范围
+        # start_limit_check = max(0, start_idx + offset - 6)
+        # limit_check_period = df.iloc[start_limit_check: start_idx + offset]
+        # # 统计涨停次数(排除首板日自身)
+        # limit_count = (limit_check_period['close'] >= limit_check_period['limit_price']).sum()
+        # if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
+        #     continue
 
         # 新增55日线压制校验(网页6)
         # ma55_valid = True
@@ -158,18 +171,18 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         # 买入条件：盘中破首板价但收盘收复[3](@ref)
         if all([
-            current_data['low'] < base_close,  # 盘中破首板价
-            current_data['close'] >= base_close,  # 收盘收复
-            current_data['close'] < current_data['limit_price'],  # 新增:非涨停收盘(网页3)
-            (current_data['close'] - current_data['prev_close']) / current_data['prev_close'] <= 0.05,  # 新增:当日涨幅≤5%
-            price_valid,  # 新增价格校验[6](@ref)
+            # current_data['low'] < base_price,  # 盘中破首板价
+            # current_data['close'] >= base_price,  # 收盘收复
+            # current_data['close'] < current_data['limit_price'],  # 非涨停收盘
+            # (current_data['close'] - current_data['prev_close']) / current_data['prev_close'] <= 0.05,  # 当日涨幅≤5%
+            price_valid,  # 新增价格校验
             # ma5_valid
         ]):
             buy_price = current_data['close']
             sell_info = None
             hold_days = 0
 
-            # 卖出条件监测[7,11](@ref)
+            # 卖出条件监测
             for sell_offset in range(1, 6):  # 最多持有5日
                 if start_idx + offset + sell_offset >= len(df):
                     break
@@ -180,8 +193,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 # 触发卖出条件
                 if any([
                     sell_data['close'] < buy_price * 0.97,  # 原基于买入价的止损跌破3%
-                    # sell_data['close'] < base_close * 0.97,  # 新基于首板收盘价的止损
-                    sell_data['close'] >= sell_data['limit_price'],  # 涨停卖出[7](@ref)
+                    # sell_data['close'] < base_price * 0.97,  # 新基于首板收盘价的止损
+                    sell_data['close'] >= sell_data['limit_price'],  # 涨停卖出
                     (sell_data['close'] - buy_price) / buy_price >= 0.10,  # 盈利10%
                     hold_days == 5  # 最大持有
                 ]):
@@ -212,7 +225,7 @@ def save_trades_excel(result_df):
     excel_name = f"首板交易记录_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
     # 创建带格式的Excel写入器[7](@ref)
-    with pd.ExcelWriter(excel_name, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(excel_name, engine='xlsxwriter',engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
         # 写入原始数据
         result_df.to_excel(writer, sheet_name='交易明细', index=False)
 

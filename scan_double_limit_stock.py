@@ -163,7 +163,7 @@ if __name__ == '__main__':
                 ("300", "301")) else "主板"
 
             # 检查最近6日跌停情况（网页4/5的跌停判断逻辑）
-            down_limit_count = calculate_down_limit_count(df, days=6, market_type=market)
+            down_limit_count = calculate_down_limit_count(df, days=5, market_type=market)
             if down_limit_count > 0:
                 print(f"排除{name}({code}): 六天内出现{down_limit_count}次跌停")
                 continue
@@ -175,7 +175,7 @@ if __name__ == '__main__':
                 continue
 
             # 调用新检测函数
-            matched = check_recent_limit_up(code, df, check_five_day_line=True)
+            matched = check_recent_limit_up(code, df, check_five_day_line=False)
             if matched:
                 symbol = ('sh' + code if code.startswith(('6', '9', '688', '689'))
                           else 'sz' + code if code.startswith(('0', '3', '300', '301'))
