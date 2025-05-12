@@ -175,7 +175,7 @@ if __name__ == '__main__':
                 continue
 
             # 调用新检测函数
-            matched = check_recent_limit_up(code, df, check_five_day_line=False)
+            matched = check_recent_limit_up(code, df, check_five_day_line=True)
             if matched:
                 symbol = ('sh' + code if code.startswith(('6', '9', '688', '689'))
                           else 'sz' + code if code.startswith(('0', '3', '300', '301'))
