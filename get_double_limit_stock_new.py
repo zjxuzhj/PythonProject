@@ -17,8 +17,8 @@ def get_stock_data(symbol, start_date, force_update=False):
     if not force_update and os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
-            # df['vol_ma5'] = df['volume'].rolling(5).mean()
-            # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
+            df['vol_ma5'] = df['volume'].rolling(5).mean()
+            df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
             print(f"从缓存加载数据：{symbol}")
             return df, True  # 返回缓存标记
         except Exception as e:
@@ -95,31 +95,31 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             if current_close < base_price:
                 price_valid = False
                 break
-            # if current_close > base_price * 1.04:
-            #     price_valid = False
-            #     print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价4%")
-            #     break
+            if current_close > base_price * 1.04:
+                price_valid = False
+                print(f"排除：{stock_code} 在 {df.index[check_day].strftime('%Y-%m-%d')} 收盘价超过首板价4%")
+                break
 
         if not price_valid:
             continue  # 存在跌破阈值日则跳过
 
-        # # ================ 新增条件1：前5日无跌停 ================
-        # # 获取当前日的前5个交易日范围
-        # start_check_idx = max(0, start_idx + offset - 5)
-        # check_period = df.iloc[start_check_idx: start_idx + offset]
-        # # 检查是否存在跌停(收盘价<=跌停价)
-        # has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
-        # if has_down_limit:
-        #     continue
-        #
-        # # ================ 新增条件2：前6日涨停次数≤1 ================
-        # # 获取当前日的前6个交易日范围
-        # start_limit_check = max(0, start_idx + offset - 6)
-        # limit_check_period = df.iloc[start_limit_check: start_idx + offset]
-        # # 统计涨停次数(排除首板日自身)
-        # limit_count = (limit_check_period['close'] >= limit_check_period['limit_price']).sum()
-        # if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
-        #     continue
+        # ================ 新增条件1：前5日无跌停 ================
+        # 获取当前日的前5个交易日范围
+        start_check_idx = max(0, start_idx + offset - 5)
+        check_period = df.iloc[start_check_idx: start_idx + offset]
+        # 检查是否存在跌停(收盘价<=跌停价)
+        has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
+        if has_down_limit:
+            continue
+
+        # ================ 新增条件2：前6日涨停次数≤1 ================
+        # 获取当前日的前6个交易日范围
+        start_limit_check = max(0, start_idx + offset - 6)
+        limit_check_period = df.iloc[start_limit_check: start_idx + offset]
+        # 统计涨停次数(排除首板日自身)
+        limit_count = (limit_check_period['close'] >= limit_check_period['limit_price']).sum()
+        if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
+            continue
 
         # 新增55日线压制校验(网页6)
         # ma55_valid = True
@@ -177,7 +177,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             # current_data['close'] >= base_price,  # 收盘收复
             # current_data['close'] < current_data['limit_price'],  # 非涨停收盘
             # (current_data['close'] - current_data['prev_close']) / current_data['prev_close'] <= 0.05,  # 当日涨幅≤5%
-            # current_data['volume_ratio'] < 0.7,
+            current_data['volume_ratio'] < 0.7,
             price_valid,  # 新增价格校验
             # ma5_valid
         ]):
