@@ -17,8 +17,6 @@ def get_stock_data(symbol, start_date, force_update=False):
     if not force_update and os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
-            # df['vol_ma5'] = df['volume'].rolling(5).mean()
-            # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
             print(f"从缓存加载数据：{symbol}")
             return df, True  # 返回缓存标记
         except Exception as e:
@@ -51,13 +49,6 @@ def find_first_limit_up(symbol, df):
         if day < pd.Timestamp('2024-03-01'):
             continue
 
-        # # 新增：前五日累计涨幅校验
-        # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-        #     pre5_start = df.index[df.index.get_loc(day) - 5]
-        #     pre5_close = df.loc[pre5_start, 'close']
-        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-        #     if total_change <= 15:  # 累计涨幅≥5%则排除
-        #         continue
         valid_days.append(day)
     return valid_days
 
@@ -81,12 +72,12 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     if buy_data['volume'] < limit_volume * 2:
         return signals
 
-    # 条件2：小阳线（涨幅2%-4.5%）
+    # # 条件2：小阳线（涨幅2%-4.5%）
     price_change = (buy_data['close'] - buy_data['prev_close']) / buy_data['prev_close'] * 100
-    if not (1.5 <= price_change <= 4.5):
+    if not (0 <= price_change):
         return signals
-
-    # 条件3：光头或短上影线（上影线≤实体长度1/10）
+    #
+    # # 条件3：光头或短上影线（上影线≤实体长度1/10）
     body = buy_data['close'] - buy_data['open']
     upper_shadow = buy_data['high'] - buy_data['close']
     if upper_shadow > abs(body) * 0.15:

@@ -281,8 +281,8 @@ if __name__ == '__main__':
 
         # 执行涨停判断（网页2）
         if is_first_limit_up(code, df, query_tool, isBackTest):
-            premium_rate = calculate_premium_rate(code, df, days=100, method='open')
-            continuation_rate = calculate_continuation_rate(code, df)
+            premium_rate = calculate_premium_rate(code, df, days=200, method='open')
+            continuation_rate = calculate_continuation_rate(code, df,days=200)
             today_change = calculate_today_change(df)
             auction_ret = calculate_auction_return(df)
             # 新增20日涨停次数统计
