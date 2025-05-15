@@ -103,7 +103,7 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
 
         # 判断条件
         if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-            # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
+        # if not subsequent_df.empty and (subsequent_df['close'] > open_price).all():
             # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
