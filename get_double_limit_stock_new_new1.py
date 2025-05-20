@@ -52,12 +52,12 @@ def find_first_limit_up(symbol, df):
             continue
 
         # # 新增：前五日累计涨幅校验
-        # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-        #     pre5_start = df.index[df.index.get_loc(day) - 5]
-        #     pre5_close = df.loc[pre5_start, 'close']
-        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-        #     if total_change <= 15:  # 累计涨幅≥5%则排除
-        #         continue
+        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 10:  # 累计涨幅≥5%则排除
+                continue
         valid_days.append(day)
     return valid_days
 
@@ -83,6 +83,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     df['ma55'] = df['close'].rolling(60).mean()
     df['ma30'] = df['close'].rolling(30).mean()
     df['ma5'] = df['close'].rolling(5).mean()
+
+    first_touch_flag = False
 
     for offset in range(1, 10):  # 最多检查20个交易日
         if start_idx + offset >= len(df):
@@ -115,10 +117,20 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             continue
 
         # 核心条件：当日最低价触碰五日均线（网页3][网页4]策略）
-        if (current_data['low'] <= current_data['ma5']) and \
-                (current_data['close'] > current_data['ma5']):  # 收盘收复均线
+        # if (current_data['low'] <= current_data['ma5']) and \
+        #         (current_data['close'] > current_data['ma5']):  # 收盘收复均线
+        touch_condition = (current_data['low'] <= current_data['ma5']) & \
+                          (current_data['close'] >= current_data['ma5'])
+        # touch_condition = (current_data['low'] <= current_data['ma5']) & \
+        #                   (current_data['high'] >= current_data['ma5'])
 
-            buy_price = current_data['close']  # 以五日均线值为买入价
+        history_window = df.iloc[start_idx + 1: start_idx + offset]
+        history_condition = (history_window['close'] > history_window['ma5']).all()
+
+        if not first_touch_flag and touch_condition and history_condition:
+            first_touch_flag = True  # 标记首次触碰
+
+            buy_price = current_data['ma5']  # 以五日均线值为买入价
             hold_days = 0
 
             # 卖出逻辑（保持原有逻辑）
