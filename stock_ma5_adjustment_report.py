@@ -26,24 +26,28 @@ def get_stock_data(symbol, start_date, force_update=False):
     return pd.DataFrame()
 
 
-def modify_last_days_and_calc_ma5(df, two_days_mode=False):
-    """参数说明：
-    two_days_mode : bool (默认False)
-        是否启用双日模式（修改最后两日数据）
-    """
-    # 数据校验（参考网页6的参数校验思想[6](@ref)）
-    if df.empty or len(df) < (2 if two_days_mode else 1):
-        raise ValueError(f"数据不足，至少需要{2 if two_days_mode else 1}个交易日数据")
+def modify_last_days_and_calc_ma5(df, tomorrow_mode=False):
+    # 数据校验
+    if df.empty or len(df) < (2 if tomorrow_mode else 1):
+        raise ValueError(f"数据不足，至少需要{2 if tomorrow_mode else 1}个交易日数据")
 
     modified_df = df.copy().sort_index(ascending=True)
+    modified_df['adjusted_close'] = modified_df['close']
 
-    # 🌟 动态修改天数（网页8的可变参数思想[8](@ref)）
-    days_to_modify = 2 if two_days_mode else 1
+    if tomorrow_mode:
+        # === 步骤1：新增模拟数据行 ===
+        # 复制最后一行并调整收盘价（网页1的行操作）
+        new_row = modified_df.iloc[-1].copy()
+        new_row['close'] *= 1.03
+        new_row.name = new_row.name + pd.Timedelta(days=1)  # 日期顺延一日
+        # 添加新行（网页3的DataFrame扩展）
+        modified_df = pd.concat([modified_df, new_row.to_frame().T], axis=0)
 
-    # 倒序修改最后N日数据（网页4的滚动计算思想[4](@ref)）
-    for i in range(1, days_to_modify + 1):
-        close_col = modified_df.columns.get_loc('close')
-        modified_df.iloc[-i, close_col] = modified_df['close'].iloc[-i] * 1.03
+    if not tomorrow_mode:
+        # 倒序修改最后1日数据
+        for i in range(1, 2):
+            close_col = modified_df.columns.get_loc('close')
+            modified_df.iloc[-i, close_col] = modified_df['close'].iloc[-i] * 1.03
 
     # 计算MA5（网页2的rolling方法[2](@ref)）
     modified_df['MA5'] = modified_df['close'].rolling(
@@ -53,6 +57,7 @@ def modify_last_days_and_calc_ma5(df, two_days_mode=False):
 
     return modified_df
 
+
 if __name__ == '__main__':
     today = datetime.now()
     start_date = '20240201'
@@ -61,22 +66,22 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = {'sz000605', 'sh600397', 'sz002730'}
-    two_days_mode=True
+    target_stocks = ['sh603693', 'sz002465', 'sz002570', 'sz002292', 'sh603725', 'sh600699']
+    tomorrow_mode = True
 
     all_signals = []
-    for idx, (code, name) in enumerate(stock_list, 1):
-        if code not in target_stocks:
-            continue  # 跳过非目标股票
+    for code in target_stocks:
+        # 从stock_list中匹配名称
+        name = next((n for c, n in stock_list if c == code), '未知股票')
 
         df, _ = get_stock_data(code, start_date=start_date)
         if df.empty:
             continue
 
-        modified_df = modify_last_days_and_calc_ma5(df, two_days_mode=two_days_mode)
+        modified_df = modify_last_days_and_calc_ma5(df, tomorrow_mode=tomorrow_mode)
 
         # 获取最新MA5值
-        latest_data = modified_df.iloc[- (2 if two_days_mode else 1):]
+        latest_data = modified_df.iloc[- 1:]
 
         # 记录信号
         all_signals.append({
@@ -85,7 +90,7 @@ if __name__ == '__main__':
             '最新收盘': latest_data['close'].values[-1],
             'MA5': modified_df['MA5'].iloc[-1],
             # 🌟 新增双日模式特有字段（网页1的条件判断[1](@ref)）
-            **({'前日收盘': latest_data['close'].values[-2]} if two_days_mode else {})
+            **({'昨日收盘': modified_df.iloc[-2]['close']} if tomorrow_mode else {})
         })
 
     if len(all_signals) > 0:
