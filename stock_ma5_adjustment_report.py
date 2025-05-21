@@ -26,24 +26,32 @@ def get_stock_data(symbol, start_date, force_update=False):
     return pd.DataFrame()
 
 
-def modify_last_day_and_calc_ma5(df):
-    """修改最后一日为3%涨幅并计算五日线"""
-    if df.empty or len(df) < 1:
-        return df
-    # 深拷贝避免污染原始数据
-    modified_df = df.copy()
-    # 按日期排序确保最后一行是最新数据（网页7关键步骤）
-    modified_df.sort_index(ascending=True, inplace=True)
-    # 获取最后交易日的收盘价（网页6数据操作）
-    last_close = modified_df['close'].iloc[-1]
-    # 计算3%涨幅后的新收盘价（网页2数值计算）
-    new_close = round(last_close * 1.03, 2)
-    # 修改最后一行数据（网页1的replace高级用法）
-    modified_df.iloc[-1, modified_df.columns.get_loc('close')] = new_close
-    # 计算五日移动平均线（网页6、7、8核心方法）
-    modified_df['MA5'] = modified_df['close'].rolling(window=5, min_periods=1).mean()
-    return modified_df
+def modify_last_days_and_calc_ma5(df, two_days_mode=False):
+    """参数说明：
+    two_days_mode : bool (默认False)
+        是否启用双日模式（修改最后两日数据）
+    """
+    # 数据校验（参考网页6的参数校验思想[6](@ref)）
+    if df.empty or len(df) < (2 if two_days_mode else 1):
+        raise ValueError(f"数据不足，至少需要{2 if two_days_mode else 1}个交易日数据")
 
+    modified_df = df.copy().sort_index(ascending=True)
+
+    # 🌟 动态修改天数（网页8的可变参数思想[8](@ref)）
+    days_to_modify = 2 if two_days_mode else 1
+
+    # 倒序修改最后N日数据（网页4的滚动计算思想[4](@ref)）
+    for i in range(1, days_to_modify + 1):
+        close_col = modified_df.columns.get_loc('close')
+        modified_df.iloc[-i, close_col] = modified_df['close'].iloc[-i] * 1.03
+
+    # 计算MA5（网页2的rolling方法[2](@ref)）
+    modified_df['MA5'] = modified_df['close'].rolling(
+        window=5,
+        min_periods=1
+    ).mean().round(2)
+
+    return modified_df
 
 if __name__ == '__main__':
     today = datetime.now()
@@ -53,7 +61,8 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = {'sh605198', 'sh600448', 'sz002730'}
+    target_stocks = {'sz000605', 'sh600397', 'sz002730'}
+    two_days_mode=True
 
     all_signals = []
     for idx, (code, name) in enumerate(stock_list, 1):
@@ -64,17 +73,19 @@ if __name__ == '__main__':
         if df.empty:
             continue
 
-        modified_df = modify_last_day_and_calc_ma5(df)
+        modified_df = modify_last_days_and_calc_ma5(df, two_days_mode=two_days_mode)
 
         # 获取最新MA5值
-        latest_ma5 = modified_df['MA5'].iloc[-1]
+        latest_data = modified_df.iloc[- (2 if two_days_mode else 1):]
 
         # 记录信号
         all_signals.append({
-            '股票代码': code,
-            '股票名称': name,
-            '收盘价': modified_df['close'].iloc[-1],
-            '五日线': round(latest_ma5, 2),
+            '代码': code,
+            '名称': name,
+            '最新收盘': latest_data['close'].values[-1],
+            'MA5': modified_df['MA5'].iloc[-1],
+            # 🌟 新增双日模式特有字段（网页1的条件判断[1](@ref)）
+            **({'前日收盘': latest_data['close'].values[-2]} if two_days_mode else {})
         })
 
     if len(all_signals) > 0:
