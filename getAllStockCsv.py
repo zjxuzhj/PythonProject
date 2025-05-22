@@ -26,8 +26,9 @@ class StockQuery:
         # 新增黑名单过滤
         is_about_to_st = df['clean_code'].isin(self.blacklist['about_to_st'])
         is_bad_shareholder = df['clean_code'].isin(self.blacklist['bad_shareholders'])
+        is_easy_a_kill = df['clean_code'].isin(self.blacklist['easy_a_kill'])
 
-        return df[~is_bse & ~is_st & ~is_about_to_st & ~is_bad_shareholder]
+        return df[~is_bse & ~is_st & ~is_about_to_st & ~is_bad_shareholder & ~is_easy_a_kill]
 
     def __init__(self, auto_update=False):
         """
@@ -53,7 +54,8 @@ class StockQuery:
             'bad_shareholders': {'600107','300379','600200','002329','300237','300010','300052','600187','002360','603517','002055','000546','300311','000683','600576',
                                  '000793','000903','300128','000698','300527','688076','000952','000821','688130','300173','300518','300878','688053','300437','300366',
                                  '300472','603825','301372','300147','300998','002789','600110','000413','603869','002505','000040','601106','300462','300280','300343',
-                                 '688671','300175','600165','000608','002898','688184','600190','000518','600080','002365'}  # 股东劣迹股票代码
+                                 '688671','300175','600165','000608','002898','688184','600190','000518','600080','002365'},  # 股东劣迹股票代码
+            'easy_a_kill': {'000605'}  # 容易A杀的股，少参与
         }
 
     def _init_roe_data(self):
