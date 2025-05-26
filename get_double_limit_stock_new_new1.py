@@ -63,108 +63,188 @@ def find_first_limit_up(symbol, df):
 
 
 def generate_signals(df, first_limit_day, stock_code, stock_name):
-    """生成买卖信号"""
+    """生成买卖信号（含分阶段止盈止损逻辑）"""
     signals = []
     market_type = "科创板" if stock_code.startswith(("688", "689")) else "创业板" if stock_code.startswith(
         ("300", "301")) else "主板"
     limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
 
-    base_price = df.loc[first_limit_day, 'close'] # 首板收盘价，最重要的位置，表示主力的支撑度
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 新增跌停价字段
-    min_price_threshold = base_price * 0.97  # 最低允许价格[6](@ref)
+    base_price = df.loc[first_limit_day, 'close']
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
 
     start_idx = df.index.get_loc(first_limit_day)
-    if (start_idx + 1) >= len(df):  # 新增边界检查，跳过无数据的情况
-        return signals
-    day1 = df.index[start_idx + 1]
-    if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
+    if (start_idx + 1) >= len(df):
         return signals
 
-    df['ma55'] = df['close'].rolling(60).mean()
-    df['ma30'] = df['close'].rolling(30).mean()
+    # 初始化技术指标（网页2][网页5]）
     df['ma5'] = df['close'].rolling(5).mean()
+    df['ma10'] = df['close'].rolling(10).mean()
+    df['vol_ma5'] = df['volume'].rolling(5).mean()
 
     first_touch_flag = False
-
-    for offset in range(1, 10):  # 最多检查20个交易日
+    for offset in range(2, 20):  # 扩展观察期至20个交易日（网页3）
         if start_idx + offset >= len(df):
             break
 
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
 
-        # ================ 新增条件1：前5日无跌停 ================
-        # 获取当前日的前5个交易日范围
-        start_check_idx = max(0, start_idx + offset - 5)
-        check_period = df.iloc[start_check_idx: start_idx + offset]
-        # 检查是否存在跌停(收盘价<=跌停价)
-        has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
-        if has_down_limit:
+        # 有效性校验（网页1][网页4]）
+        if check_invalid_condition(df, start_idx, offset):
             continue
 
-        # ================ 新增条件2：前6日涨停次数≤1 ================
-        # 获取当前日的前6个交易日范围
-        start_limit_check = max(0, start_idx + offset - 6)
-        limit_check_period = df.iloc[start_limit_check: start_idx + offset]
-        # 统计涨停次数(排除首板日自身)
-        limit_count = (limit_check_period['close'] >= limit_check_period['limit_price']).sum()
-        if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
-            continue
+        # 核心触发条件（网页5][网页7]）
+        if (current_data['low'] <= current_data['ma5']) and \
+                (current_data['high'] >= current_data['ma5']) and \
+                (df.iloc[start_idx + 1:start_idx + offset]['close'] > df.iloc[start_idx + 1:start_idx + offset][
+                    'ma5']).all():
 
-        # 获取最近5日MA5数据（防止空值）
-        ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
-        if ma5_data.isnull().any():
-            continue
+            buy_price = round(current_data['ma5'], 2)
+            position_size = 100  # 初始持仓100%
+            half_sold = False
+            exit_flag = False
 
-        # 核心条件：当日最低价触碰五日均线（网页3][网页4]策略）
-        # if (current_data['low'] <= current_data['ma5']) and \
-        #         (current_data['close'] > current_data['ma5']):  # 收盘收复均线
-        touch_condition = (current_data['low'] <= current_data['ma5']) & \
-                          (current_data['close'] >= current_data['ma5'])
-        # touch_condition = (current_data['low'] <= current_data['ma5']) & \
-        #                   (current_data['high'] >= current_data['ma5'])
-
-        history_window = df.iloc[start_idx + 1: start_idx + offset]
-        history_condition = (history_window['close'] > history_window['ma5']).all()
-
-        if not first_touch_flag and touch_condition and history_condition:
-            first_touch_flag = True  # 标记首次触碰
-
-            buy_price = current_data['ma5']  # 以五日均线值为买入价
-            hold_days = 0
-
-            # 卖出逻辑（保持原有逻辑）
-            for sell_offset in range(1, 10):  # 最多持有10日
+            # 持仓监测循环（网页8]）
+            for sell_offset in range(1, 11):  # 最长持有10交易日
                 if start_idx + offset + sell_offset >= len(df):
                     break
 
                 sell_day = df.index[start_idx + offset + sell_offset]
                 sell_data = df.loc[sell_day]
-                hold_days += 1
+                current_close = sell_data['close']
+                current_high = sell_data['high']
 
-                # 触发卖出条件（网页5][网页7]风控逻辑）
-                if any([
-                    sell_data['close'] < buy_price * 0.97,  # 3%止损
-                    (sell_data['close'] - buy_price) / buy_price >= 0.10,  # 10%止盈
-                    hold_days >= 5  # 最大持有5日
-                ]):
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2)
-                    })
+                # ========== 阶段一：盘中超6%卖半仓 ==========
+                if not half_sold and current_high >= buy_price * 1.06:
+                    signals.append(create_signal(
+                        stock_code, stock_name, first_limit_day,
+                        current_day, sell_day, sell_offset,
+                        buy_price, current_close,
+                        position=50,
+                        signal_type='盘中超6%卖半仓'
+                    ))
+                    half_sold = True
+                    position_size = 50  # 剩余仓位调整为50%
+
+                # ========== 阶段二：剩余仓位处理 ==========
+                exit_condition = [
+                    current_close <= buy_price,  # 跌回买入价（网页4]
+                    (current_close - buy_price) / buy_price >= 0.10,  # 收益超10%（网页2]
+                    sell_offset >= 5  # 持有超5日（网页5]
+                ]
+                if any(exit_condition) and half_sold:
+                    signals.append(create_signal(
+                        stock_code, stock_name, first_limit_day,
+                        current_day, sell_day, sell_offset,
+                        buy_price, current_close,
+                        position=position_size,
+                        signal_type='剩余仓位退出'
+                    ))
+                    exit_flag = True
                     break
-            break  # 只取第一次触碰
+
+                # ========== 未触发半仓卖出时的止损逻辑 ==========
+                if not half_sold and current_close <= buy_price * 0.97:
+                    signals.append(create_signal(
+                        stock_code, stock_name, first_limit_day,
+                        current_day, sell_day, sell_offset,
+                        buy_price, current_close,
+                        position=100,
+                        signal_type='3%止损'
+                    ))
+                    exit_flag = True
+                    break
+
+                # 特殊处理：当日跌停强制清仓（网页1]
+                if current_close <= sell_data['down_limit_price']:
+                    signals.append(create_signal(
+                        stock_code, stock_name, first_limit_day,
+                        current_day, sell_day, sell_offset,
+                        buy_price, current_close,
+                        position=position_size,
+                        signal_type='跌停清仓'
+                    ))
+                    exit_flag = True
+                    break
+
+            if exit_flag:
+                break  # 终止外层循环
     return signals
 
+
+def create_signal(code, name, limit_day, buy_day, sell_day, hold_days,
+                  buy_price, sell_price, position, signal_type):
+    """标准化信号生成（新增仓位管理字段）"""
+    return {
+        '股票代码': code,
+        '股票名称': name,
+        '首板日': limit_day.strftime('%Y-%m-%d'),
+        '买入日': buy_day.strftime('%Y-%m-%d'),
+        '卖出日': sell_day.strftime('%Y-%m-%d'),
+        '持有天数': hold_days,
+        '买入价': buy_price,
+        '卖出价': round(sell_price, 2),
+        '仓位比例(%)': position,
+        '操作类型': signal_type,
+        '收益率(%)': round((sell_price / buy_price - 1) * (position / 100) * 100, 2),
+        '交易ID': f"{code}_{buy_day}",  # 增加唯一标识
+    }
+
+
+def check_invalid_condition(df, start_idx, offset):
+    """校验无效交易条件（网页1][网页4]）"""
+    # 前五日跌停检测
+    check_period = df.iloc[max(0, start_idx + offset - 5):start_idx + offset]
+    if (check_period['close'] <= check_period['down_limit_price']).any():
+        return True
+
+    # 前六日涨停次数检测
+    limit_check = df.iloc[max(0, start_idx + offset - 6):start_idx + offset]
+    if (limit_check['close'] >= limit_check['limit_price']).sum() > 1:
+        return True
+
+    # 量能异常检测（网页7]）
+    if df.iloc[start_idx + offset]['volume'] < df.iloc[start_idx + offset]['vol_ma5'] * 0.5:
+        return True
+
+    return False
+
+
+def create_signal(code, name, limit_day, buy_day, sell_day, hold_days,
+                  buy_price, sell_price, position, signal_type):
+    """标准化信号生成"""
+    return {
+        '股票代码': code,
+        '股票名称': name,
+        '首板日': limit_day.strftime('%Y-%m-%d'),
+        '买入日': buy_day.strftime('%Y-%m-%d'),
+        '卖出日': sell_day.strftime('%Y-%m-%d'),
+        '持有天数': hold_days,
+        '买入价': buy_price,
+        '卖出价': round(sell_price, 2),
+        '仓位比例(%)': position,
+        '操作类型': signal_type,
+        '收益率(%)': round((sell_price / buy_price - 1) * (position / 100) * 100, 2)
+    }
+
+
+def check_invalid_condition(df, start_idx, offset):
+    """校验无效交易条件"""
+    # 前五日跌停检测
+    check_period = df.iloc[max(0, start_idx + offset - 5):start_idx + offset]
+    if (check_period['close'] <= check_period['down_limit_price']).any():
+        return True
+
+    # 前六日涨停次数检测
+    limit_check = df.iloc[max(0, start_idx + offset - 6):start_idx + offset]
+    if (limit_check['close'] >= limit_check['limit_price']).sum() > 1:
+        return True
+
+    # 量能异常检测
+    if df.iloc[start_idx + offset]['volume'] < df.iloc[start_idx + offset]['vol_ma5'] * 0.5:
+        return True
+
+    return False
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日',
@@ -269,7 +349,7 @@ if __name__ == '__main__':
             all_signals.extend(signals)
 
     # 生成统计报表[10](@ref)
-    result_df = pd.DataFrame(all_signals)
+    result_df = pd.DataFrame(all_signals).drop_duplicates(subset=['交易ID', '操作类型'])
     if not result_df.empty:
         win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
         avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()

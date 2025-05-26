@@ -66,7 +66,7 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = ['sh603901', 'sz002403', 'sh603693', 'sz002292', 'sz002465']
+    target_stocks = ['sh603949', 'sz002886', 'sh601956', 'sh601069']
     tomorrow_mode = True
 
     all_signals = []
