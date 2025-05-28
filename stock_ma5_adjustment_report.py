@@ -38,7 +38,7 @@ def modify_last_days_and_calc_ma5(df, tomorrow_mode=False):
         # === 步骤1：新增模拟数据行 ===
         # 复制最后一行并调整收盘价（网页1的行操作）
         new_row = modified_df.iloc[-1].copy()
-        new_row['close'] *= 1.05
+        new_row['close'] *= 1.06
         new_row.name = new_row.name + pd.Timedelta(days=1)  # 日期顺延一日
         # 添加新行（网页3的DataFrame扩展）
         modified_df = pd.concat([modified_df, new_row.to_frame().T], axis=0)
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = ['sh603949', 'sz002886', 'sh601956', 'sh601069']
+    target_stocks = ['sh600756', 'sh603076', 'sh603960', 'sz002682','sz000710']
     tomorrow_mode = True
 
     all_signals = []
