@@ -86,7 +86,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     first_touch_flag = False
 
-    for offset in range(1, 10):  # 最多检查20个交易日
+    for offset in range(2, 10):  # 最多检查20个交易日
         if start_idx + offset >= len(df):
             break
 
@@ -187,22 +187,22 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出原因': '断板止盈'  # 新增字段
                     })
                     break
-                if sell_data['close'] < buy_price * 0.97:
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        '卖出原因': '3%止损'
-                    })
-                    break
+                # if sell_data['close'] < buy_price * 0.97:
+                #     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
+                #     signals.append({
+                #         '股票代码': stock_code,
+                #         '股票名称': stock_name,
+                #         '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                #         '买入日': current_day.strftime('%Y-%m-%d'),
+                #         '卖出日': sell_day.strftime('%Y-%m-%d'),
+                #         '持有天数': hold_days,
+                #         '买入价': round(buy_price, 2),
+                #         '卖出价': round(sell_data['close'], 2),
+                #         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                #         '收益率(%)': round(profit_pct, 2),
+                #         '卖出原因': '3%止损'
+                #     })
+                #     break
                 # 3. 原有跌破五日线卖出条件
                 if sell_data['close'] < sell_data['ma5']:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
@@ -271,7 +271,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 #         '买入价': round(buy_price, 2),
                 #         '卖出价': round(sell_data['close'], 2),
                 #         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                #         '收益率(%)': round(profit_pct, 2)
+                #         '收益率(%)': round(profit_pct, 2),
+                #         '卖出原因': '持有超限'
                 #     })
                 #     break
 
