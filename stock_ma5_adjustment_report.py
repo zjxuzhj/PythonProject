@@ -47,7 +47,7 @@ def modify_last_days_and_calc_ma5(df, tomorrow_mode=False):
         # 倒序修改最后1日数据
         for i in range(1, 2):
             close_col = modified_df.columns.get_loc('close')
-            modified_df.iloc[-i, close_col] = modified_df['close'].iloc[-i] * 1.05
+            modified_df.iloc[-i, close_col] = modified_df['close'].iloc[-i] * 1.06
 
     # 计算MA5（网页2的rolling方法[2](@ref)）
     modified_df['MA5'] = modified_df['close'].rolling(
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = ['sh600756', 'sh603076', 'sh603960', 'sz002682','sz000710']
+    target_stocks = ['sh600805', 'sh603506', 'sh603680', 'sz002550', 'sh603767']
     tomorrow_mode = True
 
     all_signals = []
