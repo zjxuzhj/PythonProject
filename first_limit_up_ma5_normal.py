@@ -76,9 +76,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     start_idx = df.index.get_loc(first_limit_day)
     if (start_idx + 1) >= len(df):  # 新增边界检查，跳过无数据的情况
         return signals
-    day1 = df.index[start_idx + 1]
-    if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
-        return signals
+    # day1 = df.index[start_idx + 1]
+    # if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
+    #     return signals
 
     # df['ma55'] = df['close'].rolling(60).mean()
     # df['ma30'] = df['close'].rolling(30).mean()
@@ -111,12 +111,23 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
             continue
 
+        # ===== 新增条件3：买入前收盘价不低于首板收盘价 =====
+        price_condition_met = True
+        for check_offset in range(1, offset):
+            check_day = df.index[start_idx + check_offset]
+            if df.loc[check_day, 'close'] < base_price:
+                price_condition_met = False
+                break
+
+        if not price_condition_met:
+            continue
+
         # 获取最近5日MA5数据（防止空值）
         ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
         if ma5_data.isnull().any():
             continue
 
-        # 核心条件：当日最低价触碰五日均线（网页3][网页4]策略）
+        # 核心条件：当日最低价触碰五日均线
         # if (current_data['low'] <= current_data['ma5']) and \
         #         (current_data['close'] > current_data['ma5']):  # 收盘收复均线
         # touch_condition = (current_data['low'] <= current_data['ma5']) & \
@@ -283,6 +294,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日',
                     '持有天数', '买入价', '卖出价', '收益率(%)','卖出原因']
+    # 按买入日降序排序
+    result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
     """专业级Excel导出函数"""
     # 生成带时间戳的文件名[2,6](@ref)
