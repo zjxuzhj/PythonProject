@@ -55,9 +55,9 @@ def find_first_limit_up(symbol, df):
         if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
             pre5_start = df.index[df.index.get_loc(day) - 5]
             pre5_close = df.loc[pre5_start, 'close']
-            # total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            # if total_change >= 15:  # 累计涨幅≥5%则排除
-            #     continue
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:  # 累计涨幅≥5%则排除
+                continue
         valid_days.append(day)
     return valid_days
 
@@ -352,21 +352,12 @@ def save_trades_excel(result_df):
             ]
         })
         stats_df.to_excel(writer, sheet_name='策略统计', index=False)
-
-        # 6. 添加图表(示例)[4](@ref)
-        chart = workbook.add_chart({'type': 'column'})
-        chart.add_series({
-            'name': '收益率分布',
-            'categories': ['交易明细', 1, 4, len(result_df), 4],  # 买入日列
-            'values': ['交易明细', 1, 6, len(result_df), 6],  # 收益率列
-            'data_labels': {'value': True, 'num_format': '0.00%'}
-        })
-        worksheet.insert_chart('J2', chart)
-
     print(f"\033[32m交易记录已保存至 {excel_name}\033[0m")
 
 
 if __name__ == '__main__':
+    import time  # 确保导入time模块
+    total_start = time.perf_counter()  # 记录程序开始时间
     # 获取当日涨停数据（新增）
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
@@ -384,7 +375,7 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
-
+    stock_process_start = time.perf_counter()
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, start_date=start_date)
         if df.empty:
@@ -394,6 +385,8 @@ if __name__ == '__main__':
         for day in first_limit_days:
             signals = generate_signals(df, day, code, name)
             all_signals.extend(signals)
+
+    stock_process_duration = time.perf_counter() - stock_process_start
 
     # 生成统计报表[10](@ref)
     result_df = pd.DataFrame(all_signals)
@@ -419,4 +412,15 @@ if __name__ == '__main__':
 
     # 在生成result_df后调用
     if not result_df.empty:
-        save_trades_excel(result_df)  # 新增调用
+        save_start = time.perf_counter()  # 记录Excel保存开始时间
+        save_trades_excel(result_df)
+        save_duration = time.perf_counter() - save_start
+        print(f"Excel保存耗时: {save_duration:.4f}秒")
+
+    # 程序总耗时统计
+    total_duration = time.perf_counter() - total_start
+    print(f"\n\033[1m=== 性能统计 ===\033[0m")
+    print(f"总运行时间: {total_duration:.2f}秒")
+    print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
+    print(f"Excel保存时间: {save_duration:.4f}秒")
+    print(f"平均每支股票处理时间: {stock_process_duration/len(stock_list)*1000:.2f}毫秒")
