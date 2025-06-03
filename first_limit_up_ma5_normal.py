@@ -55,9 +55,9 @@ def find_first_limit_up(symbol, df):
         if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
             pre5_start = df.index[df.index.get_loc(day) - 5]
             pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change >= 15:  # 累计涨幅≥5%则排除
-                continue
+            # total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            # if total_change >= 15:  # 累计涨幅≥5%则排除
+            #     continue
         valid_days.append(day)
     return valid_days
 
@@ -158,7 +158,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 prev_day_data = df.loc[prev_day]
                 # 判断前一天是否跌停
                 if prev_day_data['close'] <= prev_day_data['down_limit_price']:
-                    # 第二天开盘价卖出[4](@ref)
+                    # 第二天开盘价卖出
                     sell_price = sell_data['open']
                     profit_pct = (sell_price - buy_price) / buy_price * 100
                     signals.append({
