@@ -4,9 +4,6 @@ import akshare as ak
 import pandas as pd
 
 import util
-import xlsxwriter
-
-
 
 pd.set_option('display.max_rows', None)  # 设置显示无限制行
 pd.set_option('display.max_columns', None)  # 设置显示无限制列
@@ -28,11 +25,11 @@ sleep(3)
 loserDf = ak.stock_zt_pool_dtgc_em(date)
 
 # 今日涨停数
-highestNum=len(df)
+highestNum = len(df)
 # 昨日涨停数
-yesHighestNum=len(yesDf)
+yesHighestNum = len(yesDf)
 # 今日跌停数
-loserNum=len(loserDf)
+loserNum = len(loserDf)
 # 计算增长率
 growth_rate = util.calculate_growth_rate(highestNum, yesHighestNum)
 print(f"今日涨停数比昨天多{growth_rate}%，涨停{highestNum}家，跌停{loserNum}家")
@@ -65,9 +62,6 @@ sorted_temp_df = jj_df.sort_values(by='连板数', ascending=False)
 sorted_temp_df_path = f"./{date}涨停排序.xlsx"
 sorted_temp_df.to_excel(sorted_temp_df_path, engine='xlsxwriter')
 
-
-
-
 # # 创建一个dataframe的副本
 # temp_df = jj_df.copy()
 #
@@ -87,5 +81,3 @@ sorted_temp_df.to_excel(sorted_temp_df_path, engine='xlsxwriter')
 #
 # temp_path = f"./{date}涨停行业排序.xlsx"
 # sorted_industry_df.to_excel(temp_path, engine='xlsxwriter')
-
-

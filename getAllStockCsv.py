@@ -63,7 +63,7 @@ class StockQuery:
         try:
             # 单次读取并预处理
             df = pd.read_csv(
-                "merged_report_2024Q3.csv",
+                self.REPORT_CSV_PATH,
                 dtype={'stock_code': str},  # 强制字符串类型[3](@ref)
                 usecols=['stock_code', '净资产收益率']  # 仅读取必要列[5](@ref)
             )
@@ -79,7 +79,7 @@ class StockQuery:
         """加载行业数据到内存"""
         try:
             df = pd.read_csv(
-                "merged_report_2024Q3.csv",
+                self.REPORT_CSV_PATH,
                 dtype={'stock_code': str},
                 usecols=['stock_code', '所处行业']  # 明确指定需要加载的列
             )
@@ -94,7 +94,7 @@ class StockQuery:
         """加载流通市值数据到内存"""
         try:
             df = pd.read_csv(
-                "merged_report_2024Q3.csv",
+                self.REPORT_CSV_PATH,
                 dtype={'stock_code': str},
                 usecols=['stock_code', '流通市值'],  # 明确指定需要加载的列
                 converters={
