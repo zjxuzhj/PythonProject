@@ -8,8 +8,13 @@ from position_manage.transaction import Transaction
 def add_new_position(portfolio):
     try:
         transactions = [
-            Transaction(datetime(2025, 6, 5), "sz000001", "BUY", 20.2, 1000),
-            Transaction(datetime(2025, 6, 5), "sh600036", "BUY", 20.50, 800)
+            # Transaction(datetime(2025, 5, 28), "sz000710", "BUY", 14.15, 200),
+            Transaction(datetime(2025, 5, 30), "sz002682", "SELL", 4.96, 200),
+            # Transaction(datetime(2025, 5, 29), "sh600756", "BUY", 15.31, 200),
+            # Transaction(datetime(2025, 5, 30), "sh600805", "BUY", 5.36, 1000),
+            # Transaction(datetime(2025, 5, 30), "sh603680", "BUY", 10.64, 400),
+            Transaction(datetime(2025, 6, 3), "sh603767", "SELL", 16.96, 200),
+            # Transaction(datetime(2025, 6, 3), "sz002278", "BUY", 9.12, 400),
         ]
 
         added_count = 0

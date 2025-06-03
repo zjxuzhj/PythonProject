@@ -64,27 +64,33 @@ class Portfolio:
         return None  # 返回None表示获取失败
 
     def get_position_report(self):
-        """生成持仓报表（带异常处理）"""
+        """生成持仓报表（简化版）"""
         try:
-            report = []
+            report_data = []
             for code, pos in self.positions.items():
-                # 跳过已清仓股票
                 if pos.total_shares <= 0:
                     continue
 
-                report.append({
-                    "股票代码": code,
-                    "股票名称": pos.stock_name,
-                    "持仓数量": pos.total_shares,
-                    "平均成本": round(pos.avg_cost, 2),
-                    "持有天数": pos.holding_period(),
-                    "当前价值": self.get_stock_data(code)
-                })
-            return pd.DataFrame(report)
+                current_price = self.get_stock_data(code) or 0
+                cost_price = round(pos.avg_cost, 2)
+                profit_pct = ((current_price - cost_price) / cost_price * 100) if cost_price else 0
 
-        except AttributeError as e:
-            print(f"属性错误: {e}")
-            return pd.DataFrame()
+                report_data.append({
+                    "代码": code,
+                    "名称": pos.stock_name,
+                    "持仓": pos.total_shares,
+                    "成本": cost_price,
+                    "当前价": current_price,
+                    "盈亏%": round(profit_pct, 2),
+                    "持有天数": pos.holding_period(),
+                })
+
+            if not report_data:
+                print("ℹ️ 当前无持仓记录")
+                return None
+
+            return pd.DataFrame(report_data)
+
         except Exception as e:
-            print(f"生成报表失败: {e}")
-            return pd.DataFrame()
+            print(f"❌ 生成报表失败: {e}")
+            return None
