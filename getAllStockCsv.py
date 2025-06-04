@@ -38,6 +38,8 @@ class StockQuery:
         if auto_update or not os.path.exists(self.CSV_PATH):
             self._refresh_data()
 
+        # 初始化时检查并添加theme列
+        self._ensure_theme_column_exists()
         self._load_data()
         self._build_mapping()
         self.roe_cache = None  # 类级缓存
@@ -47,16 +49,35 @@ class StockQuery:
         self.market_value_cache = None  # 新增流通市值缓存
         self._init_market_value_data()  # 新增初始化方法
         self.blacklist = {
-            'about_to_st': {'600243', '002496','600696','003032','300561','000004','002762','603813','001270','002816','002848','002713','002898','600421','000595','600355',
-                            '600636','000518','603261','600753','000668','605081','002214','603268','002529','002305','002253','000820','002693','603389','000929','600130',
-                            '603838','002058','301288','000691','300093','600238','600228','688511','603789','600892','600193','002076','000638','605199','000627','300344',
-                            '002306',},  # 即将ST的股票代码
-            'bad_shareholders': {'600107','300379','600200','002329','300237','300010','300052','600187','002360','603517','002055','000546','300311','000683','600576',
-                                 '000793','000903','300128','000698','300527','688076','000952','000821','688130','300173','300518','300878','688053','300437','300366',
-                                 '300472','603825','301372','300147','300998','002789','600110','000413','603869','002505','000040','601106','300462','300280','300343',
-                                 '688671','300175','600165','000608','002898','688184','600190','000518','600080','002365'},  # 股东劣迹股票代码
+            'about_to_st': {'600243', '002496', '600696', '003032', '300561', '000004', '002762', '603813', '001270',
+                            '002816', '002848', '002713', '002898', '600421', '000595', '600355',
+                            '600636', '000518', '603261', '600753', '000668', '605081', '002214', '603268', '002529',
+                            '002305', '002253', '000820', '002693', '603389', '000929', '600130',
+                            '603838', '002058', '301288', '000691', '300093', '600238', '600228', '688511', '603789',
+                            '600892', '600193', '002076', '000638', '605199', '000627', '300344',
+                            '002306', },  # 即将ST的股票代码
+            'bad_shareholders': {'600107', '300379', '600200', '002329', '300237', '300010', '300052', '600187',
+                                 '002360', '603517', '002055', '000546', '300311', '000683', '600576',
+                                 '000793', '000903', '300128', '000698', '300527', '688076', '000952', '000821',
+                                 '688130', '300173', '300518', '300878', '688053', '300437', '300366',
+                                 '300472', '603825', '301372', '300147', '300998', '002789', '600110', '000413',
+                                 '603869', '002505', '000040', '601106', '300462', '300280', '300343',
+                                 '688671', '300175', '600165', '000608', '002898', '688184', '600190', '000518',
+                                 '600080', '002365'},  # 股东劣迹股票代码
             'easy_a_kill': {'000605'}  # 容易A杀的股，少参与
         }
+
+    def _ensure_theme_column_exists(self):
+        """确保CSV文件包含theme列[1,4](@ref)"""
+        if os.path.exists(self.CSV_PATH):
+            df = pd.read_csv(self.CSV_PATH)
+            if 'theme' not in df.columns:
+                df['theme'] = ''  # 添加空theme列
+                df.to_csv(self.CSV_PATH, index=False)
+        else:
+            # 创建新文件时包含theme列
+            pd.DataFrame(columns=['stock_code', 'stock_name', 'theme']).to_csv(
+                self.CSV_PATH, index=False)
 
     def _init_roe_data(self):
         """预加载ROE数据到内存[3,5](@ref)"""
@@ -230,6 +251,8 @@ class StockQuery:
         """加载本地数据"""
         try:
             self.df = pd.read_csv(self.CSV_PATH)
+            if 'theme' not in self.df.columns:
+                self.df['theme'] = ''
             # 去重处理（处理可能存在的重复数据）
             self.df = self.df.drop_duplicates(subset=['stock_code'], keep='last')
         except FileNotFoundError:
@@ -254,10 +277,58 @@ class StockQuery:
             self.df['stock_code'].astype(str),
             self.df['stock_name']
         ))
+        self.code_to_theme = dict(zip(  # 新增代码到题材的映射
+            self.df['stock_code'].astype(str),
+            self.df['theme']
+        ))
 
         # 名称到代码（1对多）
         self.name_to_codes = self.df.groupby('stock_name')['stock_code'] \
             .apply(list).to_dict()
+
+    def update_themes(self, theme_dict):
+        """
+        批量更新股票题材[1,8](@ref)
+        :param theme_dict: 字典格式 {股票代码: 题材}
+        """
+        # 读取现有数据
+        df = pd.read_csv(self.CSV_PATH)
+
+        # 创建临时列用于更新
+        df['update_theme'] = df['stock_code'].map(theme_dict)
+
+        # 更新theme列：优先使用新值，保留原值
+        df['theme'] = df['update_theme'].combine_first(df['theme'])
+
+        # 清理临时列并保存
+        df.drop(columns=['update_theme'], inplace=True)
+        df.to_csv(self.CSV_PATH, index=False)
+
+        # 重新加载数据
+        self._load_data()
+        self._build_mapping()
+        print(f"成功更新 {len(theme_dict)} 只股票的题材信息")
+
+    def get_theme_by_code(self, code):
+        """根据股票代码获取题材[11](@ref)"""
+        return self.code_to_theme.get(str(code), "")
+
+    def add_theme(self, code, theme):
+        """添加或更新单个股票的题材"""
+        self.update_themes({code: theme})
+
+    def batch_add_themes(self, theme_list):
+        """批量添加题材（列表格式）[7](@ref)"""
+        theme_dict = {item['code']: item['theme'] for item in theme_list}
+        self.update_themes(theme_dict)
+
+    def get_all_themes(self):
+        """获取所有股票的题材映射[9](@ref)"""
+        return self.df.set_index('stock_code')['theme'].to_dict()
+
+    def find_stocks_by_theme(self, keyword):
+        """根据题材关键词搜索股票[8](@ref)"""
+        return self.df[self.df['theme'].str.contains(keyword, case=False, na=False)]
 
     def query(self, input_str, exact_match=True):
         """
@@ -330,6 +401,15 @@ if __name__ == "__main__":
     # 初始化查询工具（自动检测数据文件是否存在）
     query_tool = StockQuery()
 
+    themes_to_update = {
+        'bj430017': '医药制造',
+        'bj430047': '生物医药',
+        'bj430090': '信息技术',
+        'bj430198': '光通信',
+        'bj430300': '医疗器械',
+        'bj430510': '光刻机'
+    }
+    query_tool.update_themes(themes_to_update)
     # 精确查询示例
     # print(query_tool.get_name_by_code(add_stock_prefix("603881")))  # 输出代码对应名称
     # print(query_tool.get_code_by_name("数据港"))  # 输出名称对应代码
@@ -338,7 +418,7 @@ if __name__ == "__main__":
     # print(query_tool.query("茅台", exact_match=False))  # 返回所有包含"茅台"的股票代码 n
 
     # query_tool.get_stock_roe('sh603881')
-    query_tool.addStockYjbbEm()
+    # query_tool.addStockYjbbEm()
 
     # stock_yjbb_em_df = ak.stock_yjbb_em(date="20240930")
     # print(stock_yjbb_em_df)
