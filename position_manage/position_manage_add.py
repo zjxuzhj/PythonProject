@@ -9,11 +9,13 @@ def add_new_position(portfolio):
     try:
         transactions = [
             # Transaction(datetime(2025, 5, 28), "sz000710", "BUY", 14.15, 200),
-            Transaction(datetime(2025, 5, 30), "sz002682", "SELL", 4.96, 200),
-            # Transaction(datetime(2025, 5, 29), "sh600756", "BUY", 15.31, 200),
+            Transaction(datetime(2025, 6, 4), "sh603767", "SELL", 16.88, 100),
+            Transaction(datetime(2025, 6, 4), "sh603680", "SELL", 10.38, 400),
+            Transaction(datetime(2025, 6, 4), "sh600756", "SELL", 15.82, 200),
+            Transaction(datetime(2025, 6, 4), "sz000555", "BUY", 12.12, 500),
             # Transaction(datetime(2025, 5, 30), "sh600805", "BUY", 5.36, 1000),
             # Transaction(datetime(2025, 5, 30), "sh603680", "BUY", 10.64, 400),
-            Transaction(datetime(2025, 6, 3), "sh603767", "SELL", 16.96, 200),
+            # Transaction(datetime(2025, 6, 3), "sh603767", "SELL", 16.96, 200),
             # Transaction(datetime(2025, 6, 3), "sz002278", "BUY", 9.12, 400),
         ]
 

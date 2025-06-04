@@ -37,17 +37,33 @@ class DBUtil:
         self.conn.commit()
 
     def save_transaction(self, transaction):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-        INSERT INTO transactions (date, stock_code, action, price, shares)
-        VALUES (?, ?, ?, ?, ?)
-        ''', (
+        # 创建唯一约束（首次运行时执行）
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY,
+                date TEXT NOT NULL,
+                stock_code TEXT NOT NULL,
+                action TEXT NOT NULL,
+                price REAL NOT NULL,
+                shares INTEGER NOT NULL,
+                UNIQUE(date, stock_code, action, price, shares)  # 组合唯一约束[8](@ref)
+            )
+        ''')
+
+        # 使用INSERT OR IGNORE避免重复[6](@ref)
+        sql = '''
+            INSERT OR IGNORE INTO transactions 
+            (date, stock_code, action, price, shares) 
+            VALUES (?, ?, ?, ?, ?)
+        '''
+        params = (
             transaction.date.isoformat(),
             transaction.stock_code,
             transaction.action,
             transaction.price,
             transaction.shares
-        ))
+        )
+        self.cursor.execute(sql, params)
         self.conn.commit()
 
     def update_cash(self, cash):
