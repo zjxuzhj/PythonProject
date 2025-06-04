@@ -400,16 +400,21 @@ def add_stock_prefix(stock_code):
 if __name__ == "__main__":
     # 初始化查询工具（自动检测数据文件是否存在）
     query_tool = StockQuery()
-
+    srt="固态电池"
     themes_to_update = {
-        'bj430017': '医药制造',
-        'bj430047': '生物医药',
-        'bj430090': '信息技术',
-        'bj430198': '光通信',
-        'bj430300': '医疗器械',
-        'bj430510': '光刻机'
+        'sh603823': srt,
+        'sz002741': srt,
+        'sz300340': srt,
+        'sz002866': srt,
+        'sh600110':srt,
+        'sh603906': srt,
+        # 'sz002940': srt,
+        # 'sz000989': srt,
+        # 'sh688799': srt,
+        # 'sz300016': srt,
     }
     query_tool.update_themes(themes_to_update)
+    # print("丰光精密题材:", query_tool.get_theme_by_code('bj430510'))
     # 精确查询示例
     # print(query_tool.get_name_by_code(add_stock_prefix("603881")))  # 输出代码对应名称
     # print(query_tool.get_code_by_name("数据港"))  # 输出名称对应代码
