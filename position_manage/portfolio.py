@@ -76,9 +76,29 @@ class Portfolio:
                 if pos.total_shares <= 0:
                     continue
 
-                current_price = self.get_stock_data(code) or 0
+                current_price = 0
                 cost_price = round(pos.avg_cost, 2)
-                profit_pct = ((current_price - cost_price) / cost_price * 100) if cost_price else 0
+                profit_pct = 0
+
+                below_5ma = "否"
+                try:
+                    # 获取股票历史数据
+                    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    cache_dir = os.path.join(base_dir, "data_cache")
+                    file_name = f"stock_{code}_20240201.parquet"
+                    cache_path = os.path.join(cache_dir, file_name)
+
+                    if os.path.exists(cache_path):
+                        df = pd.read_parquet(cache_path, engine='fastparquet')
+                        if not df.empty and 'close' in df.columns and len(df) >= 5:
+                            current_price = df['close'].iloc[-1]
+                            profit_pct = ((current_price - cost_price) / cost_price * 100) if cost_price else 0
+                            # 计算五日均线，检查当前价格是否跌破五日线
+                            df['5_day_MA'] = df['close'].rolling(window=5).mean()
+                            below_5ma = "是" if current_price < df['5_day_MA'].iloc[-1] else "否"
+                except Exception as e:
+                    print(f"⚠️ 计算五日线失败({code}): {e}")
+                    below_5ma = "错误"
 
                 report_data.append({
                     "股票代码": code,
@@ -88,6 +108,7 @@ class Portfolio:
                     "当前价格": current_price,
                     "盈亏%": profit_pct,
                     "持有天数": pos.holding_period(),
+                    "是否跌破五日线": below_5ma
                 })
 
             if not report_data:
