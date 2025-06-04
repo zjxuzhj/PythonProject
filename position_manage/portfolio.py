@@ -63,9 +63,14 @@ class Portfolio:
         print(f"数据获取失败：{symbol}")
         return None  # 返回None表示获取失败
 
-    def get_position_report(self):
-        """生成持仓报表（简化版）"""
+    def get_position_report(self, print_format="console"):
+        """生成带完美对齐的持仓报表"""
         try:
+            # 设置Pandas全局对齐选项（关键改进）[1,2](@ref)
+            pd.set_option('display.unicode.ambiguous_as_wide', True)
+            pd.set_option('display.unicode.east_asian_width', True)
+            pd.set_option('display.width', 160)  # 加宽至160字符
+
             report_data = []
             for code, pos in self.positions.items():
                 if pos.total_shares <= 0:
@@ -76,12 +81,12 @@ class Portfolio:
                 profit_pct = ((current_price - cost_price) / cost_price * 100) if cost_price else 0
 
                 report_data.append({
-                    "代码": code,
-                    "名称": pos.stock_name,
-                    "持仓": pos.total_shares,
-                    "成本": cost_price,
-                    "当前价": current_price,
-                    "盈亏%": round(profit_pct, 2),
+                    "股票代码": code,
+                    "股票名称": pos.stock_name,
+                    "持仓数量": pos.total_shares,
+                    "平均成本": cost_price,
+                    "当前价格": current_price,
+                    "盈亏%": profit_pct,
                     "持有天数": pos.holding_period(),
                 })
 
@@ -89,7 +94,47 @@ class Portfolio:
                 print("ℹ️ 当前无持仓记录")
                 return None
 
-            return pd.DataFrame(report_data)
+            df_report = pd.DataFrame(report_data)
+
+            # 控制台美化输出
+            if print_format == "console":
+                def calc_width(series, extra=4):
+                    return max(series.astype(str).apply(len)) + extra
+
+                code_width = calc_width(df_report['股票代码'])
+                name_width = calc_width(df_report['股票名称'])
+
+                # 列格式化配置（关键对齐设置）[3,5](@ref)
+                formatters = {
+                    '股票代码': lambda x: f"{x:<{code_width}}",
+                    '股票名称': lambda x: f"{x:<{name_width}}",
+                    '持仓数量': lambda x: f"{int(x):>5,}",
+                    '平均成本': lambda x: f"{x:>5.2f}",
+                    '当前价格': lambda x: f"{x:>5.2f}",
+                    '盈亏%': lambda x: f"{x:>5.2f}%",
+                    '持有天数': lambda x: f"{int(x):>5}"
+                }
+
+                # 生成对齐表格
+                formatted = df_report.to_string(
+                    index=False,
+                    formatters=formatters,
+                    justify='left'
+                )
+
+                # 打印带边框的表格
+                print("\n" + "=" * 80)
+                print("📊 当前持仓报告:".center(70))
+                print("=" * 80)
+                print(formatted)
+                print("=" * 80)
+
+                # 打印汇总信息
+                total_value = sum(row['当前价格'] * row['持仓数量'] for _, row in df_report.iterrows())
+                print(f"\n总持仓价值: ¥{total_value:,.2f} | 可用现金: ¥{self.cash:,.2f}")
+                return df_report
+
+            return df_report
 
         except Exception as e:
             print(f"❌ 生成报表失败: {e}")

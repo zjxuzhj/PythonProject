@@ -38,13 +38,6 @@ def generate_position_report(portfolio):
     """生成并打印持仓报告"""
     try:
         report = portfolio.get_position_report()
-        if not report.empty:
-            print("\n📊 当前持仓报告:")
-            print(report)
-            return report
-        else:
-            print("ℹ️ 当前无持仓记录")
-            return None
     except Exception as e:
         print(f"❌ 生成持仓报告失败: {str(e)}")
         return None
