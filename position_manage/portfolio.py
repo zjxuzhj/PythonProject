@@ -13,6 +13,18 @@ class Portfolio:
         self.cash = 1000000
         self.transaction_history = []
 
+    def load_transaction(self, transaction):
+        query_tool = stockCsv.StockQuery()
+        code = transaction.stock_code
+        if code not in self.positions:
+            self.positions[code] = Position(code, query_tool.get_name_by_code(code))
+        if transaction.action == 'BUY':
+            self.positions[code].buy_transactions.append(transaction)
+        else:
+            self.positions[code].sell_transactions.append(transaction)
+        self.transaction_history.append(transaction)
+        return True
+
     def add_transaction(self, transaction):
         # 生成交易指纹
         tx_id = f"{transaction.date}_{transaction.stock_code}_{transaction.action}_{transaction.price}_{transaction.shares}"

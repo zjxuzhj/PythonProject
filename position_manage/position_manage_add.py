@@ -1,22 +1,22 @@
 from datetime import datetime
 
 from position_manage.portfolio import Portfolio
-from position_manage.portfolio_db import save_portfolio, load_portfolio  # 修改导入
+from position_manage.portfolio_db import save_portfolio  # 修改导入
+from position_manage.position_db_util import DBUtil
 from position_manage.transaction import Transaction
 
 
 def add_new_position(portfolio):
     try:
         transactions = [
-            # Transaction(datetime(2025, 5, 28), "sz000710", "BUY", 14.15, 200),
-            Transaction(datetime(2025, 6, 4), "sh603767", "SELL", 16.88, 100),
-            Transaction(datetime(2025, 6, 4), "sh603680", "SELL", 10.38, 400),
-            Transaction(datetime(2025, 6, 4), "sh600756", "SELL", 15.82, 200),
-            Transaction(datetime(2025, 6, 4), "sz000555", "BUY", 12.12, 500),
-            # Transaction(datetime(2025, 5, 30), "sh600805", "BUY", 5.36, 1000),
-            # Transaction(datetime(2025, 5, 30), "sh603680", "BUY", 10.64, 400),
-            # Transaction(datetime(2025, 6, 3), "sh603767", "SELL", 16.96, 200),
-            # Transaction(datetime(2025, 6, 3), "sz002278", "BUY", 9.12, 400),
+            Transaction(datetime(2025, 6, 5), "sz002278", "SELL", 9.23, 400),
+            Transaction(datetime(2025, 6, 5), "sh600805", "SELL", 5.21, 1000),
+            Transaction(datetime(2025, 6, 5), "sz002682", "SELL", 5.05, 300),
+            Transaction(datetime(2025, 6, 5), "sz000710", "SELL", 14.47, 100),
+
+            Transaction(datetime(2025, 6, 5), "sh600743", "BUY", 2.2, 2200),
+            Transaction(datetime(2025, 6, 5), "sh603127", "BUY", 19.25, 200),
+            Transaction(datetime(2025, 6, 5), "sz002162", "BUY", 4.62, 1000),
         ]
 
         added_count = 0
@@ -35,23 +35,9 @@ def add_new_position(portfolio):
         print(f"❌ 新增持仓失败: {str(e)}")
         return False
 
-
-def generate_position_report(portfolio):
-    """生成并打印持仓报告"""
-    try:
-        report = portfolio.get_position_report()
-    except Exception as e:
-        print(f"❌ 生成持仓报告失败: {str(e)}")
-        return None
-
-
 if __name__ == '__main__':
-    try:
-        portfolio = load_portfolio("portfolio.db")  # 加载数据库
-        print("load data successfully")
-    except:
-        portfolio = Portfolio()
-        print("create new db")
-
+    db = DBUtil("portfolio.db")
+    portfolio = Portfolio()
+    portfolio.cash = db.get_cash()
+    db.close()
     add_new_position(portfolio)
-    # generate_position_report(portfolio)

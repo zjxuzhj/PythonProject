@@ -36,7 +36,7 @@ def load_portfolio(db_file="portfolio.db"):
                 price=t_data[3],
                 shares=t_data[4]
             )
-            portfolio.add_transaction(transaction)
+            portfolio.load_transaction(transaction)
     finally:
         db.close()
     return portfolio
