@@ -89,8 +89,8 @@ class Portfolio:
                     continue
 
                 current_price = 0
-                cost_price = round(pos.avg_cost, 2)
-                profit_pct = 0
+                # cost_price = round(pos.avg_cost, 2)
+                # profit_pct = 0
 
                 below_5ma = "否"
                 try:
@@ -104,7 +104,6 @@ class Portfolio:
                         df = pd.read_parquet(cache_path, engine='fastparquet')
                         if not df.empty and 'close' in df.columns and len(df) >= 5:
                             current_price = df['close'].iloc[-1]
-                            profit_pct = ((current_price - cost_price) / cost_price * 100) if cost_price else 0
                             # 计算五日均线，检查当前价格是否跌破五日线
                             df['5_day_MA'] = df['close'].rolling(window=5).mean()
                             below_5ma = "是" if current_price < df['5_day_MA'].iloc[-1] else "否"
@@ -112,11 +111,43 @@ class Portfolio:
                     print(f"⚠️ 计算五日线失败({code}): {e}")
                     below_5ma = "错误"
 
+                # 步骤 1
+                original_avg_buy_cost = round(pos.avg_cost, 2)
+                # 步骤 2: 计算所有买入交易的总成本
+                total_buy_cost_for_position = sum(tx.price * tx.shares for tx in pos.buy_transactions)
+                # 步骤 3: 计算所有卖出交易的总收入
+                total_sell_revenue_for_position = sum(tx.price * tx.shares for tx in pos.sell_transactions)
+                # 步骤 4: 获取剩余持仓股数
+                remaining_shares = pos.total_shares  # 实际上循环开始时已经判断过 > 0
+                # 步骤 5: 计算当前剩余持仓的总市值
+                # 确保 current_price 是有效的数值，否则这里计算会不准确
+                current_market_value_remaining = current_price * remaining_shares
+                # 步骤 6: 计算该股票整个持仓历史的总盈亏
+                overall_pnl = (total_sell_revenue_for_position + current_market_value_remaining) - total_buy_cost_for_position
+                # 步骤 7: 计算每股剩余持仓“摊占”到的总盈亏
+                profit_per_remaining_share = 0.0
+                if remaining_shares > 0:  # 实际上这里总是 true，因为循环开始时已检查
+                    profit_per_remaining_share = overall_pnl / remaining_shares
+
+                # 步骤 8: 计算最终的盈亏百分比
+                new_profit_pct = 0.0
+                if remaining_shares > 0:  # 再次检查以防万一，并处理 original_avg_buy_cost
+                    if original_avg_buy_cost > 0:
+                        new_profit_pct = (profit_per_remaining_share / original_avg_buy_cost) * 100.0
+                    elif original_avg_buy_cost == 0:  # 成本为0的特殊情况
+                        if profit_per_remaining_share > 0:
+                            new_profit_pct = float('inf')
+                        elif profit_per_remaining_share < 0:  # 理论上成本为0不应有负盈利，除非股价为负
+                            new_profit_pct = float('-inf')
+                        # else profit_per_remaining_share is 0, so new_profit_pct remains 0.0
+
+                profit_pct = new_profit_pct  # 使用新的计算结果
+
                 report_data.append({
                     "股票代码": code,
                     "股票名称": pos.stock_name,
                     "持仓数量": pos.total_shares,
-                    "平均成本": cost_price,
+                    "平均成本": original_avg_buy_cost,
                     "当前价格": current_price,
                     "盈亏%": profit_pct,
                     "持有天数": pos.holding_period(),
