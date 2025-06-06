@@ -2,6 +2,7 @@ import os
 import time
 
 import akshare as ak
+import numpy as np
 import pandas as pd
 
 
@@ -310,8 +311,12 @@ class StockQuery:
         print(f"成功更新 {len(theme_dict)} 只股票的题材信息")
 
     def get_theme_by_code(self, code):
-        """根据股票代码获取题材[11](@ref)"""
-        return self.code_to_theme.get(str(code), "")
+        """根据股票代码获取题材"""
+        theme = self.code_to_theme.get(str(code), "")
+        # 显式判断是否为数值型NaN
+        if isinstance(theme, float) and np.isnan(theme):
+            return "其他"  # 返回原始NaN值
+        return theme if theme else "其他"
 
     def add_theme(self, code, theme):
         """添加或更新单个股票的题材"""
@@ -400,18 +405,18 @@ def add_stock_prefix(stock_code):
 if __name__ == "__main__":
     # 初始化查询工具（自动检测数据文件是否存在）
     query_tool = StockQuery()
-    srt="固态电池"
+    srt = "创新药"
     themes_to_update = {
-        'sh603823': srt,
-        'sz002741': srt,
-        'sz300340': srt,
-        'sz002866': srt,
-        'sh600110':srt,
-        'sh603906': srt,
-        # 'sz002940': srt,
-        # 'sz000989': srt,
-        # 'sh688799': srt,
-        # 'sz300016': srt,
+        'sz002162': srt,
+        # 'sz002094': srt,
+        # 'sz002537': srt,
+        # 'sz300682': srt,
+        # 'sz300368': srt,
+        # 'sz300546': srt,
+        # 'sz000890': srt,
+        # 'sz002015': srt,
+        # 'sz300468': srt,
+        # 'sz002104': srt,
     }
     query_tool.update_themes(themes_to_update)
     # print("丰光精密题材:", query_tool.get_theme_by_code('bj430510'))

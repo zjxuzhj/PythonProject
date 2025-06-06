@@ -78,6 +78,7 @@ class Portfolio:
     def get_position_report(self, print_format="console"):
         """生成带完美对齐的持仓报表"""
         try:
+            query_tool = stockCsv.StockQuery()
             # 设置Pandas全局对齐选项（关键改进）[1,2](@ref)
             pd.set_option('display.unicode.ambiguous_as_wide', True)
             pd.set_option('display.unicode.east_asian_width', True)
@@ -89,8 +90,6 @@ class Portfolio:
                     continue
 
                 current_price = 0
-                # cost_price = round(pos.avg_cost, 2)
-                # profit_pct = 0
 
                 below_5ma = "否"
                 try:
@@ -123,7 +122,8 @@ class Portfolio:
                 # 确保 current_price 是有效的数值，否则这里计算会不准确
                 current_market_value_remaining = current_price * remaining_shares
                 # 步骤 6: 计算该股票整个持仓历史的总盈亏
-                overall_pnl = (total_sell_revenue_for_position + current_market_value_remaining) - total_buy_cost_for_position
+                overall_pnl = (
+                                          total_sell_revenue_for_position + current_market_value_remaining) - total_buy_cost_for_position
                 # 步骤 7: 计算每股剩余持仓“摊占”到的总盈亏
                 profit_per_remaining_share = 0.0
                 if remaining_shares > 0:  # 实际上这里总是 true，因为循环开始时已检查
@@ -151,7 +151,8 @@ class Portfolio:
                     "当前价格": current_price,
                     "盈亏%": profit_pct,
                     "持有天数": pos.holding_period(),
-                    "是否跌破五日线": below_5ma
+                    "跌破五日": below_5ma,
+                    "题材": query_tool.get_theme_by_code(code)
                 })
 
             if not report_data:
@@ -168,7 +169,7 @@ class Portfolio:
                 code_width = calc_width(df_report['股票代码'])
                 name_width = calc_width(df_report['股票名称'])
 
-                # 列格式化配置（关键对齐设置）[3,5](@ref)
+                # 列格式化配置（关键对齐设置）
                 formatters = {
                     '股票代码': lambda x: f"{x:<{code_width}}",
                     '股票名称': lambda x: f"{x:<{name_width}}",
@@ -176,7 +177,9 @@ class Portfolio:
                     '平均成本': lambda x: f"{x:>5.2f}",
                     '当前价格': lambda x: f"{x:>5.2f}",
                     '盈亏%': lambda x: f"{x:>5.2f}%",
-                    '持有天数': lambda x: f"{int(x):>5}"
+                    '持有天数': lambda x: f"{int(x):>5}",
+                    '跌破五日': lambda x: f"{x:<2}",
+                    '题材': lambda x: f"{x:<2}",
                 }
 
                 # 生成对齐表格
