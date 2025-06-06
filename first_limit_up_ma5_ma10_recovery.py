@@ -118,7 +118,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             if (current_data['close'] > current_data['ma5']) and \
                     (df.iloc[start_idx + offset - 1]['close'] > df.iloc[start_idx + offset - 1]['ma5']):
 
-                buy_price = current_data['ma5']  # 按5日线价格买入
+                buy_price = current_data['close']  # 按5日线价格买入
                 hold_days = 0
 
                 # ===== 卖出逻辑（跌破5日线即卖出）=====
@@ -129,6 +129,26 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     sell_day = df.index[start_idx + offset + sell_offset]
                     sell_data = df.loc[sell_day]
                     hold_days += 1
+
+                    highest_price = sell_data['high']
+                    total_increase = (highest_price - buy_price) / buy_price * 100
+
+                    # 优先级1: 触发13%止盈[6,9](@ref)
+                    if total_increase >= 13:
+                        profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
+                        signals.append({
+                            '股票代码': stock_code,
+                            '股票名称': stock_name,
+                            '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                            '买入日': current_day.strftime('%Y-%m-%d'),
+                            '卖出日': sell_day.strftime('%Y-%m-%d'),
+                            '持有天数': hold_days,
+                            '买入价': round(buy_price, 2),
+                            '卖出价': round(sell_data['close'], 2),
+                            '收益率(%)': round(profit_pct, 2),
+                            '卖出原因': '15%止盈'  # 新增卖出原因分类
+                        })
+                        break
 
                     # 唯一卖出条件：收盘跌破MA5
                     if sell_data['close'] < sell_data['ma5']:
