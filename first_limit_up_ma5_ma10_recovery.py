@@ -1,0 +1,288 @@
+import os
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
+import getAllStockCsv
+
+
+def get_stock_data(symbol, start_date, force_update=False):
+    """带本地缓存的数据获取"""
+    # 生成唯一文件名（网页1）
+    file_name = f"stock_{symbol}_{start_date}.parquet"
+    cache_path = os.path.join("data_cache", file_name)
+
+    # 非强制更新时尝试读取缓存
+    if not force_update and os.path.exists(cache_path):
+        try:
+            df = pd.read_parquet(cache_path, engine='fastparquet')
+            # df['vol_ma5'] = df['volume'].rolling(5).mean()
+            # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
+            print(f"从缓存加载数据：{symbol}")
+            return df, True  # 返回缓存标记
+        except Exception as e:
+            print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
+
+    # 强制更新或缓存不存在时获取新数据（网页7）
+    print(f"数据获取失败：{symbol}")
+    return pd.DataFrame()
+
+
+def find_first_limit_up(symbol, df):
+    """识别首板涨停日并排除连板"""
+    market_type = "科创板" if symbol.startswith(("688", "689")) else "创业板" if symbol.startswith(
+        ("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+    # 计算涨停价
+    df['prev_close'] = df['close'].shift(1)
+    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
+    # 识别涨停日
+    limit_days = df[df['close'] >= df['limit_price']].index.tolist()
+
+    valid_days = []
+    for day in limit_days:
+        # 排除连板(次日不涨停)
+        next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
+        if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
+            continue
+
+        # 新增日期过滤条件（网页1]）
+        if day < pd.Timestamp('2024-03-01'):
+            continue
+
+        # # 新增：前五日累计涨幅校验
+        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            # total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            # if total_change >= 15:  # 累计涨幅≥5%则排除
+            #     continue
+        valid_days.append(day)
+    return valid_days
+
+
+def generate_signals(df, first_limit_day, stock_code, stock_name):
+    """生成买卖信号（基于首板后首次跌破5日线 + 10日线支撑验证 + 5日线收复策略）"""
+    # 1. 计算均线系统
+    df['ma5'] = df['close'].rolling(5).mean()
+    df['ma10'] = df['close'].rolling(10).mean()  # 新增10日均线计算[5](@ref)
+
+    # 2. 确定市场类型和涨跌停规则
+    market_type = "科创板" if stock_code.startswith(("688", "689")) else "创业板" if stock_code.startswith(
+        ("300", "301")) else "主板"
+    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+    base_price = df.loc[first_limit_day, 'close']  # 首板收盘价（主力支撑位）
+
+    # 3. 状态机初始化
+    phase = {
+        'wait_break_ma5': True,  # 等待首次跌破5日线
+        'check_ma10_touch': False,  # 检查10日线触碰
+        'monitor_ma5_recovery': False  # 监控5日线收复
+    }
+
+    signals = []
+    start_idx = df.index.get_loc(first_limit_day)
+
+    # 4. 核心信号生成逻辑
+    for offset in range(2, 30):  # 扩大观察窗口至30个交易日
+        if start_idx + offset >= len(df):
+            break
+
+        current_day = df.index[start_idx + offset]
+        current_data = df.iloc[start_idx + offset]
+
+        # 阶段1：等待首次跌破5日线（收盘价确认）
+        if phase['wait_break_ma5']:
+            if current_data['close'] < current_data['ma5']:
+                phase.update({
+                    'wait_break_ma5': False,
+                    'check_ma10_touch': True,
+                    'break_ma5_day': current_day  # 记录跌破日
+                })
+
+        # 阶段2：次日触碰10日线验证（需同时满足3个条件）
+        elif phase['check_ma10_touch'] and offset == (df.index.get_loc(phase['break_ma5_day']) - start_idx + 1):
+            if (current_data['low'] <= current_data['ma10']) and \
+                    (current_data['close'] >= current_data['ma10']) and \
+                    (current_data['close'] > current_data['ma5']):
+                phase.update({
+                    'check_ma10_touch': False,
+                    'monitor_ma5_recovery': True,
+                    'ma10_touch_day': current_day  # 记录触碰日
+                })
+
+        # 阶段3：监控5日线收复（尾盘站上）
+        elif phase['monitor_ma5_recovery']:
+            # 收盘价连续2日站上MA5（确认趋势反转）
+            if (current_data['close'] > current_data['ma5']) and \
+                    (df.iloc[start_idx + offset - 1]['close'] > df.iloc[start_idx + offset - 1]['ma5']):
+
+                buy_price = current_data['ma5']  # 按5日线价格买入
+                hold_days = 0
+
+                # ===== 卖出逻辑（跌破5日线即卖出）=====
+                for sell_offset in range(1, 20):  # 最多持有20日
+                    if start_idx + offset + sell_offset >= len(df):
+                        break
+
+                    sell_day = df.index[start_idx + offset + sell_offset]
+                    sell_data = df.loc[sell_day]
+                    hold_days += 1
+
+                    # 唯一卖出条件：收盘跌破MA5
+                    if sell_data['close'] < sell_data['ma5']:
+                        profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
+                        signals.append({
+                            '股票代码': stock_code,
+                            '股票名称': stock_name,
+                            '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                            '买入日': current_day.strftime('%Y-%m-%d'),
+                            '卖出日': sell_day.strftime('%Y-%m-%d'),
+                            '持有天数': hold_days,
+                            '买入价': round(buy_price, 2),
+                            '卖出价': round(sell_data['close'], 2),
+                            '收益率(%)': round(profit_pct, 2),
+                            '卖出原因': 'MA5破位'
+                        })
+                        break
+
+                # 重置状态机（完成一个完整交易周期）
+                phase['monitor_ma5_recovery'] = False
+                break  # 完成当前信号生成
+
+    return signals
+
+def save_trades_excel(result_df):
+    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日',
+                    '持有天数', '买入价', '卖出价', '收益率(%)','卖出原因']
+    # 按买入日降序排序
+    result_df = result_df.sort_values(by='买入日', ascending=False)
+    result_df = result_df[column_order]
+    """专业级Excel导出函数"""
+    # 生成带时间戳的文件名[2,6](@ref)
+    excel_name = f"首板交易记录_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+    # 创建带格式的Excel写入器[7](@ref)
+    with pd.ExcelWriter(excel_name, engine='xlsxwriter',engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
+        # 写入原始数据
+        result_df.to_excel(writer, sheet_name='交易明细', index=False)
+
+        # 获取工作表对象[6](@ref)
+        workbook = writer.book
+        worksheet = writer.sheets['交易明细']
+
+        # ================== 专业格式设置 ==================
+        # 1. 列宽自适应[2](@ref)
+        for idx, col in enumerate(result_df.columns):
+            series = result_df[col]
+            max_len = max((
+                series.astype(str).map(len).max(),  # 数据最大长度
+                len(col)  # 列名长度
+            )) + 2
+            worksheet.set_column(idx, idx, max_len)
+
+        # 2. 条件格式(收益率红涨绿跌)[7](@ref)
+        format_green = workbook.add_format({'font_color': '#00B050', 'num_format': '0.00%'})
+        format_red = workbook.add_format({'font_color': '#FF0000', 'num_format': '0.00%'})
+
+        # 将收益率转换为小数格式
+        worksheet.write(0, result_df.columns.get_loc('收益率(%)'), '收益率',
+                        workbook.add_format({'bold': True}))
+        for row in range(1, len(result_df) + 1):
+            cell_value = result_df.iloc[row - 1]['收益率(%)'] / 100
+            if cell_value >= 0:
+                worksheet.write(row, result_df.columns.get_loc('收益率(%)'), cell_value, format_green)
+            else:
+                worksheet.write(row, result_df.columns.get_loc('收益率(%)'), cell_value, format_red)
+
+        # 3. 冻结首行[6](@ref)
+        worksheet.freeze_panes(1, 0)
+
+        # 4. 自动筛选[8](@ref)
+        worksheet.autofilter(0, 0, len(result_df), len(result_df.columns) - 1)
+
+        # 5. 添加统计页[5](@ref)
+        stats_df = pd.DataFrame({
+            '统计指标': ['总交易次数', '胜率', '平均盈利', '平均亏损', '盈亏比'],
+            '数值': [
+                len(result_df),
+                f"{result_df['收益率(%)'].gt(0).mean() * 100:.1f}%",
+                f"{result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean():.1f}%",
+                f"{result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean():.1f}%",
+                f"{result_df['收益率(%)'].gt(0).sum() / result_df['收益率(%)'].le(0).sum():.1f}:1"
+            ]
+        })
+        stats_df.to_excel(writer, sheet_name='策略统计', index=False)
+    print(f"\033[32m交易记录已保存至 {excel_name}\033[0m")
+
+
+if __name__ == '__main__':
+    import time  # 确保导入time模块
+    total_start = time.perf_counter()  # 记录程序开始时间
+    # 获取当日涨停数据（新增）
+    today = datetime.now()
+    today_str = today.strftime("%Y%m%d")
+    yesterday = today - timedelta(days=1)
+    yesterday_str = yesterday.strftime("%Y%m%d")
+
+    all_signals = []
+
+    # 参数设置
+    symbol = 'sh601086'  # 平安银行
+    start_date = '20240201'
+
+    query_tool = getAllStockCsv.StockQuery()
+    # 加载股票列表并过滤
+    filtered_stocks = query_tool.get_all_filter_stocks()
+    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
+    total = len(stock_list)
+    stock_process_start = time.perf_counter()
+    for idx, (code, name) in enumerate(stock_list, 1):
+        df, _ = get_stock_data(code, start_date=start_date)
+        if df.empty:
+            continue
+
+        first_limit_days = find_first_limit_up(code, df)
+        for day in first_limit_days:
+            signals = generate_signals(df, day, code, name)
+            all_signals.extend(signals)
+
+    stock_process_duration = time.perf_counter() - stock_process_start
+
+    # 生成统计报表[10](@ref)
+    result_df = pd.DataFrame(all_signals)
+    if not result_df.empty:
+        win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
+        avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
+        avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
+        profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
+        get_money=len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)*avg_win-(1-len(result_df[result_df['收益率(%)'] > 0]) / len(result_df))*avg_loss
+
+        print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
+        print(f"总交易次数: {len(result_df)}")
+        print(f"胜率: {win_rate:.1f}%")
+        print(f"平均盈利: {avg_win:.1f}% | 平均亏损: {avg_loss:.1f}%")
+        print(f"盈亏比: {profit_ratio:.2f}:1")
+        print(f"期望收益: {get_money:.2f}")
+
+        # 示例输出
+        print("\n\033[1m最近5笔交易记录:\033[0m")
+        print(result_df.tail(5).to_string(index=False))
+    else:
+        print("未产生有效交易信号")
+
+    # 在生成result_df后调用
+    if not result_df.empty:
+        save_start = time.perf_counter()  # 记录Excel保存开始时间
+        save_trades_excel(result_df)
+        save_duration = time.perf_counter() - save_start
+        print(f"Excel保存耗时: {save_duration:.4f}秒")
+
+    # 程序总耗时统计
+    total_duration = time.perf_counter() - total_start
+    print(f"\n\033[1m=== 性能统计 ===\033[0m")
+    print(f"总运行时间: {total_duration:.2f}秒")
+    print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
+    print(f"Excel保存时间: {save_duration:.4f}秒")
+    print(f"平均每支股票处理时间: {stock_process_duration/len(stock_list)*1000:.2f}毫秒")
