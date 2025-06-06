@@ -8,15 +8,17 @@ from position_manage.transaction import Transaction
 
 def add_new_position(portfolio):
     try:
+        month = 6
+        day = 6
         transactions = [
-            Transaction(datetime(2025, 6, 5), "sz002278", "SELL", 9.23, 400),
-            Transaction(datetime(2025, 6, 5), "sh600805", "SELL", 5.21, 1000),
-            Transaction(datetime(2025, 6, 5), "sz002682", "SELL", 5.05, 300),
-            Transaction(datetime(2025, 6, 5), "sz000710", "SELL", 14.47, 100),
+            Transaction(datetime(2025, month, day), "sh603127", "SELL", 18.86, 100),
+            Transaction(datetime(2025, month, day), "sz002162", "SELL", 4.52, 500),
+            Transaction(datetime(2025, month, day), "sz000710", "SELL", 14.34, 100),
+            # Transaction(datetime(2025, month, day), "sz000710", "SELL", 14.47, 100),
 
-            Transaction(datetime(2025, 6, 5), "sh600743", "BUY", 2.2, 2200),
-            Transaction(datetime(2025, 6, 5), "sh603127", "BUY", 19.25, 200),
-            Transaction(datetime(2025, 6, 5), "sz002162", "BUY", 4.62, 1000),
+            Transaction(datetime(2025, month, day), "sh600830", "BUY", 9.55, 1000),
+            Transaction(datetime(2025, month, day), "sz002612", "BUY", 18.57, 500),
+            Transaction(datetime(2025, month, day), "sz002657", "BUY", 25.52, 200),
         ]
 
         added_count = 0
@@ -34,6 +36,7 @@ def add_new_position(portfolio):
     except Exception as e:
         print(f"❌ 新增持仓失败: {str(e)}")
         return False
+
 
 if __name__ == '__main__':
     db = DBUtil("portfolio.db")

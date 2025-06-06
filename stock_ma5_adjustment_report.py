@@ -66,7 +66,7 @@ if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
-    target_stocks = ['sh603305', 'sz002290', 'sz002657','sh600250','sh600830','sh601825','sz002467','sz002612']
+    target_stocks = ['sh603305', 'sz002290', 'sz002657', 'sh600250', 'sh600830', 'sh601825', 'sz002467', 'sz002612']
     tomorrow_mode = True
 
     all_signals = []
@@ -90,7 +90,8 @@ if __name__ == '__main__':
             '最新收盘': latest_data['close'].values[-1],
             'MA5': modified_df['MA5'].iloc[-1],
             # 🌟 新增双日模式特有字段（网页1的条件判断[1](@ref)）
-            **({'昨日收盘': modified_df.iloc[-2]['close']} if tomorrow_mode else {})
+            **({'昨日收盘': modified_df.iloc[-2]['close']} if tomorrow_mode else {}),
+            '题材': "| "+query_tool.get_theme_by_code(code),
         })
 
     if len(all_signals) > 0:
