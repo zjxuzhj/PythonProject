@@ -51,13 +51,14 @@ def find_first_limit_up(symbol, df):
         if day < pd.Timestamp('2024-03-01'):
             continue
 
+        # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
         # # 新增：前五日累计涨幅校验
         if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
             pre5_start = df.index[df.index.get_loc(day) - 5]
             pre5_close = df.loc[pre5_start, 'close']
-            # total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            # if total_change >= 15:  # 累计涨幅≥5%则排除
-            #     continue
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:  # 累计涨幅≥5%则排除
+                continue
         valid_days.append(day)
     return valid_days
 

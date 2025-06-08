@@ -103,7 +103,7 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
 
         # 判断条件
         if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-        # if not subsequent_df.empty and (((subsequent_df['close'] > open_price) &(subsequent_df['close'] < highest_price)).all()):
+            # if not subsequent_df.empty and (((subsequent_df['close'] > open_price) &(subsequent_df['close'] < highest_price)).all()):
             # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
@@ -186,8 +186,19 @@ if __name__ == '__main__':
                 except:
                     industry = "行业获取失败"
                 for item in matched:
-                    code, name, date = item
-                    limit_up_stocks.append((code, name, date, industry))
+                    code, name, date_str = item
+                    date = pd.Timestamp(date_str)
+
+                    position = df.index.get_loc(date)
+                    pre5_days_pct = "N/A"  # 默认值
+
+                    if position >= 5:
+                        pre5_day = df.index[position - 5]
+                        pre5_close = df.loc[pre5_day, 'close']
+                        limit_close = df.loc[date, 'close']
+                        pre5_days_pct = (limit_close - pre5_close) / pre5_close * 100
+
+                    limit_up_stocks.append((code, name, date_str, industry, pre5_days_pct))
 
                 # limit_up_stocks.extend(matched)
 
@@ -204,7 +215,7 @@ if __name__ == '__main__':
 
     for stock in limit_up_stocks:
         # 提取日期并转换为日期对象
-        code, name, limit_date, industry = stock
+        code, name, limit_date, industry, pre5_pct = stock
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
 
@@ -217,25 +228,37 @@ if __name__ == '__main__':
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
     # 修改后的输出部分代码（替换原tabulate部分）
-    headers = ["股票代码", "股票名称", "最近涨停日", "所属行业"]
-    col_widths = [12, 16, 14, 20]  # 第四列宽度设为20
+    headers = ["股票代码", "股票名称", "最近涨停日", "所属行业", "5日涨幅%"]
+    col_widths = [12, 10, 14, 15,10]  # 第四列宽度设为20
+
+    header_line = "| " + " | ".join([header.ljust(col_widths[i]) for i, header in enumerate(headers)]) + " |"
+    separator = "-" * len(header_line)
+    print(separator)
+    print(header_line)
+    print(separator)
 
     for delta, stocks in sorted_days:
         # 打印数据行
         for stock in stocks:
-            code, name, date, industry = stock
-            # 动态调整名称显示长度（网页3/8方案）
-            truncated_name = (name[:6] + "..") if len(name) > 8 else name.ljust(8)
-            truncated_industry = (industry[:8] + "..") if len(industry) > 10 else industry.ljust(10)
+            code, name, date, industry, pre5_pct = stock
 
-            # 构建带对齐的输出行（网页5/7建议）
-            line = (
-                f"{code.ljust(col_widths[0])}"
-                f"{truncated_name.ljust(col_widths[1])}"
-                f"{date.center(col_widths[2])}"
-                f"{truncated_industry.ljust(col_widths[3])}"  # 索引3已正确定义
-            )
+            # 格式化数据
+            formatted_pre5 = "N/A"
+            if isinstance(pre5_pct, float):
+                pre5_pct = round(pre5_pct, 1)
+                formatted_pre5 = f"{pre5_pct}%"  # 保留1位小数
 
-            print(line)
+                # 设置颜色：涨幅≤15%显示红色
+                if pre5_pct <= 15:
+                    formatted_pre5 = f"\033[31m{formatted_pre5}\033[0m"  # 红色
 
-        # 打印分隔线（网页6增强可读性）
+            # 构建表格行
+            line_items = [
+                code.ljust(col_widths[0]),
+                name.ljust(col_widths[1]),
+                date.center(col_widths[2]),
+                industry.ljust(col_widths[3]),
+                formatted_pre5.rjust(col_widths[4])  # 右对齐
+            ]
+
+            print("  " + "   ".join(line_items) + "  ")
