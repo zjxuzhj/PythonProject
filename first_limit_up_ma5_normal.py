@@ -61,14 +61,14 @@ def find_first_limit_up(symbol, df):
                 continue
 
         # 涨停后第一天涨幅>5%的排除
-        next_day_idx = df.index.get_loc(day) + 1
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
-
-            # 如果次日涨幅超过5%，排除该首板日
-            if next_day_change >=8:
-                continue
+        # next_day_idx = df.index.get_loc(day) + 1
+        # if next_day_idx < len(df):
+        #     next_day = df.index[next_day_idx]
+        #     next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
+        #
+        #     # 如果次日涨幅超过5%，排除该首板日
+        #     if next_day_change >=8:
+        #         continue
 
         valid_days.append(day)
     return valid_days
