@@ -52,23 +52,33 @@ def find_first_limit_up(symbol, df):
             continue
 
         # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
-        # # 前五日累计涨幅校验
-        # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-        #     pre5_start = df.index[df.index.get_loc(day) - 5]
-        #     pre5_close = df.loc[pre5_start, 'close']
-        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-        #     if total_change >= 15:  # 累计涨幅≥5%则排除
-        #         continue
-        #
-        # # 涨停后第一天涨幅>8%的排除
-        # next_day_idx = df.index.get_loc(day) + 1
-        # if next_day_idx < len(df):
-        #     next_day = df.index[next_day_idx]
-        #     next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
-        #
-        #     # 如果次日涨幅超过8%，排除该首板日
-        #     if next_day_change >=8:
-        #         continue
+        # 前五日累计涨幅校验
+        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:  # 累计涨幅≥5%则排除
+                continue
+
+        # 涨停后第一天涨幅>8%的排除
+        next_day_idx = df.index.get_loc(day) + 1
+        if next_day_idx < len(df):
+            next_day = df.index[next_day_idx]
+            next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
+
+            # 如果次日涨幅超过8%，排除该首板日
+            if next_day_change >=8:
+                continue
+
+        # 前高压制条件
+        day_idx = df.index.get_loc(day)
+        if day_idx >= 13:  # 确保60日历史数据
+            # 计算前高（60日最高价）
+            historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
+            # 检查前3日最高价是否触及前高的95%
+            recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
+            if historical_high * 0.95 <= recent_3day_high < historical_high:
+                continue  # 触发排除条件
 
         valid_days.append(day)
     return valid_days
@@ -106,15 +116,15 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         end_check_idx = df.index.get_loc(first_limit_day)
 
         # ===== 买入前收盘价不低于首板收盘价 =====
-        # price_condition_met = True
-        # for check_offset in range(1, offset):
-        #     check_day = df.index[start_idx + check_offset]
-        #     if df.loc[check_day, 'close'] < base_price:
-        #         price_condition_met = False
-        #         break
-        #
-        # if not price_condition_met:
-        #     continue
+        price_condition_met = True
+        for check_offset in range(1, offset):
+            check_day = df.index[start_idx + check_offset]
+            if df.loc[check_day, 'close'] < base_price:
+                price_condition_met = False
+                break
+
+        if not price_condition_met:
+            continue
 
         # 获取最近5日MA5数据（防止空值）
         ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
@@ -130,11 +140,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         if not first_touch_flag and touch_condition and history_condition:
             first_touch_flag = True  # 标记首次触碰
-
             buy_price = current_data['ma5']  # 以五日均线值为买入价
             hold_days = 0
 
-            # 卖出逻辑（保持原有逻辑）
+            # 卖出逻辑
             for sell_offset in range(1, 20):  # 最多持有20日
                 if start_idx + offset + sell_offset >= len(df):
                     break
@@ -148,8 +157,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 prev_day_data = df.loc[prev_day]
                 # 判断前一天是否跌停
                 if prev_day_data['close'] <= prev_day_data['down_limit_price']:
-                    # 第二天开盘价卖出
-                    sell_price = sell_data['open']
+                    # 第二天收盘价卖出
+                    sell_price = sell_data['close']
                     profit_pct = (sell_price - buy_price) / buy_price * 100
                     signals.append({
                         '股票代码': stock_code,
@@ -159,18 +168,18 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
                         '持有天数': hold_days,
                         '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_price, 2),  # 使用开盘价
+                        '卖出价': round(sell_price, 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
-                        '卖出原因': '跌停止损'  # 新增卖出原因
+                        '卖出原因': '跌停止损'
                     })
                     break
 
                 if sell_data['close'] >= sell_data['limit_price']:
                     continue  # 涨停日继续持有
 
-                    # 2. 断板日卖出（止盈条件）
-                    # 前一日涨停但当日未涨停（断板）
+                # 2. 断板日卖出（止盈条件）
+                # 前一日涨停但当日未涨停（断板）
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
@@ -224,44 +233,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出原因': '持有超限'
                     })
                     break
-                # 核心卖出条件：当日收盘价跌破五日均线
-                # if sell_data['close'] < sell_data['ma5']:
-                #     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                #     signals.append({
-                #         '股票代码': stock_code,
-                #         '股票名称': stock_name,
-                #         '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                #         '买入日': current_day.strftime('%Y-%m-%d'),
-                #         '卖出日': sell_day.strftime('%Y-%m-%d'),
-                #         '持有天数': hold_days,
-                #         '买入价': round(buy_price, 2),
-                #         '卖出价': round(sell_data['close'], 2),
-                #         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                #         '收益率(%)': round(profit_pct, 2),
-                #     })
-                #     break
-                # 触发卖出条件
-                # if any([
-                #     sell_data['close'] < buy_price * 0.97,  # 3%止损
-                #     (sell_data['close'] - buy_price) / buy_price >= 0.10,  # 10%止盈
-                #     hold_days >= 5  # 最大持有5日
-                # ]):
-                #     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                #     signals.append({
-                #         '股票代码': stock_code,
-                #         '股票名称': stock_name,
-                #         '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                #         '买入日': current_day.strftime('%Y-%m-%d'),
-                #         '卖出日': sell_day.strftime('%Y-%m-%d'),
-                #         '持有天数': hold_days,
-                #         '买入价': round(buy_price, 2),
-                #         '卖出价': round(sell_data['close'], 2),
-                #         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                #         '收益率(%)': round(profit_pct, 2),
-                #         '卖出原因': '持有超限'
-                #     })
-                #     break
-
             break  # 只取第一次触碰
     return signals
 
@@ -273,20 +244,19 @@ def save_trades_excel(result_df):
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
     """专业级Excel导出函数"""
-    # 生成带时间戳的文件名[2,6](@ref)
+    # 生成带时间戳的文件名
     excel_name = f"首板交易记录_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
-    # 创建带格式的Excel写入器[7](@ref)
+    # 创建带格式的Excel写入器
     with pd.ExcelWriter(excel_name, engine='xlsxwriter',engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
         # 写入原始数据
         result_df.to_excel(writer, sheet_name='交易明细', index=False)
 
-        # 获取工作表对象[6](@ref)
+        # 获取工作表对象
         workbook = writer.book
         worksheet = writer.sheets['交易明细']
 
-        # ================== 专业格式设置 ==================
-        # 1. 列宽自适应[2](@ref)
+        # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):
             series = result_df[col]
             max_len = max((
@@ -295,7 +265,7 @@ def save_trades_excel(result_df):
             )) + 2
             worksheet.set_column(idx, idx, max_len)
 
-        # 2. 条件格式(收益率红涨绿跌)[7](@ref)
+        # 2. 条件格式(收益率红涨绿跌)
         format_green = workbook.add_format({'font_color': '#00B050', 'num_format': '0.00%'})
         format_red = workbook.add_format({'font_color': '#FF0000', 'num_format': '0.00%'})
 
@@ -309,13 +279,11 @@ def save_trades_excel(result_df):
             else:
                 worksheet.write(row, result_df.columns.get_loc('收益率(%)'), cell_value, format_red)
 
-        # 3. 冻结首行[6](@ref)
+        # 3. 冻结首行
         worksheet.freeze_panes(1, 0)
-
-        # 4. 自动筛选[8](@ref)
+        # 4. 自动筛选
         worksheet.autofilter(0, 0, len(result_df), len(result_df.columns) - 1)
-
-        # 5. 添加统计页[5](@ref)
+        # 5. 添加统计页
         stats_df = pd.DataFrame({
             '统计指标': ['总交易次数', '胜率', '平均盈利', '平均亏损', '盈亏比'],
             '数值': [
@@ -333,7 +301,7 @@ def save_trades_excel(result_df):
 if __name__ == '__main__':
     import time  # 确保导入time模块
     total_start = time.perf_counter()  # 记录程序开始时间
-    # 获取当日涨停数据（新增）
+    # 获取当日涨停数据
     today = datetime.now()
     today_str = today.strftime("%Y%m%d")
     yesterday = today - timedelta(days=1)
@@ -363,7 +331,7 @@ if __name__ == '__main__':
 
     stock_process_duration = time.perf_counter() - stock_process_start
 
-    # 生成统计报表[10](@ref)
+    # 生成统计报表
     result_df = pd.DataFrame(all_signals)
     if not result_df.empty:
         win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
@@ -385,7 +353,6 @@ if __name__ == '__main__':
     else:
         print("未产生有效交易信号")
 
-    # 在生成result_df后调用
     if not result_df.empty:
         save_start = time.perf_counter()  # 记录Excel保存开始时间
         save_trades_excel(result_df)
