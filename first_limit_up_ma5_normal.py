@@ -52,23 +52,23 @@ def find_first_limit_up(symbol, df):
             continue
 
         # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
-        # # 新增：前五日累计涨幅校验
-        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change >= 15:  # 累计涨幅≥5%则排除
-                continue
-
-        # 涨停后第一天涨幅>5%的排除
-        next_day_idx = df.index.get_loc(day) + 1
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
-
-            # 如果次日涨幅超过5%，排除该首板日
-            if next_day_change >=8:
-                continue
+        # # 前五日累计涨幅校验
+        # if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
+        #     pre5_start = df.index[df.index.get_loc(day) - 5]
+        #     pre5_close = df.loc[pre5_start, 'close']
+        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+        #     if total_change >= 15:  # 累计涨幅≥5%则排除
+        #         continue
+        #
+        # # 涨停后第一天涨幅>8%的排除
+        # next_day_idx = df.index.get_loc(day) + 1
+        # if next_day_idx < len(df):
+        #     next_day = df.index[next_day_idx]
+        #     next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
+        #
+        #     # 如果次日涨幅超过8%，排除该首板日
+        #     if next_day_change >=8:
+        #         continue
 
         valid_days.append(day)
     return valid_days
@@ -82,11 +82,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
 
     base_price = df.loc[first_limit_day, 'close'] # 首板收盘价，最重要的位置，表示主力的支撑度
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 新增跌停价字段
-    min_price_threshold = base_price * 0.97  # 最低允许价格[6](@ref)
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 跌停价字段
 
     start_idx = df.index.get_loc(first_limit_day)
-    if (start_idx + 1) >= len(df):  # 新增边界检查，跳过无数据的情况
+    if (start_idx + 1) >= len(df):  # 边界检查，跳过无数据的情况
         return signals
     # day1 = df.index[start_idx + 1]
     # if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
@@ -104,35 +103,18 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
+        end_check_idx = df.index.get_loc(first_limit_day)
 
-        # ================ 新增条件1：前5日无跌停 ================
-        # 获取当前日的前5个交易日范围
-        start_check_idx = max(0, start_idx + offset - 5)
-        check_period = df.iloc[start_check_idx: start_idx + offset]
-        # 检查是否存在跌停(收盘价<=跌停价)
-        has_down_limit = (check_period['close'] <= check_period['down_limit_price']).any()
-        if has_down_limit:
-            continue
-
-        # ================ 新增条件2：前6日涨停次数≤1 ================
-        # 获取当前日的前6个交易日范围
-        start_limit_check = max(0, start_idx + offset - 6)
-        limit_check_period = df.iloc[start_limit_check: start_idx + offset]
-        # 统计涨停次数(排除首板日自身)
-        limit_count = (limit_check_period['close'] >= limit_check_period['limit_price']).sum()
-        if limit_count > 1:  # 包含当天则为>1，不包含则为>=1
-            continue
-
-        # ===== 新增条件3：买入前收盘价不低于首板收盘价 =====
-        price_condition_met = True
-        for check_offset in range(1, offset):
-            check_day = df.index[start_idx + check_offset]
-            if df.loc[check_day, 'close'] < base_price:
-                price_condition_met = False
-                break
-
-        if not price_condition_met:
-            continue
+        # ===== 买入前收盘价不低于首板收盘价 =====
+        # price_condition_met = True
+        # for check_offset in range(1, offset):
+        #     check_day = df.index[start_idx + check_offset]
+        #     if df.loc[check_day, 'close'] < base_price:
+        #         price_condition_met = False
+        #         break
+        #
+        # if not price_condition_met:
+        #     continue
 
         # 获取最近5日MA5数据（防止空值）
         ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
@@ -140,10 +122,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             continue
 
         # 核心条件：当日最低价触碰五日均线
-        # if (current_data['low'] <= current_data['ma5']) and \
-        #         (current_data['close'] > current_data['ma5']):  # 收盘收复均线
-        # touch_condition = (current_data['low'] <= current_data['ma5']) & \
-        #                   (current_data['close'] >= current_data['ma5'])
         touch_condition = (current_data['low'] <= current_data['ma5']) & \
                           (current_data['high'] >= current_data['ma5'])
 
@@ -191,7 +169,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 if sell_data['close'] >= sell_data['limit_price']:
                     continue  # 涨停日继续持有
 
-                    # 2. 断板日卖出（新增止盈条件）
+                    # 2. 断板日卖出（止盈条件）
                     # 前一日涨停但当日未涨停（断板）
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
@@ -210,23 +188,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出原因': '断板止盈'  # 新增字段
                     })
                     break
-                # if sell_data['close'] < buy_price * 0.97:
-                #     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                #     signals.append({
-                #         '股票代码': stock_code,
-                #         '股票名称': stock_name,
-                #         '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                #         '买入日': current_day.strftime('%Y-%m-%d'),
-                #         '卖出日': sell_day.strftime('%Y-%m-%d'),
-                #         '持有天数': hold_days,
-                #         '买入价': round(buy_price, 2),
-                #         '卖出价': round(sell_data['close'], 2),
-                #         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                #         '收益率(%)': round(profit_pct, 2),
-                #         '卖出原因': '3%止损'
-                #     })
-                #     break
-                # 3. 原有跌破五日线卖出条件
+
+                # 3. 跌破五日线卖出条件
                 if sell_data['close'] < sell_data['ma5']:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
