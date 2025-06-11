@@ -9,7 +9,6 @@ import getAllStockCsv
 
 def get_stock_data(symbol, start_date, force_update=False):
     """带本地缓存的数据获取"""
-    # 生成唯一文件名（网页1）
     file_name = f"stock_{symbol}_{start_date}.parquet"
     cache_path = os.path.join("data_cache", file_name)
 

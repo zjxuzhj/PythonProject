@@ -120,7 +120,7 @@ class StockQuery:
                 dtype={'stock_code': str},
                 usecols=['stock_code', '流通市值'],  # 明确指定需要加载的列
                 converters={
-                    '流通市值': lambda x: round(float(x) / 1e8, 2)  # 元→亿元并保留两位小数[1,4](@ref)
+                    '流通市值': lambda x: round(pd.to_numeric(x, errors='coerce') / 1e8, 2) if x != '-' else 0.0
                 }
             )
             df['stock_code'] = self.get_simple_by_code(df['stock_code'])
@@ -191,7 +191,7 @@ class StockQuery:
         # 预处理股票代码
         df_csv['clean_code'] = df_csv['stock_code'].str.extract(r'(\d{6})')[0]
         # 获取业绩报表数据
-        report_date = "20240930"  # 根据实际季度调整
+        report_date = "20250331"  # 根据实际季度调整
         try:
             yjbb_df = ak.stock_yjbb_em(date=report_date)
             yjbb_df['股票代码'] = yjbb_df['股票代码'].astype(str).str.zfill(6)  # 统一为6位数字
@@ -405,6 +405,7 @@ def add_stock_prefix(stock_code):
 if __name__ == "__main__":
     # 初始化查询工具（自动检测数据文件是否存在）
     query_tool = StockQuery()
+    # query_tool.addStockYjbbEm()
     srt = "创新药"
     themes_to_update = {
         'sz002162': srt,
