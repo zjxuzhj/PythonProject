@@ -9,19 +9,19 @@ from position_manage.transaction import Transaction
 def add_new_position(portfolio):
     try:
         month = 6
-        day = 10
+        day = 12
         transactions = [
-            # Transaction(datetime(2025, month, day), "sh603305", "SELL", 13.34, 300),
-            # Transaction(datetime(2025, month, day), "sh600743", "SELL", 2.17, 1100),
-            # Transaction(datetime(2025, month, day), "sz002612", "SELL", 18.57, 500),
-            # Transaction(datetime(2025, month, day), "sz002162", "SELL", 4.57, 500),
+            Transaction(datetime(2025, month, day), "sh605066", "SELL", 7.8, 300),
+            Transaction(datetime(2025, month, day), "sh600800", "SELL", 4.33, 1100),
+            # Transaction(datetime(2025, month, day), "sz002335", "SELL", 42.82, 100),
+            # Transaction(datetime(2025, month, day), "sz000530", "SELL", 5.94, 800),
             # Transaction(datetime(2025, month, day), "sh600830", "SELL", 9.8, 500),
 
-            Transaction(datetime(2025, month, day), "sh600589", "BUY", 7.79, 600),
-            Transaction(datetime(2025, month, day), "sh605018", "BUY", 12.85, 300),
-            Transaction(datetime(2025, month, day), "sz000530", "BUY", 6.06, 800),
-            Transaction(datetime(2025, month, day), "sh605066", "BUY", 7.96, 600),
-            Transaction(datetime(2025, month, day), "sz002335", "BUY", 43.21, 100),
+            Transaction(datetime(2025, month, day), "sh603598", "BUY", 18.38, 500),
+            Transaction(datetime(2025, month, day), "sz000795", "BUY", 11.44, 800),
+            Transaction(datetime(2025, month, day), "sz002300", "BUY", 6.68, 1400),
+            # Transaction(datetime(2025, month, day), "sh605066", "BUY", 7.96, 600),
+            # Transaction(datetime(2025, month, day), "sz002335", "BUY", 43.21, 100),
         ]
 
         added_count = 0

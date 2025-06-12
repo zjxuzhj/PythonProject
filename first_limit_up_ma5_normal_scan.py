@@ -1,10 +1,12 @@
 import os
 from datetime import datetime, timedelta
+
 import pandas as pd
+
 import getAllStockCsv
 
 
-def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
+def check_recent_limit_up(code, df, days=8):
     """检测最近days个交易日内是否有涨停且后续收盘价达标"""
     # 获取市场类型
     market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(("300", "301")) else "主板"
@@ -14,10 +16,10 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
 
     # 获取当前数据的最新日期
     end_date = df.index.max()  # 数据的最新交易日
-    # 计算days个交易日前的起始日期（网页1）
+    # 计算days个交易日前的起始日期
     start_date = (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")
 
-    # 筛选有效时间范围（网页3）
+    # 筛选有效时间范围
     date_mask = (df.index >= start_date) & (df.index <= end_date)
     recent_df = df.loc[date_mask].copy()
 
@@ -31,15 +33,22 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
 
     for ld in limit_days:
         # 获取涨停日开盘价
-        open_price = recent_df.loc[ld, 'open']
         # 检查后续所有收盘价是否达标
         subsequent_df = recent_df[recent_df.index > ld].head(8)  # 取后续最多8个交易日
-        # 检测后续是否出现新涨停
+
+        # 筛选条件：排除涨停后第一天涨幅≥8%
+        if not subsequent_df.empty:
+            first_day_after_limit = subsequent_df.iloc[0]
+            prev_day_close = recent_df.loc[ld, 'close']
+            day1_pct = (first_day_after_limit['close'] - prev_day_close) / prev_day_close * 100
+            if day1_pct >= 8:
+                continue
+
+        # 条件一：排除连板
         subsequent_limit_days = subsequent_df[subsequent_df['close'] >= subsequent_df['limit_price']]
         if not subsequent_limit_days.empty:
-            continue  # 排除有后续涨停的情况
+            continue
 
-        # 新增空值检查
         if subsequent_df.empty:
             continue  # 跳过无后续数据的交易日
         subsequent_df['5ma'] = subsequent_df['close'].rolling(5, min_periods=1).mean()
@@ -47,39 +56,25 @@ def check_recent_limit_up(code, df, days=8, check_five_day_line=False):
         last_date = subsequent_df.index[-1]  # 获取最后一个有效日期
         last_5ma = recent_df.loc[last_date, '5ma']  # 从完整序列中取对应日期的5日均线
 
-        if check_five_day_line:  # True时保留五日线上方的股票
-            if last_close <= last_5ma:
-                continue
-        else:  # False时排除五日线上方的股票
-            if last_close > last_5ma:
-                continue
+        if last_close <= last_5ma:
+            continue
 
-        # 修改后（收盘价>涨停日最高价）
-        # 新增涨停日最高价获取
-        highest_price = recent_df.loc[ld, 'high']  # 获取涨停日最高价
-        # 条件1：所有后续交易日收盘价 > 涨停日开盘价
-        all_days_above_open = (subsequent_df['close'] > open_price).all()
-        # 条件2：最后一天收盘价 < 涨停日最高价
-        last_day_below_high = subsequent_df.iloc[-1]['close'] < highest_price
-        subsequent_has_limit = (subsequent_df['close'] >= subsequent_df['limit_price']).any()
+        base_price = recent_df.loc[ld, 'high']
 
-        # 判断条件
-        if not subsequent_df.empty and (subsequent_df['close'] > highest_price).all():
-            # if not subsequent_df.empty and (((subsequent_df['close'] > open_price) &(subsequent_df['close'] < highest_price)).all()):
-            # if all_days_above_open and last_day_below_high and not subsequent_has_limit:
+        if not subsequent_df.empty and (subsequent_df['close'] > base_price).all():
             valid_stocks.append((code, name, ld.strftime("%Y-%m-%d")))
 
     return valid_stocks
 
 
-def get_stock_data(symbol, start_date, force_update=False):
+def get_stock_data(symbol):
     """带本地缓存的数据获取"""
     # 生成唯一文件名（网页1）
-    file_name = f"stock_{symbol}_{start_date}.parquet"
+    file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
 
     # 非强制更新时尝试读取缓存
-    if not force_update and os.path.exists(cache_path):
+    if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
             print(f"从缓存加载数据：{symbol}")
@@ -103,38 +98,26 @@ if __name__ == '__main__':
 
     # 参数设置
     symbol = 'sh601086'  # 平安银行
-    start_date = '20240201'
 
     # 初始化涨停股容器
     limit_up_stocks = []
 
     query_tool = getAllStockCsv.StockQuery()
-    # 加载股票列表并过滤
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
 
     for idx, (code, name) in enumerate(stock_list, 1):
         try:
-            df, _ = get_stock_data(code, start_date=start_date)
+            df, _ = get_stock_data(code)
             if df.empty:
                 continue
 
-            # 判断市场类型（网页8阈值逻辑）
-            market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(
-                ("300", "301")) else "主板"
-
-            # 调用新检测函数
-            matched = check_recent_limit_up(code, df, check_five_day_line=True)
+            matched = check_recent_limit_up(code, df)
             if matched:
                 symbol = ('sh' + code if code.startswith(('6', '9', '688', '689'))
                           else 'sz' + code if code.startswith(('0', '3', '300', '301'))
                 else code)
-                # 获取行业信息（含异常处理）
-                try:
-                    industry = query_tool.get_stock_industry(symbol) or "未知行业"
-                except:
-                    industry = "行业获取失败"
                 for item in matched:
                     code, name, date_str = item
                     date = pd.Timestamp(date_str)
@@ -147,8 +130,10 @@ if __name__ == '__main__':
                         pre5_close = df.loc[pre5_day, 'close']
                         limit_close = df.loc[date, 'close']
                         pre5_days_pct = (limit_close - pre5_close) / pre5_close * 100
+                        if pre5_days_pct > 15:
+                            continue
 
-                    limit_up_stocks.append((code, name, date_str, industry, pre5_days_pct))
+                    limit_up_stocks.append((code, name, date_str))
 
         except Exception as e:
             print(f"处理异常：{name}({code}) - {str(e)}")
@@ -162,7 +147,7 @@ if __name__ == '__main__':
 
     for stock in limit_up_stocks:
         # 提取日期并转换为日期对象
-        code, name, limit_date, industry, pre5_pct = stock
+        code, name, limit_date, = stock
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
 
@@ -174,38 +159,9 @@ if __name__ == '__main__':
     # 按天数排序（网页3排序方法）
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
-    # 修改后的输出部分代码（替换原tabulate部分）
-    headers = ["股票代码", "股票名称", "最近涨停日", "所属行业", "5日涨幅%"]
-    col_widths = [12, 10, 14, 15,10]  # 第四列宽度设为20
-
-    header_line = "| " + " | ".join([header.ljust(col_widths[i]) for i, header in enumerate(headers)]) + " |"
-    separator = "-" * len(header_line)
-    print(separator)
-    print(header_line)
-    print(separator)
-
     for delta, stocks in sorted_days:
         # 打印数据行
         for stock in stocks:
-            code, name, date, industry, pre5_pct = stock
+            code, name, date = stock
 
-            # 格式化数据
-            formatted_pre5 = "N/A"
-            if isinstance(pre5_pct, float):
-                pre5_pct = round(pre5_pct, 1)
-                formatted_pre5 = f"{pre5_pct}%"  # 保留1位小数
-
-                # 设置颜色：涨幅≤15%显示红色
-                if pre5_pct <= 15:
-                    formatted_pre5 = f"\033[31m{formatted_pre5}\033[0m"  # 红色
-
-            # 构建表格行
-            line_items = [
-                code.ljust(col_widths[0]),
-                name.ljust(col_widths[1]),
-                date.center(col_widths[2]),
-                industry.ljust(col_widths[3]),
-                formatted_pre5.rjust(col_widths[4])  # 右对齐
-            ]
-
-            print("  " + "   ".join(line_items) + "  ")
+            print("  " + "   ".join(stock) + "  ")
