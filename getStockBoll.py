@@ -215,7 +215,7 @@ def monitor_single_stock(symbol):
                     if "⚠️" in str(alert_msg):
                         print("\n" + "=" * 40)
                         print(
-                            f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                            f"【{query_tool.get_name_by_code(stockCsv.code_add_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
                         print("最新3根K线：")
                         print(boll_data[['close', 'Upper', 'Lower']].tail(3))
@@ -225,13 +225,13 @@ def monitor_single_stock(symbol):
                         # 频率控制逻辑（60秒间隔）
                         if current_time - LAST_SEND_TIME[symbol] >= 60:
                             # 发送消息并更新最后发送时间
-                            title = f"{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}" + alert_msg
+                            title = f"{query_tool.get_name_by_code(stockCsv.code_add_prefix(symbol))}" + alert_msg
                             response = sc_send("SCT248551TKIaBVraC3CpN1ei1cqTJJhXU", title)
                             LAST_SEND_TIME[symbol] = current_time
                         else:
                             print(f"消息发送冷却中（剩余{60 - (current_time - LAST_SEND_TIME):.0f}秒）")
                     else:
-                        print(f"【{query_tool.get_name_by_code(stockCsv.add_stock_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"【{query_tool.get_name_by_code(stockCsv.code_add_prefix(symbol))}】{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         print(alert_msg)
             # 等待下次检查
             else:

@@ -7,7 +7,6 @@ import pandas as pd
 
 
 class StockQuery:
-    # 类属性定义文件路径
     CSV_PATH = os.path.join(os.path.dirname(__file__), 'stock_code_name.csv')
     REPORT_CSV_PATH = os.path.join(os.path.dirname(__file__), 'merged_report_2024Q3.csv')
 
@@ -69,7 +68,7 @@ class StockQuery:
         }
 
     def _ensure_theme_column_exists(self):
-        """确保CSV文件包含theme列[1,4](@ref)"""
+        """确保CSV文件包含theme列"""
         if os.path.exists(self.CSV_PATH):
             df = pd.read_csv(self.CSV_PATH)
             if 'theme' not in df.columns:
@@ -81,13 +80,13 @@ class StockQuery:
                 self.CSV_PATH, index=False)
 
     def _init_roe_data(self):
-        """预加载ROE数据到内存[3,5](@ref)"""
+        """预加载ROE数据到内存"""
         try:
             # 单次读取并预处理
             df = pd.read_csv(
                 self.REPORT_CSV_PATH,
-                dtype={'stock_code': str},  # 强制字符串类型[3](@ref)
-                usecols=['stock_code', '净资产收益率']  # 仅读取必要列[5](@ref)
+                dtype={'stock_code': str},  # 强制字符串类型
+                usecols=['stock_code', '净资产收益率']  # 仅读取必要列
             )
             df['stock_code'] = self.get_simple_by_code(df['stock_code'])
             # 转换为字典加速查询
@@ -220,14 +219,14 @@ class StockQuery:
             print(f"接口调用失败: {str(e)}")
 
     def get_stock_roe(self, symbol):
-        """字典直查法（O(1)时间复杂度）[5](@ref)"""
+        """字典直查法（O(1)时间复杂度）"""
         try:
             # 统一代码格式（处理带交易所前缀的情况）
             return self.roe_cache.get(symbol, 0.0)  # 无匹配返回None
 
         except Exception as e:
             print(f"ROE查询异常: {symbol} - {str(e)}")
-            return 0.0  # 明确返回None代替0[1](@ref)
+            return 0.0  # 明确返回None代替0
 
     def get_stock_industry(self, symbol):
         try:
@@ -240,13 +239,13 @@ class StockQuery:
             return "未知行业"
 
     def get_stock_market_value(self, symbol):
-        """字典直查法（O(1)时间复杂度）[5](@ref)"""
+        """字典直查法（O(1)时间复杂度）"""
         try:
             return self.market_value_cache.get(symbol, 0.0)  # 无匹配返回None
 
         except Exception as e:
             print(f"流通市值查询异常: {symbol} - {str(e)}")
-            return 0.0  # 明确返回None代替0[1](@ref)
+            return 0.0  # 明确返回None代替0
 
     def _load_data(self):
         """加载本地数据"""
@@ -260,10 +259,50 @@ class StockQuery:
             raise RuntimeError("股票数据文件不存在，请先执行数据更新")
 
     def get_name_by_code(self, code):
-        result = self.query(code)
+        # 步骤1：统一格式化股票代码
+        normalized_code = self._normalize_stock_code(code)
+
+        # 步骤2：用标准化代码查询
+        result = self.query(normalized_code)
+
+        # 步骤3：验证并返回结果
         if result['status'] == 'success' and result['data']['type'] == 'code':
             return result['data']['value']
         return "未找到对应名称"
+
+    def _normalize_stock_code(self, code):
+        """将不同格式的股票代码统一转换为sh/sz前缀格式"""
+        # 清洗输入：移除非字母数字字符（保留点）
+        cleaned_code = ''.join(c for c in code if c.isalnum() or c == '.').upper()
+
+        # 情况1：带点格式（如603722.SH）
+        if '.' in cleaned_code:
+            code_part, exchange_part = cleaned_code.split('.')
+            exchange_prefix = {
+                'SH': 'sh', 'SZ': 'sz', 'BJ': 'bj', 'HK': 'hk'
+            }.get(exchange_part[:2], exchange_part[:2].lower())
+            return f"{exchange_prefix}{code_part}"
+
+        # 情况2：纯数字格式（如603722）
+        elif cleaned_code.isdigit():
+            # 根据股票代码开头识别交易所[3,6](@ref)
+            if cleaned_code.startswith(('6', '900')):  # 上交所股票
+                return f"sh{cleaned_code}"
+            elif cleaned_code.startswith(('0', '2', '3')):  # 深交所股票
+                return f"sz{cleaned_code}"
+            elif cleaned_code.startswith(('4', '8', '920')):  # 北交所股票
+                return f"bj{cleaned_code}"
+
+        # 情况3：混合格式（如sh603722或603722SH）
+        elif len(cleaned_code) > 2:
+            # 自动识别前缀位置（开头或结尾）
+            prefix = cleaned_code[:2].lower() if cleaned_code[:2].isalpha() else cleaned_code[-2:].lower()
+            # 提取数字部分
+            digits = ''.join(c for c in cleaned_code if c.isdigit())
+            return f"{prefix}{digits}"
+
+        # 默认返回原格式（小写）
+        return cleaned_code.lower()
 
     def get_code_by_name(self, name):
         result = self.query(name)
@@ -289,7 +328,7 @@ class StockQuery:
 
     def update_themes(self, theme_dict):
         """
-        批量更新股票题材[1,8](@ref)
+        批量更新股票题材
         :param theme_dict: 字典格式 {股票代码: 题材}
         """
         # 读取现有数据
@@ -323,16 +362,16 @@ class StockQuery:
         self.update_themes({code: theme})
 
     def batch_add_themes(self, theme_list):
-        """批量添加题材（列表格式）[7](@ref)"""
+        """批量添加题材（列表格式）"""
         theme_dict = {item['code']: item['theme'] for item in theme_list}
         self.update_themes(theme_dict)
 
     def get_all_themes(self):
-        """获取所有股票的题材映射[9](@ref)"""
+        """获取所有股票的题材映射"""
         return self.df.set_index('stock_code')['theme'].to_dict()
 
     def find_stocks_by_theme(self, keyword):
-        """根据题材关键词搜索股票[8](@ref)"""
+        """根据题材关键词搜索股票"""
         return self.df[self.df['theme'].str.contains(keyword, case=False, na=False)]
 
     def query(self, input_str, exact_match=True):
@@ -379,11 +418,66 @@ class StockQuery:
         return cls._instance
 
 
-def add_stock_prefix(stock_code):
+def convert_stock_code(original_code):
     """
-    自动为股票代码添加市场前缀
-    :param stock_code: 6位数字的股票代码（字符串或数字类型）
-    :return: 带市场前缀的股票代码
+    "603722.SH" -> "sh603722"
+    """
+    # 分割股票代码和交易所标识
+    if '.' not in original_code:
+        raise ValueError("股票代码格式错误，必须包含'.'分隔符")
+
+    code_part, exchange_part = original_code.split('.')
+
+    # 映射交易所标识到前缀
+    exchange_map = {
+        'SH': 'sh',  # 上海证券交易所
+        'SZ': 'sz',  # 深圳证券交易所
+        'BJ': 'bj',  # 北京证券交易所
+        'HK': 'hk'  # 香港交易所
+    }
+
+    # 获取前缀（不区分大小写）
+    prefix = exchange_map.get(exchange_part.upper())
+
+    if prefix is None:
+        # 如果遇到未知交易所，保留原格式
+        return f"{exchange_part.lower()}{code_part}"
+
+    return f"{prefix}{code_part}"
+
+
+def convert_to_standard_format(compact_code):
+    """
+    "sh603722" -> "603722.SH"
+    """
+    # 验证输入格式
+    if not compact_code or len(compact_code) < 3 or compact_code[:2].isnumeric():
+        raise ValueError("股票代码格式错误，应以交易所前缀开头（如sh/sz）")
+
+    # 交易所前缀映射（小写->大写交易所标识）
+    exchange_prefix_map = {
+        'sh': 'SH',  # 上海证券交易所[1,6](@ref)
+        'sz': 'SZ',  # 深圳证券交易所[1,7](@ref)
+        'bj': 'BJ',  # 北京证券交易所[2](@ref)
+        'hk': 'HK'  # 香港交易所[6](@ref)
+    }
+
+    # 提取前缀（前2字符）和数字部分
+    prefix = compact_code[:2].lower()
+    number_part = compact_code[2:]
+
+    # 验证数字部分（应为6位数字）[1,2](@ref)
+    if not number_part.isdigit() or len(number_part) != 6:
+        raise ValueError("股票代码数字部分应为6位数字")
+
+    # 获取交易所标识（支持未知交易所）
+    exchange = exchange_prefix_map.get(prefix, prefix.upper())
+
+    return f"{number_part}.{exchange}"
+
+def code_add_prefix(stock_code):
+    """
+    "603722" -> "sh603722"
     """
     code = str(stock_code).strip()
 
@@ -391,7 +485,7 @@ def add_stock_prefix(stock_code):
     if not code.isdigit() or len(code) != 6:
         raise ValueError("股票代码必须为6位数字")
 
-    # 根据首字符判断市场[1](@ref)
+    # 根据首字符判断市场
     first_digit = code[0]
     if first_digit in ('6', '5', '9'):  # 沪市包含主板/科创板/B股
         return f"sh{code}"
