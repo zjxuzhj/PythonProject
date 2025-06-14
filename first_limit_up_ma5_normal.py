@@ -86,6 +86,7 @@ def find_first_limit_up(symbol, df):
 def generate_signals(df, first_limit_day, stock_code, stock_name):
     """生成买卖信号"""
     signals = []
+    first_limit_timestamp = pd.Timestamp(first_limit_day)
     market_type = "科创板" if stock_code.startswith(("688", "689")) else "创业板" if stock_code.startswith(
         ("300", "301")) else "主板"
     limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
@@ -134,6 +135,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         touch_condition = (current_data['low'] <= current_data['ma5']) & \
                           (current_data['high'] >= current_data['ma5'])
 
+        buy_day_timestamp = pd.Timestamp(current_day)
+        days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
         history_window = df.iloc[start_idx + 1: start_idx + offset]
         history_condition = (history_window['close'] > history_window['ma5']).all()
 
@@ -165,6 +168,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '首板日': first_limit_day.strftime('%Y-%m-%d'),
                         '买入日': current_day.strftime('%Y-%m-%d'),
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
+                        '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
                         '买入价': round(buy_price, 2),
                         '卖出价': round(sell_price, 2),
@@ -188,6 +192,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '首板日': first_limit_day.strftime('%Y-%m-%d'),
                         '买入日': current_day.strftime('%Y-%m-%d'),
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
+                        '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
                         '买入价': round(buy_price, 2),
                         '卖出价': round(sell_data['close'], 2),
@@ -206,6 +211,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '首板日': first_limit_day.strftime('%Y-%m-%d'),
                         '买入日': current_day.strftime('%Y-%m-%d'),
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
+                        '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
                         '买入价': round(buy_price, 2),
                         '卖出价': round(sell_data['close'], 2),
@@ -224,6 +230,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '首板日': first_limit_day.strftime('%Y-%m-%d'),
                         '买入日': current_day.strftime('%Y-%m-%d'),
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
+                        '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
                         '买入价': round(buy_price, 2),
                         '卖出价': round(sell_data['close'], 2),
@@ -237,7 +244,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
 
 def save_trades_excel(result_df):
-    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日',
+    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日','涨停后天数',
                     '持有天数', '买入价', '卖出价', '收益率(%)','卖出原因']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
