@@ -1,19 +1,20 @@
+import math
 import os
-from datetime import datetime, timedelta
-
+from datetime import datetime
+import time
 import numpy as np
 import pandas as pd
 
 import getAllStockCsv
 
 
-def get_stock_data(symbol, start_date, force_update=False):
+def get_stock_data(symbol):
     """带本地缓存的数据获取"""
-    file_name = f"stock_{symbol}_{start_date}.parquet"
+    file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
 
     # 非强制更新时尝试读取缓存
-    if not force_update and os.path.exists(cache_path):
+    if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
             # df['vol_ma5'] = df['volume'].rolling(5).mean()
@@ -23,10 +24,8 @@ def get_stock_data(symbol, start_date, force_update=False):
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
 
-    # 强制更新或缓存不存在时获取新数据（网页7）
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
-
 
 def find_first_limit_up(symbol, df):
     """识别首板涨停日并排除连板"""
@@ -41,48 +40,28 @@ def find_first_limit_up(symbol, df):
 
     valid_days = []
     for day in limit_days:
-        # 排除连板(次日不涨停)
+        # 日期过滤条件（方便回测）
+        if day < pd.Timestamp('2024-03-01'):
+            continue
+
+        # 条件1：排除连板（次日不涨停）
         next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
         if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
             continue
 
-        # 新增日期过滤条件
-        if day < pd.Timestamp('2024-03-01'):
-            continue
-
-        # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
-        # 前五日累计涨幅校验
-        if df.index.get_loc(day) >= 5:  # 确保有足够历史数据
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change >= 15:  # 累计涨幅≥5%则排除
-                continue
-
-        # 涨停后第一天涨幅>8%的排除
+        # 条件2：涨停后第一天涨幅>8%的排除
         next_day_idx = df.index.get_loc(day) + 1
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
             base_price = df.loc[day, 'close']
-            # 检查除数是否为零
-            if abs(base_price) < 1e-5:  # 浮点数近似零值判断
+            if abs(base_price) < 1e-5:
                 continue  # 跳过无效数据
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
             # 如果次日涨幅超过8%，排除该首板日
             if next_day_change >=8:
                 continue
 
-        # 前高压制条件
-        day_idx = df.index.get_loc(day)
-        if day_idx >= 13:  # 确保10日历史数据
-            # 计算前高（10日最高价）
-            historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
-            # 检查前3日最高价是否触及前高的95%
-            recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
-            if historical_high * 0.95 <= recent_3day_high < historical_high:
-                continue  # 触发排除条件
-
-        # 量能过滤条件
+        #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         next_day_idx = df.index.get_loc(day) + 1
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
@@ -92,6 +71,24 @@ def find_first_limit_up(symbol, df):
             next_day_close = df.loc[next_day, 'close']
             if (next_day_volume >= limit_day_volume * 3.6) and (next_day_close < next_day_open):
                 continue
+
+        # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
+        if df.index.get_loc(day) >= 5:
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:
+                continue
+
+        # 条件5：前高压制条件
+        day_idx = df.index.get_loc(day)
+        if day_idx >= 13:  # 确保10日历史数据
+            # 计算前高（10日最高价）
+            historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
+            # 检查前3日最高价是否触及前高的95%
+            recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
+            if historical_high * 0.95 <= recent_3day_high < historical_high:
+                continue  # 触发排除条件
 
         valid_days.append(day)
     return valid_days
@@ -109,6 +106,30 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 跌停价字段
 
     start_idx = df.index.get_loc(first_limit_day)
+    next_next_day_change = None
+
+    if start_idx + 2 < len(df):
+        # 获取涨停日下一个交易日和下下个交易日的收盘价
+        next_day = df.index[start_idx + 1]
+        next_next_day = df.index[start_idx + 2]
+
+        # 计算涨幅百分比（处理无效数据）
+        base_price = df.loc[next_day, 'close']
+        next_next_close = df.loc[next_next_day, 'close']
+
+        # 确保收盘价有效（非零且非NaN）
+        if not np.isnan(base_price) and not np.isnan(next_next_close) and base_price != 0:
+            change_percent = (next_next_close - base_price) / base_price * 100
+
+            # 安全处理可能的NaN
+            if not np.isnan(change_percent):
+                # 向上取整处理
+                next_next_day_change = math.ceil(change_percent)  # 直接向上取整到整数
+            else:
+                print(f"{stock_code} 无效的涨幅计算: 基础价={base_price}, 下下日收盘价={next_next_close}")
+        else:
+            print(f"{stock_code} 无效的价格数据: 基础价={base_price}, 下下日收盘价={next_next_close}")
+
     if (start_idx + 1) >= len(df):  # 边界检查，跳过无数据的情况
         return signals
     # day1 = df.index[start_idx + 1]
@@ -127,16 +148,14 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
-        end_check_idx = df.index.get_loc(first_limit_day)
 
-        # ===== 买入前收盘价不低于首板收盘价 =====
+        # 买入前收盘价不低于首板收盘价
         price_condition_met = True
         for check_offset in range(1, offset):
             check_day = df.index[start_idx + check_offset]
             if df.loc[check_day, 'close'] < base_price:
                 price_condition_met = False
                 break
-
         if not price_condition_met:
             continue
 
@@ -148,6 +167,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         # 核心条件：当日最低价触碰五日均线
         touch_condition = (current_data['low'] <= current_data['ma5']) & \
                           (current_data['high'] >= current_data['ma5'])
+        # tolerance = current_data['ma5'] * 0.002
+        # touch_condition = (current_data['low'] <= current_data['ma5'] + tolerance) & \
+        #                   (current_data['high'] >= current_data['ma5'])
 
         buy_day_timestamp = pd.Timestamp(current_day)
         days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
@@ -156,7 +178,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         if not first_touch_flag and touch_condition and history_condition:
             first_touch_flag = True  # 标记首次触碰
-            buy_price = current_data['ma5']  # 以五日均线值为买入价
+            buy_price = current_data['ma5']*1.02  # 以五日均线值为买入价
             hold_days = 0
 
             # 卖出逻辑
@@ -188,6 +210,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出价': round(sell_price, 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        '首板下下日涨幅(%)': next_next_day_change,
                         '卖出原因': '跌停止损'
                     })
                     break
@@ -212,6 +235,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出价': round(sell_data['close'], 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        '首板下下日涨幅(%)': next_next_day_change,
                         '卖出原因': '断板止盈'  # 新增字段
                     })
                     break
@@ -231,6 +255,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出价': round(sell_data['close'], 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        '首板下下日涨幅(%)': next_next_day_change,
                         '卖出原因': '跌破五日线'
                     })
                     break
@@ -250,6 +275,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出价': round(sell_data['close'], 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        '首板下下日涨幅(%)': next_next_day_change,
                         '卖出原因': '持有超限'
                     })
                     break
@@ -259,7 +285,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日','涨停后天数',
-                    '持有天数', '买入价', '卖出价', '收益率(%)','卖出原因']
+                    '持有天数', '买入价', '卖出价', '收益率(%)','首板下下日涨幅(%)','卖出原因']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
@@ -319,28 +345,18 @@ def save_trades_excel(result_df):
 
 
 if __name__ == '__main__':
-    import time  # 确保导入time模块
     total_start = time.perf_counter()  # 记录程序开始时间
-    # 获取当日涨停数据
-    today = datetime.now()
-    today_str = today.strftime("%Y%m%d")
-    yesterday = today - timedelta(days=1)
-    yesterday_str = yesterday.strftime("%Y%m%d")
 
     all_signals = []
-
-    # 参数设置
-    symbol = 'sh601086'  # 平安银行
-    start_date = '20240201'
-
     query_tool = getAllStockCsv.StockQuery()
     # 加载股票列表并过滤
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
     total = len(stock_list)
     stock_process_start = time.perf_counter()
+
     for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code, start_date=start_date)
+        df, _ = get_stock_data(code)
         if df.empty:
             continue
 
