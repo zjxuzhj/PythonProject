@@ -33,6 +33,20 @@ def check_recent_limit_up(code, df, days=8):
 
     for ld in limit_days:
         # 获取涨停日开盘价
+        # === 新增：前高压制判断 ===
+        try:
+            day_idx = df.index.get_loc(ld)  # 使用原始df确保足够历史数据
+            if day_idx >= 13:  # 至少需要10日历史数据
+                # 计算10日最高价（前高）
+                historical_high = df.iloc[day_idx - 10: day_idx]['high'].max()
+                # 获取前3日最高价
+                recent_3day_high = df.iloc[day_idx - 3: day_idx]['high'].max()
+                # 判断是否触及前高95%但未突破
+                if historical_high * 0.95 <= recent_3day_high < historical_high:
+                    continue  # 触发排除条件，跳过该涨停日[7,8](@ref)
+        except KeyError:
+            continue  # 数据不足时跳过
+
         # 检查后续所有收盘价是否达标
         subsequent_df = recent_df[recent_df.index > ld].head(8)  # 取后续最多8个交易日
 
@@ -125,6 +139,7 @@ if __name__ == '__main__':
                     position = df.index.get_loc(date)
                     pre5_days_pct = "N/A"  # 默认值
 
+                    # 条件二：首板前5日累计涨幅≤15 %（排除已启动标的）
                     if position >= 5:
                         pre5_day = df.index[position - 5]
                         pre5_close = df.loc[pre5_day, 'close']

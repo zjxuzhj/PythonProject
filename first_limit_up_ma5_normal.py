@@ -58,8 +58,8 @@ def find_first_limit_up(symbol, df):
             total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
             if total_change >= 15:  # 累计涨幅≥5%则排除
                 continue
-
-        # 涨停后第一天涨幅>8%的排除
+        #
+        # # 涨停后第一天涨幅>8%的排除
         next_day_idx = df.index.get_loc(day) + 1
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
@@ -71,14 +71,23 @@ def find_first_limit_up(symbol, df):
 
         # 前高压制条件
         day_idx = df.index.get_loc(day)
-        if day_idx >= 13:  # 确保60日历史数据
-            # 计算前高（60日最高价）
+        if day_idx >= 13:  # 确保10日历史数据
+            # 计算前高（10日最高价）
             historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
             # 检查前3日最高价是否触及前高的95%
             recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
             if historical_high * 0.95 <= recent_3day_high < historical_high:
                 continue  # 触发排除条件
 
+        # 量能过滤条件
+        next_day_idx = df.index.get_loc(day) + 1
+        if next_day_idx < len(df):
+            next_day = df.index[next_day_idx]
+            limit_day_volume = df.loc[day, 'volume']
+            next_day_volume = df.loc[next_day, 'volume']
+            if next_day_volume >= limit_day_volume * 7.5:  # 5倍量能过滤
+                continue
+        #
         valid_days.append(day)
     return valid_days
 
