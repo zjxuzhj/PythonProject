@@ -10,7 +10,7 @@ import getAllStockCsv
 def get_stock_data(symbol, start_date, force_update=False):
     """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_{start_date}.parquet"
-    cache_path = os.path.join("back_test_data_cache", file_name)
+    cache_path = os.path.join("data_cache", file_name)
 
     # 非强制更新时尝试读取缓存
     if not force_update and os.path.exists(cache_path):
@@ -46,9 +46,9 @@ def find_first_limit_up(symbol, df):
         if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
             continue
 
-        # 新增日期过滤条件（网页1]）
-        # if day < pd.Timestamp('2024-03-01'):
-        #     continue
+        # 新增日期过滤条件
+        if day < pd.Timestamp('2024-03-01'):
+            continue
 
         # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
         # 前五日累计涨幅校验
@@ -58,13 +58,16 @@ def find_first_limit_up(symbol, df):
             total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
             if total_change >= 15:  # 累计涨幅≥5%则排除
                 continue
-        #
-        # # 涨停后第一天涨幅>8%的排除
+
+        # 涨停后第一天涨幅>8%的排除
         next_day_idx = df.index.get_loc(day) + 1
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
-            next_day_change = (df.loc[next_day, 'close'] - df.loc[day, 'close']) / df.loc[day, 'close'] * 100
-
+            base_price = df.loc[day, 'close']
+            # 检查除数是否为零
+            if abs(base_price) < 1e-5:  # 浮点数近似零值判断
+                continue  # 跳过无效数据
+            next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
             # 如果次日涨幅超过8%，排除该首板日
             if next_day_change >=8:
                 continue
@@ -85,12 +88,11 @@ def find_first_limit_up(symbol, df):
             next_day = df.index[next_day_idx]
             limit_day_volume = df.loc[day, 'volume']
             next_day_volume = df.loc[next_day, 'volume']
-            # next_day_open = df.loc[next_day, 'open']
-            # next_day_close = df.loc[next_day, 'close']
-            if next_day_volume >= limit_day_volume * 3.5 :
-            # if (next_day_volume >= limit_day_volume * 2) and (next_day_close < next_day_open):
+            next_day_open = df.loc[next_day, 'open']
+            next_day_close = df.loc[next_day, 'close']
+            if (next_day_volume >= limit_day_volume * 3.6) and (next_day_close < next_day_open):
                 continue
-        #
+
         valid_days.append(day)
     return valid_days
 
@@ -329,7 +331,7 @@ if __name__ == '__main__':
 
     # 参数设置
     symbol = 'sh601086'  # 平安银行
-    start_date = '20190101'
+    start_date = '20240201'
 
     query_tool = getAllStockCsv.StockQuery()
     # 加载股票列表并过滤
