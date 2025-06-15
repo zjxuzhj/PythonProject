@@ -10,7 +10,7 @@ import getAllStockCsv
 def get_stock_data(symbol, start_date, force_update=False):
     """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_{start_date}.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+    cache_path = os.path.join("back_test_data_cache", file_name)
 
     # 非强制更新时尝试读取缓存
     if not force_update and os.path.exists(cache_path):
@@ -47,8 +47,8 @@ def find_first_limit_up(symbol, df):
             continue
 
         # 新增日期过滤条件（网页1]）
-        if day < pd.Timestamp('2024-03-01'):
-            continue
+        # if day < pd.Timestamp('2024-03-01'):
+        #     continue
 
         # 相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天只能涨5%
         # 前五日累计涨幅校验
@@ -85,7 +85,10 @@ def find_first_limit_up(symbol, df):
             next_day = df.index[next_day_idx]
             limit_day_volume = df.loc[day, 'volume']
             next_day_volume = df.loc[next_day, 'volume']
-            if next_day_volume >= limit_day_volume * 7.5:  # 5倍量能过滤
+            # next_day_open = df.loc[next_day, 'open']
+            # next_day_close = df.loc[next_day, 'close']
+            if next_day_volume >= limit_day_volume * 3.5 :
+            # if (next_day_volume >= limit_day_volume * 2) and (next_day_close < next_day_open):
                 continue
         #
         valid_days.append(day)
@@ -326,7 +329,7 @@ if __name__ == '__main__':
 
     # 参数设置
     symbol = 'sh601086'  # 平安银行
-    start_date = '20240201'
+    start_date = '20190101'
 
     query_tool = getAllStockCsv.StockQuery()
     # 加载股票列表并过滤
@@ -357,10 +360,10 @@ if __name__ == '__main__':
 
         print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
         print(f"总交易次数: {len(result_df)}")
-        print(f"胜率: {win_rate:.1f}%")
-        print(f"平均盈利: {avg_win:.1f}% | 平均亏损: {avg_loss:.1f}%")
+        print(f"胜率: {win_rate:.2f}%")
+        print(f"平均盈利: {avg_win:.2f}% | 平均亏损: {avg_loss:.2f}%")
         print(f"盈亏比: {profit_ratio:.2f}:1")
-        print(f"期望收益: {get_money:.2f}")
+        print(f"期望收益: {get_money:.3f}")
 
         # 示例输出
         print("\n\033[1m最近5笔交易记录:\033[0m")
