@@ -191,7 +191,7 @@ class Portfolio:
 
                 # 打印汇总信息
                 total_value = sum(row['当前价格'] * row['持仓数量'] for _, row in df_report.iterrows())
-                print(f"\n总持仓价值: ¥{total_value:,.2f} | 可用现金: ¥{self.cash:,.2f}")
+                print(f"\n总持仓价值: ¥{total_value:,.2f}")
                 return df_report
 
             return df_report

@@ -350,11 +350,11 @@ def auto_order_by_ma5(stock_code, target_amount=5000):
     if ma5_price is None:
         return False
 
-    # pre_order_stock(
-    #     stock=stock_code,
-    #     target_amount=target_amount,
-    #     pre_price=ma5_price  # 传入MA5价格
-    # )
+    pre_order_stock(
+        stock=stock_code,
+        target_amount=target_amount,
+        pre_price=ma5_price  # 传入MA5价格
+    )
     return True
 
 
