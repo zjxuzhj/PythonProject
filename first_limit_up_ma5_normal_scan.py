@@ -6,7 +6,7 @@ import pandas as pd
 import getAllStockCsv
 
 
-def get_stock_data(symbol):
+def get_stock_data(symbol, isNeedLog):
     """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
@@ -15,7 +15,8 @@ def get_stock_data(symbol):
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
-            print(f"从缓存加载数据：{symbol}")
+            if isNeedLog:
+                print(f"从缓存加载数据：{symbol}")
             return df, True  # 返回缓存标记
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
@@ -156,7 +157,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     return never_touched and always_above_base
 
-def get_target_stocks():
+
+def get_target_stocks(isNeedLog=True):
     limit_up_stocks = []
 
     query_tool = getAllStockCsv.StockQuery()
@@ -166,7 +168,7 @@ def get_target_stocks():
     total = len(stock_list)
 
     for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code)
+        df, _ = get_stock_data(code, isNeedLog)
         if df.empty:
             continue
 
@@ -192,6 +194,7 @@ def get_target_stocks():
             days_groups[delta_days] = []
         days_groups[delta_days].append(stock)
 
+    target_stocks = set()
     # 按天数排序（网页3排序方法）
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
@@ -199,57 +202,67 @@ def get_target_stocks():
         # 打印数据行
         for stock in stocks:
             code, name, date = stock
-
+            standard_code = getAllStockCsv.convert_to_standard_format(code)
+            target_stocks.add(standard_code)
             print("  " + "   ".join(stock) + "  ")
 
+    save_target_stocks(target_stocks)
+    return list(target_stocks)
+
+
+def save_target_stocks(target_stocks, base_path="output"):
+    """保存目标股票列表到CSV文件，每天一行记录"""
+    # 确保输出目录存在
+    os.makedirs(base_path, exist_ok=True)
+
+    # 固定文件名
+    file_path = os.path.join(base_path, "target_stocks_daily.csv")
+
+    # 当前日期（格式：YYYY-MM-DD）
+    current_date = datetime.now().strftime('%Y-%m-%d')
+
+    # 将股票列表转换为逗号分隔的字符串
+    stocks_str = ",".join(target_stocks)
+
+    # 创建新的DataFrame包含今天的记录
+    today_df = pd.DataFrame({
+        "日期": [current_date],
+        "目标股票": [stocks_str]
+    })
+
+    # 检查文件是否存在，并决定如何保存
+    if os.path.exists(file_path):
+        # 读取现有数据
+        existing_df = pd.read_csv(file_path)
+
+        # 检查今天是否已有记录
+        if current_date in existing_df['日期'].values:
+            # 更新今天的记录
+            existing_df.loc[existing_df['日期'] == current_date, '目标股票'] = stocks_str
+            operation = "更新"
+        else:
+            # 添加今天的记录
+            existing_df = pd.concat([existing_df, today_df], ignore_index=True)
+            operation = "添加"
+
+        # 保存更新后的数据
+        existing_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        print(f"已{operation}今天的数据到: {file_path}")
+    else:
+        # 首次创建文件
+        today_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        print(f"已创建新文件并保存到: {file_path}")
+
+    return file_path
 
 
 if __name__ == '__main__':
-    limit_up_stocks = []
+    # 获取目标股票列表
+    target_stocks = get_target_stocks()
 
-    query_tool = getAllStockCsv.StockQuery()
-    # 加载股票列表并过滤
-    filtered_stocks = query_tool.get_all_filter_stocks()
-    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
-    total = len(stock_list)
+    # 打印结果
+    print("\n目标股票列表:")
+    for stock in target_stocks:
+        print(stock)
+    print(f"\n总数: {len(target_stocks)}只股票")
 
-    for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code)
-        if df.empty:
-            continue
-
-        first_limit_days = find_recent_first_limit_up(code, df)
-        for day in first_limit_days:
-            if generate_signals(df, day, code, name):
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d")))
-
-    # 新增分组排序逻辑 ======================
-    today = datetime.now().date()
-    days_groups = {}
-
-    print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
-
-    for stock in limit_up_stocks:
-        # 提取日期并转换为日期对象
-        code, name, limit_date, = stock
-        limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
-        delta_days = (today - limit_day).days
-
-        # 按天数分组
-        if delta_days not in days_groups:
-            days_groups[delta_days] = []
-        days_groups[delta_days].append(stock)
-
-    # 按天数排序（网页3排序方法）
-    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
-
-    target_stocks = set()
-
-    for delta, stocks in sorted_days:
-        # 打印数据行
-        for stock in stocks:
-            code, name, date = stock
-            target_stocks.add(code)
-            # print("  " + "   ".join(stock) + "  ")
-
-    print(f"  {list(target_stocks)} ")
