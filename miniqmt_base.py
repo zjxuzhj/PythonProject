@@ -2,21 +2,22 @@ import datetime
 import os
 import sys
 import time
-
-import sqlite3
 from datetime import datetime
 
-from position_manage.portfolio import Portfolio
-from position_manage.transaction import Transaction
-from position_manage.portfolio_db import save_portfolio
 import pandas as pd
 from xtquant import xtconstant
 from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
 from xtquant.xttype import StockAccount
+
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
+from position_manage.portfolio import Portfolio
+from position_manage.portfolio_db import save_portfolio
+from position_manage.transaction import Transaction
+
 query_tool = tools.StockQuery()
+
 
 # 定义一个类 创建类的实例 作为状态的容器
 class _a():
@@ -34,13 +35,39 @@ def interact():
     code.InteractiveConsole(locals=globals()).interact()
 
 
+def convert_traded_time(timestamp):
+    """
+    将QMT的traded_time转换为datetime对象
+
+    参数:
+        timestamp: int - QMT返回的时间戳(HHMMSSmmm格式)
+
+    返回:
+        datetime.datetime - 对应的日期时间对象
+    """
+    # 将整数转换为字符串并填充前导零确保9位
+    time_str = str(timestamp).zfill(9)
+
+    # 提取时间部分
+    hour = int(time_str[0:2])
+    minute = int(time_str[2:4])
+    second = int(time_str[4:6])
+
+    # 获取当前日期
+    today = datetime.now().date()
+
+    # 创建datetime对象
+    return datetime(today.year, today.month, today.day,
+                    hour, minute, second)
+
+
 # 添加数据库保存函数
 def save_transaction_to_db(trade, trade_type):
     """将交易记录保存到数据库"""
     try:
         # 创建交易记录对象
         transaction = Transaction(
-            date=datetime.now(),
+            date=convert_traded_time(trade.order_time),
             stock_code=trade.stock_code,
             action=trade_type,
             price=trade.traded_price,
@@ -56,6 +83,7 @@ def save_transaction_to_db(trade, trade_type):
         print(f"✅ 交易记录已保存: {trade_type} {stock_code} {trade.traded_volume}股 @ {trade.traded_price}")
     except Exception as e:
         print(f"❌ 保存交易记录失败: {str(e)}")
+
 
 # xtdata.download_sector_data()
 
@@ -73,7 +101,29 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         :param order: XtOrder对象
         :return:
         """
-        print(datetime.datetime.now(),f"收到委托回报: {order.stock_code} {order.order_status}")
+        print(f"""
+                        =============================
+                                委托信息
+                        =============================
+                        账号类型: {order.account_type}, 
+                        资金账号: {order.account_id},
+                        证券代码: {order.stock_code},
+                        订单编号: {order.order_id}, 
+                        柜台合同编号: {order.order_sysid},
+                        报单时间: {order.order_time},
+                        委托类型: {order.order_type},
+                        委托数量: {order.order_volume},
+                        报价类型: {order.price_type},
+                        委托价格: {order.price},
+                        成交数量: {order.traded_volume},
+                        成交均价: {order.traded_price},
+                        委托状态: {order.order_status},
+                        委托状态描述: {order.status_msg},
+                        策略名称: {order.strategy_name},
+                        委托备注: {order.order_remark},
+                        多空方向: {order.direction},
+                        交易操作: {order.offset_flag}
+                        """)
 
     def on_stock_trade(self, trade):
         """
@@ -83,6 +133,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         """
         # 判断是买入还是卖出
         trade_type = "BUY" if trade.offset_flag == xtconstant.STOCK_BUY else "SELL"
+
         print(datetime.datetime.now(), '成交回调', trade.order_remark,
               f"委托方向: {'买入' if trade_type == 'BUY' else '卖出'} "
               f"成交价格 {trade.traded_price} 成交数量 {trade.traded_volume}")
@@ -245,6 +296,7 @@ def get_guess_ma5_price(stock_code):
         print(f"MA5计算失败：{e}")
         return None
 
+
 def get_ma5_price(stock_code):
     """获取指定股票的最新MA5价格"""
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
@@ -270,6 +322,7 @@ def get_ma5_price(stock_code):
     except Exception as e:
         print(f"MA5计算异常：{str(e)}")
         return None
+
 
 def modify_last_days_and_calc_ma5(df):
     if df.empty or len(df) < (2):
@@ -344,6 +397,7 @@ def check_ma5_breach():
             continue
 
     return breach_list
+
 
 if __name__ == "__main__":
     xtdata.enable_hello = False

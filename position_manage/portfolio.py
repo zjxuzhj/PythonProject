@@ -10,7 +10,6 @@ class Portfolio:
     def __init__(self):
         self._tx_set = set()  # 交易唯一标识缓存
         self.positions = {}
-        self.cash = 1000000
         self.transaction_history = []
 
     def load_transaction(self, transaction):
@@ -31,12 +30,6 @@ class Portfolio:
         if tx_id in self._tx_set:  # 重复检查
             print(f"⚠️ 跳过重复交易: {tx_id}")
             return False
-
-        # 更新现金
-        if transaction.action == 'BUY':
-            self.cash -= transaction.price * transaction.shares
-        else:
-            self.cash += transaction.price * transaction.shares
 
         # 更新持仓
         query_tool = stockCsv.StockQuery()
