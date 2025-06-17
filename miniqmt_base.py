@@ -1,4 +1,3 @@
-import datetime
 import os
 import sys
 import time
@@ -43,7 +42,7 @@ def convert_traded_time(timestamp):
         timestamp: int - QMT返回的时间戳(HHMMSSmmm格式)
 
     返回:
-        datetime.datetime - 对应的日期时间对象
+        datetime - 对应的日期时间对象
     """
     # 将整数转换为字符串并填充前导零确保9位
     time_str = str(timestamp).zfill(9)
@@ -93,7 +92,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         连接断开
         :return:
         """
-        print(datetime.datetime.now(), '连接断开回调')
+        print(datetime.now(), '连接断开回调')
 
     def on_stock_order(self, order):
         """
@@ -135,7 +134,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         # 判断是买入还是卖出
         trade_type = "BUY" if trade.offset_flag == xtconstant.STOCK_BUY else "SELL"
 
-        print(datetime.datetime.now(), '成交回调', trade.order_remark,
+        print(datetime.now(), '成交回调', trade.order_remark,
               f"委托方向: {'买入' if trade_type == 'BUY' else '卖出'} "
               f"成交价格 {trade.traded_price} 成交数量 {trade.traded_volume}")
         # 保存交易记录到数据库
@@ -157,7 +156,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         :param cancel_error: XtCancelError 对象
         :return:
         """
-        print(datetime.datetime.now(), sys._getframe().f_code.co_name)
+        print(datetime.now(), sys._getframe().f_code.co_name)
 
     def on_order_stock_async_response(self, response):
         """
@@ -172,14 +171,14 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         :param response: XtCancelOrderResponse 对象
         :return:
         """
-        print(datetime.datetime.now(), sys._getframe().f_code.co_name)
+        print(datetime.now(), sys._getframe().f_code.co_name)
 
     def on_account_status(self, status):
         """
         :param response: XtAccountStatus 对象
         :return:
         """
-        print(datetime.datetime.now(), sys._getframe().f_code.co_name)
+        print(datetime.now(), sys._getframe().f_code.co_name)
 
 
 def order_stock(stock, target_amount=5000):
