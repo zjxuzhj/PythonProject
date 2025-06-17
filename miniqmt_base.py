@@ -80,7 +80,7 @@ def save_transaction_to_db(trade, trade_type):
 
         # 保存到数据库
         save_portfolio(portfolio)
-        print(f"✅ 交易记录已保存: {trade_type} {stock_code} {trade.traded_volume}股 @ {trade.traded_price}")
+        print(f"✅ 交易记录已保存: {trade_type} {trade.stock_code} {trade.traded_volume}股 @ {trade.traded_price}")
     except Exception as e:
         print(f"❌ 保存交易记录失败: {str(e)}")
 
@@ -131,6 +131,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         :param trade: XtTrade对象
         :return:
         """
+        print("on trade callback")
         # 判断是买入还是卖出
         trade_type = "BUY" if trade.offset_flag == xtconstant.STOCK_BUY else "SELL"
 
@@ -350,11 +351,11 @@ def auto_order_by_ma5(stock_code, target_amount=5000):
     if ma5_price is None:
         return False
 
-    pre_order_stock(
-        stock=stock_code,
-        target_amount=target_amount,
-        pre_price=ma5_price  # 传入MA5价格
-    )
+    # pre_order_stock(
+    #     stock=stock_code,
+    #     target_amount=target_amount,
+    #     pre_price=ma5_price  # 传入MA5价格
+    # )
     return True
 
 
@@ -432,21 +433,21 @@ if __name__ == "__main__":
     print(acc.account_id, '持仓字典', position_total_dict)
     print(acc.account_id, '可用持仓字典', position_available_dict)
 
-    # breach_stocks = check_ma5_breach()
+    breach_stocks = check_ma5_breach()
     #
-    # if breach_stocks:
-    #     print("\n跌破五日线持仓预警（截至%s）" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
-    #     df = pd.DataFrame(breach_stocks)
-    #     print(df[['代码', '名称', '持有数量', '当前价格']].to_string(index=False))
-    # else:
-    #     print("\n当前无持仓跌破五日线")
+    if breach_stocks:
+        print("\n跌破五日线持仓预警（截至%s）" % datetime.now().strftime("%Y-%m-%d %H:%M"))
+        df = pd.DataFrame(breach_stocks)
+        print(df[['代码', '名称', '持有数量', '当前价格']].to_string(index=False))
+    else:
+        print("\n当前无持仓跌破五日线")
 
-    target_stocks = scan.get_target_stocks(False)
-    # target_stocks = ['603722.SH']
-    for stock_code in target_stocks:
-        success = auto_order_by_ma5(stock_code, 10000)
-        if not success:
-            print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
+    # target_stocks = scan.get_target_stocks(False)
+    # # target_stocks = ['603722.SH']
+    # for stock_code in target_stocks:
+    #     success = auto_order_by_ma5(stock_code, 10000)
+    #     if not success:
+    #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
     xtdata.run()
     # pre_order_stock( '603722.SH',5000,42.15)
