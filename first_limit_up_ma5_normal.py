@@ -1,16 +1,19 @@
 import os
-from datetime import datetime
 import time
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 
 import getAllStockCsv
 
 
-def get_stock_data(symbol):
+def get_stock_data(symbol,is_19_data_test=False):
     """带本地缓存的数据获取"""
-    file_name = f"stock_{symbol}_20240201.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+    date="20190101" if is_19_data_test else "20240201"
+    cache_path_name="back_test_data_cache" if is_19_data_test else "data_cache"
+    file_name = f"stock_{symbol}_{date}.parquet"
+    cache_path = os.path.join(cache_path_name, file_name)
 
     # 非强制更新时尝试读取缓存
     if os.path.exists(cache_path):
@@ -88,6 +91,53 @@ def find_first_limit_up(symbol, df):
             recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
             if historical_high * 0.95 <= recent_3day_high < historical_high:
                 continue  # 触发排除条件
+
+        # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
+        if next_day_idx + 1 < len(df):  # 确保有第三日数据
+            # 获取首板次日（第一天）和第三日（第二天）数据
+            first_day = df.index[next_day_idx]
+            first_day_data = df.loc[first_day]
+            second_day = df.index[next_day_idx + 1]
+            second_day_data = df.loc[second_day]
+
+            # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>40%）
+            volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
+            price_range = first_day_data['high'] - first_day_data['low']
+            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线）
+                candle_condition = False  # 实体占比无法计算，直接排除
+            else:
+                body_ratio = (first_day_data['close'] - first_day_data['open']) / price_range
+                candle_condition = (body_ratio > 0.5) and (first_day_data['close'] > first_day_data['open'])
+
+            # 条件6-2：第三日低开且未收复前日实体中点
+            midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
+            low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
+            recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
+
+            if volume_condition and candle_condition and low_open_condition and recover_condition:
+                continue  # 触发排除
+
+        # 条件7：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况(错误的生成，但是有效)
+        # if next_day_idx + 1 < len(df):  # 确保有第三日数据
+        #     # 获取首板次日（第一天）和第三日（第二天）数据
+        #     first_day = df.index[next_day_idx]
+        #     first_day_data = df.loc[first_day]
+        #     second_day = df.index[next_day_idx + 1]
+        #     second_day_data = df.loc[second_day]
+        #
+        #     # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比>70%）
+        #     volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
+        #     body_ratio = (first_day_data['close'] - first_day_data['open']) / (
+        #             first_day_data['high'] - first_day_data['low'])
+        #     candle_condition = (body_ratio > 0.7) and (first_day_data['close'] > first_day_data['open'])  # 实体阳线
+        #
+        #     # 条件6-2：第三日低开且未收复前日实体中点
+        #     midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
+        #     low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
+        #     recover_condition = (second_day_data['close'] < midpoint)  # 收盘未达中点
+        #
+        #     if volume_condition and candle_condition and low_open_condition and recover_condition:
+        #         continue  # 触发排除
 
         valid_days.append(day)
     return valid_days
@@ -334,7 +384,7 @@ if __name__ == '__main__':
     stock_process_start = time.perf_counter()
 
     for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code)
+        df, _ = get_stock_data(code,False)
         if df.empty:
             continue
 
