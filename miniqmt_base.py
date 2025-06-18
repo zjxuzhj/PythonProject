@@ -1,7 +1,10 @@
+import logging
 import os
 import sys
+import threading
 import time
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
 from xtquant import xtconstant
@@ -9,7 +12,6 @@ from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
 from xtquant.xttype import StockAccount
 
-import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
 from position_manage.portfolio import Portfolio
 from position_manage.portfolio_db import save_portfolio
@@ -28,36 +30,83 @@ A.bought_list = []
 A.hsa = xtdata.get_stock_list_in_sector('沪深A股')
 
 
+def setup_logger():
+    """配置日志记录器"""
+    logger = logging.getLogger("QMT_Strategy")
+    logger.setLevel(logging.INFO)
+
+    # 创建按天轮转的日志处理器 [4,8](@ref)
+    log_handler = TimedRotatingFileHandler(
+        "qmt_strategy.log",
+        when="midnight",
+        interval=1,
+        backupCount=7
+    )
+
+    # 设置日志格式 [1,5](@ref)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    log_handler.setFormatter(formatter)
+
+    # 同时输出到控制台
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(log_handler)
+    logger.addHandler(console_handler)
+    return logger
+
+
+# 创建状态监控函数
+def monitor_strategy_status(logger):
+    """每30分钟记录程序状态"""
+    while True:
+        try:
+            # 1. 记录基本状态信息
+            status_msg = (
+                f"策略运行正常 | "
+                f"可用资金: {available_cash:.2f} | "
+                f"持仓数量: {len(hold_stocks)}"
+            )
+            logger.info(status_msg)
+
+            # 4. 记录挂单情况（可选）
+            orders = xt_trader.query_stock_orders(acc)
+            active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
+            logger.info(f"活跃挂单数量: {len(active_orders)}")
+
+        except Exception as e:
+            logger.error(f"状态监控异常: {str(e)}")
+
+        # 等待30分钟 [7](@ref)
+        time.sleep(30 * 60)
+
+
 def interact():
     """执行后进入repl模式"""
     import code
     code.InteractiveConsole(locals=globals()).interact()
 
 
-def convert_traded_time(timestamp):
+def convert_unix_timestamp(timestamp):
     """
-    将QMT的traded_time转换为datetime对象
+    将Unix时间戳转换为datetime对象（支持秒级/毫秒级时间戳）
 
     参数:
-        timestamp: int - QMT返回的时间戳(HHMMSSmmm格式)
+        timestamp: int - Unix时间戳（秒级或毫秒级）
 
     返回:
-        datetime - 对应的日期时间对象
+        datetime - 本地时区的datetime对象
     """
-    # 将整数转换为字符串并填充前导零确保9位
-    time_str = str(timestamp).zfill(9)
-
-    # 提取时间部分
-    hour = int(time_str[0:2])
-    minute = int(time_str[2:4])
-    second = int(time_str[4:6])
-
-    # 获取当前日期
-    today = datetime.now().date()
-
-    # 创建datetime对象
-    return datetime(today.year, today.month, today.day,
-                    hour, minute, second)
+    # 判断时间戳长度（毫秒级时间戳通常为13位）
+    if len(str(timestamp)) > 10:
+        # 毫秒级时间戳：截取前10位转换为秒
+        return datetime.fromtimestamp(timestamp / 1000.0)
+    else:
+        # 秒级时间戳直接转换
+        return datetime.fromtimestamp(timestamp)
 
 
 # 添加数据库保存函数
@@ -66,8 +115,8 @@ def save_transaction_to_db(trade, trade_type):
     try:
         # 创建交易记录对象
         transaction = Transaction(
-            date=convert_traded_time(trade.order_time),
-            stock_code=trade.stock_code,
+            date=convert_unix_timestamp(trade.traded_time),
+            stock_code=tools.convert_stock_code(trade.stock_code),
             action=trade_type,
             price=trade.traded_price,
             shares=trade.traded_volume
@@ -100,29 +149,9 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         :param order: XtOrder对象
         :return:
         """
-        print(f"""
-                        =============================
-                                委托信息
-                        =============================
-                        账号类型: {order.account_type}, 
-                        资金账号: {order.account_id},
-                        证券代码: {order.stock_code},
-                        订单编号: {order.order_id}, 
-                        柜台合同编号: {order.order_sysid},
-                        报单时间: {order.order_time},
-                        委托类型: {order.order_type},
-                        委托数量: {order.order_volume},
-                        报价类型: {order.price_type},
-                        委托价格: {order.price},
-                        成交数量: {order.traded_volume},
-                        成交均价: {order.traded_price},
-                        委托状态: {order.order_status},
-                        委托状态描述: {order.status_msg},
-                        策略名称: {order.strategy_name},
-                        委托备注: {order.order_remark},
-                        多空方向: {order.direction},
-                        交易操作: {order.offset_flag}
-                        """)
+        order_str = "撤单成功" if order.order_status == xtconstant.ORDER_CANCELED else "挂单成功"
+        print(
+            f"""{order_str}！名称：{query_tool.get_name_by_code(tools.convert_stock_code(order.stock_code))}, 代码: {order.stock_code}, 委托类型: {order.order_type}, 委托数量: {order.order_volume}, 委托价格: {order.price}""")
 
     def on_stock_trade(self, trade):
         """
@@ -135,7 +164,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         trade_type = "BUY" if trade.offset_flag == xtconstant.STOCK_BUY else "SELL"
 
         print(datetime.now(), '成交回调', trade.order_remark,
-              f"委托方向: {'买入' if trade_type == 'BUY' else '卖出'} "
+              f" ,委托方向: {'买入' if trade_type == 'BUY' else '卖出'} ,"
               f"成交价格 {trade.traded_price} 成交数量 {trade.traded_volume}")
         # 保存交易记录到数据库
         save_transaction_to_db(trade, trade_type)
@@ -324,37 +353,114 @@ def get_ma5_price(stock_code):
         return None
 
 
-def modify_last_days_and_calc_ma5(df):
-    if df.empty or len(df) < (2):
-        raise ValueError(f"数据不足，至少需要{2}个交易日数据")
+def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
+    """模拟预测MA5的核心方法（新增predict_ratio参数）"""
+    if df.empty or len(df) < 2:
+        raise ValueError("数据不足，至少需要2个交易日数据")
 
     modified_df = df.copy().sort_index(ascending=True)
     modified_df['adjusted_close'] = modified_df['close']
 
-    # 复制最后一行并调整收盘价
+    # 复制最后一行并应用预测涨幅（原1.04倍逻辑）
     new_row = modified_df.iloc[-1].copy()
-    new_row['close'] *= 1.04
-    new_row.name = new_row.name + pd.Timedelta(days=1)  # 日期顺延一日
+    new_row['close'] *= predict_ratio  # 动态传入预测系数
+    new_row.name = new_row.name + pd.Timedelta(days=1)
     modified_df = pd.concat([modified_df, new_row.to_frame().T], axis=0)
 
-    # 计算MA5
+    # 计算修正后的MA5
     modified_df['MA5'] = modified_df['close'].rolling(
-        window=5,
-        min_periods=1
+        window=5, min_periods=1
     ).mean().round(2)
     return modified_df
 
 
-def auto_order_by_ma5(stock_code, target_amount=5000):
-    ma5_price = get_guess_ma5_price(stock_code)
-    if ma5_price is None:
+def auto_order_by_ma5(stock_code, total_amount=12000):
+    """瀑布流分层挂单策略"""
+    # 获取基础MA5价格（不应用预测）
+    base_ma5 = get_ma5_price(stock_code)
+    if base_ma5 is None:
         return False
 
-    pre_order_stock(
-        stock=stock_code,
-        target_amount=target_amount,
-        pre_price=ma5_price  # 传入MA5价格
-    )
+    # 分层配置（价格预测系数与金额比例）
+    tiers = [
+        {'ratio': 0.50, 'predict_ratio': 1.04},  # 第一档：预测1.04倍
+        {'ratio': 0.25, 'predict_ratio': 1.025},  # 第二档：预测1.025倍
+        {'ratio': 0.25, 'predict_ratio': 1.01}  # 第三档：预测1.01倍
+    ]
+
+    # 动态计算每层MA5预测价格
+    tier_prices = []
+    for tier in tiers:
+        # 模拟不同预测倍数的MA5（需重新计算历史数据）
+        df, _ = get_stock_data(tools.convert_stock_code(stock_code))
+        if df.empty:
+            continue
+
+        modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
+        tier_ma5 = modified_df['MA5'].iloc[-1]
+        tier_prices.append({
+            'price': round(tier_ma5, 2),
+            'ratio': tier['ratio']
+        })
+
+    # 智能股数分配（严格100股整数倍）
+    orders = []
+    remaining_amount = min(total_amount, available_cash)
+
+    # 第一轮：尝试三档分层
+    for tier in tier_prices:
+        if remaining_amount <= 0:
+            break
+
+        tier_max_amount = total_amount * tier['ratio']
+        actual_amount = min(tier_max_amount, remaining_amount)
+
+        # 计算可买股数（向下取整至100股）
+        shares = int(actual_amount // (tier['price'] * 100)) * 100
+        if shares == 0:
+            continue  # 跳过无法成交的档位
+
+        orders.append({'price': tier['price'], 'shares': shares})
+        remaining_amount -= shares * tier['price']
+
+    # 保底策略：若前三档未完成，合并为两档
+    if len(orders) < 2 and remaining_amount > 0:
+        backup_tiers = [
+            {'predict_ratio': 1.04, 'ratio': 0.50},
+            {'predict_ratio': 1.02, 'ratio': 0.50}
+        ]
+        tier_prices = []
+        for tier in backup_tiers:
+            df, _ = get_stock_data(tools.convert_stock_code(stock_code))
+            modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
+            tier_ma5 = modified_df['MA5'].iloc[-1]
+            tier_prices.append({
+                'price': round(tier_ma5, 2),
+                'ratio': tier['ratio']
+            })
+
+        # 重新分配剩余资金
+        remaining_amount = min(total_amount, available_cash)
+        for tier in tier_prices:
+            if remaining_amount <= 0:
+                break
+
+            tier_max_amount = total_amount * tier['ratio']
+            actual_amount = min(tier_max_amount, remaining_amount)
+            shares = int(actual_amount // (tier['price'] * 100)) * 100
+            if shares > 0:
+                orders.append({'price': tier['price'], 'shares': shares})
+                remaining_amount -= shares * tier['price']
+
+    # 执行挂单（需异步防阻塞）
+    for order in orders:
+        xt_trader.order_stock_async(
+            acc, stock_code, xtconstant.STOCK_BUY,
+            order['shares'], xtconstant.FIX_PRICE,
+            order['price'], '瀑布流策略', stock_code
+        )
+        print(f"✅ 挂单成功：{order['shares']}股 @ {order['price']}（预测倍数：{order['price'] / base_ma5:.2f}x）")
+
     return True
 
 
@@ -398,7 +504,6 @@ def check_ma5_breach():
 
     return breach_list
 
-
 if __name__ == "__main__":
     xtdata.enable_hello = False
     path = r'D:\备份\国金证券QMT交易端\userdata_mini'
@@ -433,6 +538,18 @@ if __name__ == "__main__":
     print(acc.account_id, '持仓字典', position_total_dict)
     print(acc.account_id, '可用持仓字典', position_available_dict)
 
+    # 初始化日志记录器
+    strategy_logger = setup_logger()
+    strategy_logger.info("===== 策略启动 =====")
+
+    # 创建并启动监控线程
+    monitor_thread = threading.Thread(
+        target=monitor_strategy_status,
+        args=(strategy_logger,),
+        daemon=True  # 设为守护线程，主程序退出时自动结束
+    )
+    monitor_thread.start()
+
     # breach_stocks = check_ma5_breach()
     # if breach_stocks:
     #     print("\n跌破五日线持仓预警（截至%s）" % datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -441,16 +558,16 @@ if __name__ == "__main__":
     # else:
     #     print("\n当前无持仓跌破五日线")
 
-    target_stocks = scan.get_target_stocks(False)
-    filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
-    # 遍历过滤后的股票执行交易
-    for stock_code in filtered_stocks:
-        # 动态二次校验（防止持仓变化）
-        if stock_code in hold_stocks:
-            continue
-        success = auto_order_by_ma5(stock_code, 10000)
-        if not success:
-            print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
+    # target_stocks = scan.get_target_stocks(False)
+    # filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
+    # # 遍历过滤后的股票执行交易
+    # for stock_code in filtered_stocks:
+    #     # 动态二次校验（防止持仓变化）
+    #     if stock_code in hold_stocks:
+    #         continue
+    #     success = auto_order_by_ma5(stock_code, 12000)
+    #     if not success:
+    #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
     xtdata.run()
     # pre_order_stock( '603722.SH',5000,42.15)

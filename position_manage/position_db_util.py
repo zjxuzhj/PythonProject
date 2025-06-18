@@ -50,22 +50,10 @@ class DBUtil:
         ))
         self.conn.commit()
 
-    def update_cash(self, cash):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-        UPDATE portfolio_state SET cash = ? WHERE id = 1
-        ''', (cash,))
-        self.conn.commit()
-
     def load_transactions(self):
         cursor = self.conn.cursor()
         cursor.execute('SELECT date, stock_code, action, price, shares FROM transactions')
         return cursor.fetchall()
-
-    def get_cash(self):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT cash FROM portfolio_state WHERE id = 1')
-        return cursor.fetchone()[0]
 
     def close(self):
         self.conn.close()

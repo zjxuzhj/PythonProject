@@ -1,31 +1,43 @@
-from position_manage.position_db_util import DBUtil
-from position_manage.portfolio import Portfolio
-from position_manage.transaction import Transaction
+import os
+import threading
 from datetime import datetime
 
+from position_manage.portfolio import Portfolio
+from position_manage.position_db_util import DBUtil
+from position_manage.transaction import Transaction
 
-def save_portfolio(portfolio, db_file="portfolio.db"):
-    """保存投资组合到SQLite数据库"""
-    db = DBUtil(db_file)
-    try:
-        # 保存现金状态
-        db.update_cash(portfolio.cash)
-
-        # 保存所有交易记录
-        for t in portfolio.transaction_history:
-            db.save_transaction(t)
-    finally:
-        db.close()
+db_lock = threading.Lock()
 
 
-def load_portfolio(db_file="portfolio.db"):
-    """从SQLite数据库加载投资组合"""
-    db = DBUtil(db_file)
+def save_portfolio(portfolio):
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target_dir = os.path.join(base_dir, "position_manage")
+    os.makedirs(target_dir, exist_ok=True)
+    db_path = os.path.join(target_dir, "portfolio.db")
+    with db_lock:
+        try:
+            db = DBUtil(db_path)  # 传递绝对路径
+            db.conn.execute("BEGIN TRANSACTION")
+            for t in portfolio.transaction_history:
+                db.save_transaction(t)
+            db.conn.commit()
+            return True
+        except Exception as e:
+            db.conn.rollback()
+            print(f"❌ 保存失败: {str(e)}")
+            return False
+        finally:
+            db.close()
+
+
+def load_portfolio():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target_dir = os.path.join(base_dir, "position_manage")
+    os.makedirs(target_dir, exist_ok=True)
+    db_path = os.path.join(target_dir, "portfolio.db")
+    db = DBUtil(db_path)
     portfolio = Portfolio()
     try:
-        # 加载现金
-        portfolio.cash = db.get_cash()
-
         # 加载交易记录
         transactions = db.load_transactions()
         for t_data in transactions:
