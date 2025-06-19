@@ -146,7 +146,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     first_touch_flag = False
 
-    for offset in range(2, 10):  # 最多检查20个交易日
+    for offset in range(2, 10):  # 最多检查10个交易日 range(2,5)会生成2,3,4 range(2,2)生成的序列为空
         if start_idx + offset >= len(df):
             break
 
