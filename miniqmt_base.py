@@ -7,6 +7,8 @@ from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from xtquant import xtconstant
 from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
@@ -161,7 +163,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         """
         print("on trade callback")
         # 判断是买入还是卖出
-        trade_type = "BUY" if trade.offset_flag == xtconstant.STOCK_BUY else "SELL"
+        trade_type = "BUY" if trade.offset_flag == xtconstant.OFFSET_FLAG_OPEN else "SELL"
 
         print(datetime.now(), '成交回调', trade.order_remark,
               f" ,委托方向: {'买入' if trade_type == 'BUY' else '卖出'} ,"
@@ -326,24 +328,57 @@ def get_guess_ma5_price(stock_code):
         return None
 
 
-def get_ma5_price(stock_code):
-    """获取指定股票的最新MA5价格"""
+def get_ma5_price(stock_code, current_date=None, current_price=None):
+    """获取指定股票的最新MA5价格，支持动态更新当日数据
+
+    Args:
+        stock_code (str): 股票代码（如'603722.SH'）
+        current_date (datetime, optional): 当前日期（用于动态更新）
+        current_price (float, optional): 当前价格（用于动态计算）
+
+    Returns:
+        float: 最新MA5价格（不足5日数据返回None）
+    """
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
     df, _ = get_stock_data(pure_code)
 
-    if df.empty or len(df) < 5:
+    if df.empty or len(df) < 4:  # 至少需要4日历史数据
         print(f"警告：{stock_code} 数据不足，无法计算MA5")
         return None
 
     try:
-        # 核心计算逻辑（网页1、网页3、网页6）
-        df_sorted = df.sort_index(ascending=True)  # 确保时间升序排列
-        df_sorted['MA5'] = df_sorted['close'].rolling(
+        # 转换为时间序列索引
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
+        # 动态更新当日数据（如果传入参数）
+        if current_date and current_price:
+            # 确保日期格式一致
+            current_date = pd.Timestamp(current_date)
+
+            # 情况1：已有当日数据 → 更新收盘价
+            if current_date in df.index:
+                df.loc[df.index == current_date, 'close'] = current_price
+            # 情况2：无当日数据 → 添加新行
+            else:
+                # 复制最近一日数据作为模板
+                new_row = df.iloc[-1].copy()
+                # 更新日期和收盘价
+                new_row.name = current_date
+                new_row['close'] = current_price
+                # 添加到DataFrame
+                df = pd.concat([df, new_row.to_frame().T])
+
+        # 按时间升序排序（确保最新数据在最后）
+        df = df.sort_index(ascending=True)
+
+        # 核心计算逻辑[1,3,5](@ref)
+        df['MA5'] = df['close'].rolling(
             window=5,
             min_periods=5  # 严格要求5个有效数据点
-        ).mean().round(2)  # 保留两位小数
+        ).mean().round(2)
 
-        return df_sorted['MA5'].iloc[-1]  # 返回最新MA5值
+        return df['MA5'].iloc[-1]  # 返回最新MA5值
 
     except KeyError as e:
         print(f"数据列缺失错误：{str(e)}")
@@ -480,9 +515,14 @@ def check_ma5_breach():
             # 获取当前价格
             tick = xtdata.get_full_tick([stock_code])[stock_code]
             current_price = tick['lastPrice']
+            current_time = datetime.now()
 
-            # 获取MA5价格
-            ma5_price = get_ma5_price(stock_code)
+            # 动态计算MA5（传入当前时间和价格）
+            ma5_price = get_ma5_price(
+                stock_code,
+                current_date=current_time,
+                current_price=current_price
+            )
             if ma5_price is None:
                 continue
 
@@ -503,6 +543,67 @@ def check_ma5_breach():
             continue
 
     return breach_list
+
+
+def sell_breached_stocks():
+    """定时卖出所有跌破五日线的持仓"""
+    try:
+        # 获取当前时间
+        now = datetime.now().strftime("%H:%M")
+        print(f"\n=== 开始执行定时检测 ({now}) ===")
+
+        # 检测跌破五日线股票
+        breach_stocks = check_ma5_breach()
+        if not breach_stocks:
+            print("当前无持仓跌破五日线")
+            return
+
+        # 遍历卖出逻辑
+        for stock in breach_stocks:
+            stock_code = stock['代码']
+            stock_name = stock['名称']
+            hold_vol = stock['持有数量']
+
+            # 获取实时可卖数量
+            position = next((p for p in xt_trader.query_stock_positions(acc)
+                             if p.stock_code == stock_code), None)
+            if not position or position.m_nCanUseVolume <= 0:
+                print(f"❌ {stock_name}({stock_code}) 无可卖持仓")
+                continue
+
+            # 获取实时行情数据（包含五档盘口）
+            tick = xtdata.get_full_tick([stock_code])[stock_code]
+            if not tick:
+                print(f"⚠️ 无法获取 {stock_code} 实时行情")
+                continue
+
+            # 获取基准价格（最新成交价）
+            base_price = tick['lastPrice']
+
+            # 获取第五档买入价（买五价）或者现价跌1%的价格
+            if 'bidPrice' in tick and len(tick['bidPrice']) >= 5:
+                sell_price = tick['bidPrice'][4]  # 第五档买入价
+            else:
+                sell_price = base_price * 0.99  # 无五档数据时使用99%价格
+
+            # 执行市价卖出
+            async_seq = xt_trader.order_stock_async(
+                acc,
+                stock_code,
+                xtconstant.STOCK_SELL,  # 卖出方向
+                hold_vol,
+                xtconstant.FIX_PRICE,  # 限价单模式
+                sell_price,  # 计算的卖出价格
+                'MA5止损策略',
+                stock_code
+            )
+            print(f"✅ 已提交卖出订单：{stock_name}({stock_code}) {hold_vol}股")
+
+    except Exception as e:
+        print(f"‼️ 定时任务执行异常: {str(e)}")
+    finally:
+        print("=== 定时检测完成 ===\n")
+
 
 if __name__ == "__main__":
     xtdata.enable_hello = False
@@ -554,7 +655,7 @@ if __name__ == "__main__":
     # if breach_stocks:
     #     print("\n跌破五日线持仓预警（截至%s）" % datetime.now().strftime("%Y-%m-%d %H:%M"))
     #     df = pd.DataFrame(breach_stocks)
-    #     print(df[['代码', '名称', '持有数量', '当前价格']].to_string(index=False))
+    #     print(df[['代码', '名称', '持有数量', '当前价格', 'MA5价格']].to_string(index=False))
     # else:
     #     print("\n当前无持仓跌破五日线")
 
@@ -565,10 +666,28 @@ if __name__ == "__main__":
     #     # 动态二次校验（防止持仓变化）
     #     if stock_code in hold_stocks:
     #         continue
-    #     success = auto_order_by_ma5(stock_code, 12000)
+    #     success = auto_order_by_ma5(stock_code, 10000)
     #     if not success:
     #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
+    scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+
+    # 设置股票交易时间过滤（排除非交易日）
+    scheduler.add_job(
+        sell_breached_stocks,
+        trigger=CronTrigger(
+            hour=14,
+            minute=53,
+            day_of_week='mon-fri'  # 仅周一到周五
+        ),
+        misfire_grace_time=300  # 允许5分钟内的延迟执行
+    )
+
+    # 启动定时任务
+    scheduler.start()
+    print("定时任务已启动：每日14:56执行MA5止损检测")
+
+    # tick = xtdata.get_full_tick(["603722.SH"])["603722.SH"]
     xtdata.run()
     # pre_order_stock( '603722.SH',5000,42.15)
     # pre_order_stock( '603725.SH',10000,8.19)

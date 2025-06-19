@@ -117,28 +117,6 @@ def find_first_limit_up(symbol, df):
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 continue  # 触发排除
 
-        # 条件7：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况(错误的生成，但是有效)
-        # if next_day_idx + 1 < len(df):  # 确保有第三日数据
-        #     # 获取首板次日（第一天）和第三日（第二天）数据
-        #     first_day = df.index[next_day_idx]
-        #     first_day_data = df.loc[first_day]
-        #     second_day = df.index[next_day_idx + 1]
-        #     second_day_data = df.loc[second_day]
-        #
-        #     # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比>70%）
-        #     volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
-        #     body_ratio = (first_day_data['close'] - first_day_data['open']) / (
-        #             first_day_data['high'] - first_day_data['low'])
-        #     candle_condition = (body_ratio > 0.7) and (first_day_data['close'] > first_day_data['open'])  # 实体阳线
-        #
-        #     # 条件6-2：第三日低开且未收复前日实体中点
-        #     midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
-        #     low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
-        #     recover_condition = (second_day_data['close'] < midpoint)  # 收盘未达中点
-        #
-        #     if volume_condition and candle_condition and low_open_condition and recover_condition:
-        #         continue  # 触发排除
-
         valid_days.append(day)
     return valid_days
 

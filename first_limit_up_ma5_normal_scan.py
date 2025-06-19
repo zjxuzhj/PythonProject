@@ -26,6 +26,7 @@ def get_stock_data(symbol, isNeedLog):
 
 
 def find_recent_first_limit_up(code, old_df, days=7):
+# def find_recent_first_limit_up(code, old_df, days=3):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(("300", "301")) else "主板"
     limit_rate = 0.20 if market in ["创业板", "科创板"] else 0.10
@@ -97,7 +98,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if next_day_change >= 8:
                 continue
 
-        #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
+         # 条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
             limit_day_volume = df.loc[day, 'volume']
@@ -134,7 +135,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     df['5ma'] = df['close'].rolling(5, min_periods=1).mean()
     post_limit_df = df[df.index >= first_limit_day].copy()
 
-    # 涨停后每天收盘价都高于首板收盘价
+    # 条件1：涨停后每日收盘价高于首板收盘价（不包含首板日）
     always_above_base = True
     for date in post_limit_df.index:
         if date == first_limit_day:
@@ -147,8 +148,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     # 判断每日是否触及五日线
     never_touched = True  # 初始化为True
 
-    # 遍历涨停日后的每个交易日
+    # 条件2：涨停日及之后每日未触及五日线（不包含首板日）
     for date in post_limit_df.index:
+        if date == first_limit_day:  # 跳过首板日
+            continue
         row = post_limit_df.loc[date]
         # 判断是否触及：当日最低价 ≤ 五日线 ≤ 当日最高价
         if row['low'] <= row['5ma'] <= row['high']:
@@ -156,6 +159,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             break  # 一旦触及即退出循环
 
     return never_touched and always_above_base
+    # return always_above_base
 
 
 def get_target_stocks(isNeedLog=True):
@@ -165,7 +169,6 @@ def get_target_stocks(isNeedLog=True):
     # 加载股票列表并过滤
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
-    total = len(stock_list)
 
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, isNeedLog)
