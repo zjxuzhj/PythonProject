@@ -8,10 +8,10 @@ import pandas as pd
 import getAllStockCsv
 
 
-def get_stock_data(symbol,is_19_data_test=False):
+def get_stock_data(symbol, is_19_data_test=False):
     """带本地缓存的数据获取"""
-    date="20190101" if is_19_data_test else "20240201"
-    cache_path_name="back_test_data_cache" if is_19_data_test else "data_cache"
+    date = "20190101" if is_19_data_test else "20240201"
+    cache_path_name = "back_test_data_cache" if is_19_data_test else "data_cache"
     file_name = f"stock_{symbol}_{date}.parquet"
     cache_path = os.path.join(cache_path_name, file_name)
 
@@ -29,7 +29,8 @@ def get_stock_data(symbol,is_19_data_test=False):
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
 
-def find_first_limit_up(symbol, df):
+
+def find_first_limit_up(symbol, df, is_19_data_test=False):
     """识别首板涨停日并排除连板"""
     market_type = "科创板" if symbol.startswith(("688", "689")) else "创业板" if symbol.startswith(
         ("300", "301")) else "主板"
@@ -43,7 +44,7 @@ def find_first_limit_up(symbol, df):
     valid_days = []
     for day in limit_days:
         # 日期过滤条件（方便回测）
-        if day < pd.Timestamp('2024-03-01'):
+        if day < pd.Timestamp('2024-03-01') and not is_19_data_test:
             continue
 
         # 条件1：排除连板（次日不涨停）
@@ -60,7 +61,7 @@ def find_first_limit_up(symbol, df):
                 continue  # 跳过无效数据
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
             # 如果次日涨幅超过8%，排除该首板日
-            if next_day_change >=8:
+            if next_day_change >= 8:
                 continue
 
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
@@ -129,7 +130,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         ("300", "301")) else "主板"
     limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
 
-    base_price = df.loc[first_limit_day, 'close'] # 首板收盘价，最重要的位置，表示主力的支撑度
+    base_price = df.loc[first_limit_day, 'close']  # 首板收盘价，最重要的位置，表示主力的支撑度
     df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 跌停价字段
 
     start_idx = df.index.get_loc(first_limit_day)
@@ -290,8 +291,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
 
 def save_trades_excel(result_df):
-    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日','涨停后天数',
-                    '持有天数', '买入价', '卖出价', '收益率(%)','卖出原因']
+    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
+                    '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
@@ -300,7 +301,8 @@ def save_trades_excel(result_df):
     excel_name = f"首板交易记录_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
     # 创建带格式的Excel写入器
-    with pd.ExcelWriter(excel_name, engine='xlsxwriter',engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
+    with pd.ExcelWriter(excel_name, engine='xlsxwriter',
+                        engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
         # 写入原始数据
         result_df.to_excel(writer, sheet_name='交易明细', index=False)
 
@@ -361,12 +363,13 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
+    is_19_data_test = False  # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code,False)
+        df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:
             continue
 
-        first_limit_days = find_first_limit_up(code, df)
+        first_limit_days = find_first_limit_up(code, df, is_19_data_test)
         for day in first_limit_days:
             signals = generate_signals(df, day, code, name)
             all_signals.extend(signals)
@@ -380,7 +383,8 @@ if __name__ == '__main__':
         avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
         avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
         profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
-        get_money=len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)*avg_win-(1-len(result_df[result_df['收益率(%)'] > 0]) / len(result_df))*avg_loss
+        get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
+                    1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
         print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
         print(f"总交易次数: {len(result_df)}")
@@ -407,4 +411,4 @@ if __name__ == '__main__':
     print(f"总运行时间: {total_duration:.2f}秒")
     print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
     print(f"Excel保存时间: {save_duration:.4f}秒")
-    print(f"平均每支股票处理时间: {stock_process_duration/len(stock_list)*1000:.2f}毫秒")
+    print(f"平均每支股票处理时间: {stock_process_duration / len(stock_list) * 1000:.2f}毫秒")

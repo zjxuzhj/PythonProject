@@ -126,6 +126,49 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if historical_high * 0.95 <= recent_3day_high < historical_high:
                 continue  # 触发排除条件
 
+        # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
+        # if next_day_idx + 1 < len(df):  # 确保有第三日数据
+        #     # 获取首板次日（第一天）和第三日（第二天）数据
+        #     first_day = df.index[next_day_idx]
+        #     first_day_data = df.loc[first_day]
+        #     second_day = df.index[next_day_idx + 1]
+        #     second_day_data = df.loc[second_day]
+        #
+        #     # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>40%）
+        #     volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
+        #     price_range = first_day_data['high'] - first_day_data['low']
+        #     if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线）
+        #         candle_condition = False  # 实体占比无法计算，直接排除
+        #     else:
+        #         # 计算实体部分（收盘价 - 开盘价）
+        #         candle_body = abs(first_day_data['close'] - first_day_data['open'])
+        #         # 计算实体占总价格范围的比例
+        #         body_ratio = candle_body / price_range
+        #         # 阳线且实体占比超过40%
+        #         candle_condition = (first_day_data['close'] > first_day_data['open']) and (body_ratio > 0.4)
+        #
+        #     # 条件6-2：第三日低开且未收复前日实体中点
+        #     # 计算实体中点：开盘价和收盘价的平均（因为是阳线）
+        #     midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
+        #     # 第三日低开：开盘低于前一日收盘
+        #     low_open_condition = (second_day_data['open'] < first_day_data['close'])
+        #     # 未收复实体中点：收盘价低于实体中点
+        #     recover_condition = (second_day_data['close'] < midpoint)
+        #
+        #     # 打印调试信息
+        #     debug_info = (
+        #         f"【条件6分析】{code}: "
+        #         f"次日量能={volume_condition}({first_day_data['volume']}/{df.loc[day, 'volume']}), "
+        #         f"阳线实体={candle_condition}({body_ratio:.2f}), "
+        #         f"第三日低开={low_open_condition}(开盘{second_day_data['open']} < {first_day_data['close']}), "
+        #         f"未收复={recover_condition}(收盘{second_day_data['close']} < {midpoint:.2f})"
+        #     )
+        #     print(debug_info)
+        #
+        #     if volume_condition and candle_condition and low_open_condition and recover_condition:
+        #         print(f"条件6触发：排除{code}，涨停日{day}")
+        #         continue  # 触发排除
+
         valid_days.append(day)
     return valid_days
 
