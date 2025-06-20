@@ -7,6 +7,7 @@ from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
+import first_limit_up_ma5_normal_scan as scan
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from xtquant import xtconstant
@@ -418,9 +419,9 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
 
     # 分层配置（价格预测系数与金额比例）
     tiers = [
-        {'ratio': 0.50, 'predict_ratio': 1.04},  # 第一档：预测1.04倍
-        {'ratio': 0.25, 'predict_ratio': 1.025},  # 第二档：预测1.025倍
-        {'ratio': 0.25, 'predict_ratio': 1.01}  # 第三档：预测1.01倍
+        {'ratio': 0.40, 'predict_ratio': 1.03},  # 第一档：预测1.04倍
+        {'ratio': 0.30, 'predict_ratio': 1.02},  # 第二档：预测1.025倍
+        {'ratio': 0.30, 'predict_ratio': 1.01}  # 第三档：预测1.01倍
     ]
 
     # 动态计算每层MA5预测价格
@@ -461,8 +462,8 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
     # 保底策略：若前三档未完成，合并为两档
     if len(orders) < 2 and remaining_amount > 0:
         backup_tiers = [
-            {'predict_ratio': 1.04, 'ratio': 0.50},
-            {'predict_ratio': 1.02, 'ratio': 0.50}
+            {'predict_ratio': 1.03, 'ratio': 0.50},
+            {'predict_ratio': 1.01, 'ratio': 0.50}
         ]
         tier_prices = []
         for tier in backup_tiers:
@@ -605,6 +606,97 @@ def sell_breached_stocks():
         print("=== 定时检测完成 ===\n")
 
 
+def adjust_orders_at_950():
+    """9:50定时任务：撤单后重新挂单，确保资金充分利用"""
+    try:
+        print("\n===== 9:50定时任务启动 =====")
+
+        # 1. 撤掉所有未成交挂单
+        cancel_all_pending_orders()
+
+        # 2. 获取最新账户状态
+        refresh_account_status()
+
+        # 3. 获取目标股票列表
+        target_stocks = scan.get_target_stocks(False)
+
+        # 4. 过滤已持仓股票
+        positions = xt_trader.query_stock_positions(acc)
+        hold_stocks = {pos.stock_code for pos in positions}
+        filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
+
+        if not filtered_stocks:
+            print("⚠️ 所有目标股票均已持仓，无需新增挂单")
+            return
+
+        # 5. 动态计算总可用资金
+        total_available = available_cash
+        per_stock_amount = min(total_available / len(filtered_stocks), 8000)
+        print(f"可用资金分配：总资金={total_available:.2f}, 每支股票={per_stock_amount:.2f}")
+
+        # 6. 重新挂单（使用当前价格）
+        for stock_code in filtered_stocks:
+            # 获取实时价格
+            tick = xtdata.get_full_tick([stock_code])
+            if not tick or stock_code not in tick:
+                print(f"⚠️ 无法获取 {stock_code} 实时行情")
+                continue
+
+            current_price = tick[stock_code]['lastPrice']
+            stock_name = query_tool.get_name_by_code(stock_code)
+
+            # 计算可买数量（100股整数倍）
+            buy_vol = int(per_stock_amount / current_price / 100) * 100
+            if buy_vol == 0:
+                print(f"⚠️ {stock_name}({stock_code}) 资金不足，无法购买")
+                continue
+
+            # 挂限价单（使用当前价）
+            xt_trader.order_stock_async(
+                acc, stock_code, xtconstant.STOCK_BUY,
+                buy_vol, xtconstant.FIX_PRICE,
+                current_price, '9:50调仓策略', stock_code
+            )
+            print(f"✅ 重新挂单：{stock_name}({stock_code}) {buy_vol}股 @ {current_price:.2f}")
+
+    except Exception as e:
+        print(f"‼️ 9:50任务执行异常: {str(e)}")
+    finally:
+        print("===== 9:50定时任务完成 =====")
+
+
+def cancel_all_pending_orders():
+    """撤掉所有未成交挂单"""
+    orders = xt_trader.query_stock_orders(acc)
+    if not orders:
+        print("✅ 无待撤挂单")
+        return
+
+    success_count = 0
+    for order in orders:
+        if can_cancel_order_status(order.order_status):
+            cancel_result = xt_trader.cancel_order_stock_async(acc, order.order_id)
+            if cancel_result == 0:
+                success_count += 1
+                print(f"✅ 撤单成功：{order.stock_code} {order.order_volume}股")
+
+    print(f"撤单完成：成功撤单 {success_count}/{len(orders)} 笔")
+
+
+def refresh_account_status():
+    """刷新账户状态"""
+    global available_cash, hold_stocks
+
+    # 更新可用资金
+    account_info = xt_trader.query_stock_asset(acc)
+    available_cash = account_info.m_dCash
+
+    # 更新持仓
+    positions = xt_trader.query_stock_positions(acc)
+    hold_stocks = {pos.stock_code for pos in positions}
+
+    print(f"账户状态更新：可用资金={available_cash:.2f}, 持仓数量={len(hold_stocks)}")
+
 if __name__ == "__main__":
     xtdata.enable_hello = False
     path = r'D:\备份\国金证券QMT交易端\userdata_mini'
@@ -666,7 +758,7 @@ if __name__ == "__main__":
     #     # 动态二次校验（防止持仓变化）
     #     if stock_code in hold_stocks:
     #         continue
-    #     success = auto_order_by_ma5(stock_code, 10000)
+    #     success = auto_order_by_ma5(stock_code, 8000)
     #     if not success:
     #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
@@ -677,7 +769,7 @@ if __name__ == "__main__":
         sell_breached_stocks,
         trigger=CronTrigger(
             hour=14,
-            minute=53,
+            minute=55,
             day_of_week='mon-fri'  # 仅周一到周五
         ),
         misfire_grace_time=300  # 允许5分钟内的延迟执行
@@ -685,8 +777,18 @@ if __name__ == "__main__":
 
     # 启动定时任务
     scheduler.start()
-    print("定时任务已启动：每日14:56执行MA5止损检测")
+    print("定时任务已启动：每日14:55执行MA5止损检测")
 
+    scheduler.add_job(
+        adjust_orders_at_950,
+        trigger=CronTrigger(
+            hour=9,
+            minute=50,
+            day_of_week='mon-fri'  # 仅周一到周五
+        ),
+        misfire_grace_time=300  # 允许5分钟内的延迟执行
+    )
+    print("定时任务已添加：每日9:50执行订单调整")
     # tick = xtdata.get_full_tick(["603722.SH"])["603722.SH"]
     xtdata.run()
     # pre_order_stock( '603722.SH',5000,42.15)
