@@ -262,7 +262,7 @@ def save_target_stocks(target_stocks, base_path="output"):
     """保存目标股票列表到CSV文件（股票代码按数字部分升序排序）"""
     os.makedirs(base_path, exist_ok=True)
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    current_date = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     # 关键修复：提取纯数字部分排序（保留原始带后缀格式）
     sorted_stocks = sorted(
