@@ -196,10 +196,25 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
 
 def get_target_stocks(isNeedLog=True):
-    limit_up_stocks = []
+    """获取目标股票列表，若当日数据已存在则直接读取"""
+    # 新增逻辑：检查当日数据是否已存在 ======================
+    base_path = "output"
+    file_path = os.path.join(base_path, "target_stocks_daily.csv")
+    current_date = datetime.now().strftime('%Y-%m-%d')
 
+    # 检查文件是否存在且包含当日数据
+    if os.path.exists(file_path):
+        existing_df = pd.read_csv(file_path)
+        if current_date in existing_df['日期'].values:
+            # 提取当日股票列表并返回
+            stocks_str = existing_df.loc[existing_df['日期'] == current_date, '目标股票'].values[0]
+            target_stocks = stocks_str.split(',')
+            print(f"读取到当日已保存数据：{len(target_stocks)}只股票")
+            return target_stocks  # 直接返回已有数据
+
+    # ========== 以下为原有计算逻辑（当无当日数据时执行） ==========
+    limit_up_stocks = []
     query_tool = getAllStockCsv.StockQuery()
-    # 加载股票列表并过滤
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
@@ -208,90 +223,75 @@ def get_target_stocks(isNeedLog=True):
         if df.empty:
             continue
 
-        # 只买入距离涨停板3天内的票
-        first_limit_days = find_recent_first_limit_up(code, df,days=3)
+        # 买入距离涨停板3天内的票
+        first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d")))
 
-    # 新增分组排序逻辑 ======================
+    # 分组排序逻辑
     today = datetime.now().date()
     days_groups = {}
-
     print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
 
     for stock in limit_up_stocks:
-        # 提取日期并转换为日期对象
-        code, name, limit_date, = stock
+        code, name, limit_date = stock
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
 
-        # 按天数分组
         if delta_days not in days_groups:
             days_groups[delta_days] = []
         days_groups[delta_days].append(stock)
 
     target_stocks = set()
-    # 按天数排序（网页3排序方法）
     sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
 
     for delta, stocks in sorted_days:
-        # 打印数据行
         for stock in stocks:
             code, name, date = stock
             standard_code = getAllStockCsv.convert_to_standard_format(code)
             target_stocks.add(standard_code)
             print("  " + "   ".join(stock) + "  ")
 
+    # 保存并返回新计算的数据
     save_target_stocks(target_stocks)
     return list(target_stocks)
 
 
 def save_target_stocks(target_stocks, base_path="output"):
-    """保存目标股票列表到CSV文件，每天一行记录"""
-    # 确保输出目录存在
+    """保存目标股票列表到CSV文件（股票代码按数字部分升序排序）"""
     os.makedirs(base_path, exist_ok=True)
-
-    # 固定文件名
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
-
-    # 当前日期（格式：YYYY-MM-DD）
     current_date = datetime.now().strftime('%Y-%m-%d')
 
-    # 将股票列表转换为逗号分隔的字符串
-    stocks_str = ",".join(target_stocks)
+    # 关键修复：提取纯数字部分排序（保留原始带后缀格式）
+    sorted_stocks = sorted(
+        target_stocks,
+        key=lambda x: int(''.join(filter(str.isdigit, x)))  # 提取数字部分转为整数
+    )
 
-    # 创建新的DataFrame包含今天的记录
+    stocks_str = ",".join(sorted_stocks)
+
     today_df = pd.DataFrame({
         "日期": [current_date],
         "目标股票": [stocks_str]
     })
 
-    # 检查文件是否存在，并决定如何保存
     if os.path.exists(file_path):
-        # 读取现有数据
         existing_df = pd.read_csv(file_path)
-
-        # 检查今天是否已有记录
         if current_date in existing_df['日期'].values:
-            # 更新今天的记录
             existing_df.loc[existing_df['日期'] == current_date, '目标股票'] = stocks_str
             operation = "更新"
         else:
-            # 添加今天的记录
             existing_df = pd.concat([existing_df, today_df], ignore_index=True)
             operation = "添加"
-
-        # 保存更新后的数据
         existing_df.to_csv(file_path, index=False, encoding='utf-8-sig')
-        print(f"已{operation}今天的数据到: {file_path}")
+        print(f"已{operation}排序后的数据到: {file_path}")
     else:
-        # 首次创建文件
         today_df.to_csv(file_path, index=False, encoding='utf-8-sig')
-        print(f"已创建新文件并保存到: {file_path}")
+        print(f"已创建新文件并保存排序后的数据到: {file_path}")
 
     return file_path
-
 
 if __name__ == '__main__':
     # 获取目标股票列表
