@@ -162,17 +162,17 @@ if __name__ == '__main__':
             market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(
                 ("300", "301")) else "主板"
 
-            # 检查最近6日跌停情况（网页4/5的跌停判断逻辑）
-            down_limit_count = calculate_down_limit_count(df, days=5, market_type=market)
-            if down_limit_count > 0:
-                print(f"排除{name}({code}): 六天内出现{down_limit_count}次跌停")
-                continue
-
-            # 计算最近5天涨停次数（网页1核心逻辑）
-            limit_count = calculate_limit_count(df, days=5, market_type=market)
-            if limit_count >= 2:  # 网页5过滤条件
-                print(f"跳过{name}({code}): 五天内涨停{limit_count}次")
-                continue
+            # # 检查最近6日跌停情况（网页4/5的跌停判断逻辑）
+            # down_limit_count = calculate_down_limit_count(df, days=5, market_type=market)
+            # if down_limit_count > 0:
+            #     print(f"排除{name}({code}): 六天内出现{down_limit_count}次跌停")
+            #     continue
+            #
+            # # 计算最近5天涨停次数（网页1核心逻辑）
+            # limit_count = calculate_limit_count(df, days=5, market_type=market)
+            # if limit_count >= 2:  # 网页5过滤条件
+            #     print(f"跳过{name}({code}): 五天内涨停{limit_count}次")
+            #     continue
 
             # 调用新检测函数
             matched = check_recent_limit_up(code, df, check_five_day_line=True)

@@ -756,7 +756,7 @@ def adjust_orders_at_950():
 
         # 5. 动态计算总可用资金
         total_available = available_cash
-        per_stock_amount = min(total_available / len(filtered_stocks), 8000)
+        per_stock_amount = min(total_available / len(filtered_stocks), 10000)
         print(f"可用资金分配：总资金={total_available:.2f}, 每支股票={per_stock_amount:.2f}")
 
         subscribe_target_stocks(filtered_stocks)
@@ -875,22 +875,22 @@ if __name__ == "__main__":
             minute=54,
             day_of_week='mon-fri'  # 仅周一到周五
         ),
-        misfire_grace_time=300  # 允许5分钟内的延迟执行
+        misfire_grace_time=10  # 允许5分钟内的延迟执行
     )
 
     # 启动定时任务
     scheduler.start()
     print("定时任务已启动：每日14:54执行MA5止损检测")
-
-    scheduler.add_job(
-        adjust_orders_at_950,
-        trigger=CronTrigger(
-            hour=9,
-            minute=50,
-            day_of_week='mon-fri'  # 仅周一到周五
-        ),
-        misfire_grace_time=300  # 允许5分钟内的延迟执行
-    )
+    sell_breached_stocks()
+    # scheduler.add_job(
+    #     adjust_orders_at_950,
+    #     trigger=CronTrigger(
+    #         hour=9,
+    #         minute=50,
+    #         day_of_week='mon-fri'  # 仅周一到周五
+    #     ),
+    #     misfire_grace_time=300  # 允许5分钟内的延迟执行
+    # )
     adjust_orders_at_950()
     print("定时任务已添加：每日9:50执行订单调整")
     # tick = xtdata.get_full_tick(["603722.SH"])["603722.SH"]
