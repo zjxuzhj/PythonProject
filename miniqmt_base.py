@@ -881,7 +881,6 @@ if __name__ == "__main__":
     # 启动定时任务
     scheduler.start()
     print("定时任务已启动：每日14:54执行MA5止损检测")
-    sell_breached_stocks()
     # scheduler.add_job(
     #     adjust_orders_at_950,
     #     trigger=CronTrigger(
@@ -891,7 +890,6 @@ if __name__ == "__main__":
     #     ),
     #     misfire_grace_time=300  # 允许5分钟内的延迟执行
     # )
-    adjust_orders_at_950()
     print("定时任务已添加：每日9:50执行订单调整")
     # tick = xtdata.get_full_tick(["603722.SH"])["603722.SH"]
     xtdata.run()

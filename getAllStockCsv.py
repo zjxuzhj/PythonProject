@@ -40,6 +40,7 @@ class StockQuery:
 
         # 初始化时检查并添加theme列
         self._ensure_theme_column_exists()
+        self._ensure_time_column_exists()
         self._load_data()
         self._build_mapping()
         self.roe_cache = None  # 类级缓存
@@ -77,6 +78,18 @@ class StockQuery:
         else:
             # 创建新文件时包含theme列
             pd.DataFrame(columns=['stock_code', 'stock_name', 'theme']).to_csv(
+                self.CSV_PATH, index=False)
+
+    def _ensure_time_column_exists(self):
+        """确保CSV文件包含time列"""
+        if os.path.exists(self.CSV_PATH):
+            df = pd.read_csv(self.CSV_PATH)
+            if 'time' not in df.columns:
+                df['time'] = ''  # 添加空time列
+                df.to_csv(self.CSV_PATH, index=False)
+        else:
+            # 创建新文件时包含time列
+            pd.DataFrame(columns=['stock_code', 'stock_name', 'theme','time']).to_csv(
                 self.CSV_PATH, index=False)
 
     def _init_roe_data(self):
@@ -253,6 +266,8 @@ class StockQuery:
             self.df = pd.read_csv(self.CSV_PATH)
             if 'theme' not in self.df.columns:
                 self.df['theme'] = ''
+            if 'time' not in self.df.columns:
+                self.df['time'] = ''
             # 去重处理（处理可能存在的重复数据）
             self.df = self.df.drop_duplicates(subset=['stock_code'], keep='last')
         except FileNotFoundError:
@@ -321,10 +336,62 @@ class StockQuery:
             self.df['stock_code'].astype(str),
             self.df['theme']
         ))
-
+        self.code_to_time = dict(zip(  # 新增代码到题材的映射
+            self.df['stock_code'].astype(str),
+            self.df['time']
+        ))
         # 名称到代码（1对多）
         self.name_to_codes = self.df.groupby('stock_name')['stock_code'] \
             .apply(list).to_dict()
+
+    def update_times(self, time_dict):
+        """
+        批量更新股票题材
+        :param time_dict: 字典格式 {股票代码: 题材}
+        """
+        # 读取现有数据
+        df = pd.read_csv(self.CSV_PATH)
+
+        # 创建临时列用于更新
+        df['update_time'] = df['stock_code'].map(time_dict)
+
+        # 更新time列：优先使用新值，保留原值
+        df['time'] = df['update_time'].combine_first(df['time'])
+
+        # 清理临时列并保存
+        df.drop(columns=['update_time'], inplace=True)
+        df.to_csv(self.CSV_PATH, index=False)
+
+        # 重新加载数据
+        self._load_data()
+        self._build_mapping()
+        print(f"成功更新 {len(time_dict)} 只股票涨停时间信息")
+
+    def get_time_by_code(self, code):
+        """根据股票代码获取涨停时间"""
+        time = self.code_to_time.get(str(code), "")
+        # 显式判断是否为数值型NaN
+        if isinstance(time, float) and np.isnan(time):
+            return "其他"  # 返回原始NaN值
+        return time if time else "其他"
+
+    def add_time(self, code, time):
+        """添加或更新单个股票的涨停时间"""
+        self.update_times({code: time})
+
+    def batch_add_times(self, time_list):
+        """批量添加涨停时间（列表格式）"""
+        time_dict = {item['code']: item['time'] for item in time_list}
+        self.update_times(time_dict)
+
+    def get_all_times(self):
+        """获取所有股票的涨停时间映射"""
+        return self.df.set_index('stock_code')['time'].to_dict()
+
+    def find_stocks_by_time(self, keyword):
+        """根据涨停时间关键词搜索股票"""
+        return self.df[self.df['time'].str.contains(keyword, case=False, na=False)]
+
 
     def update_themes(self, theme_dict):
         """
@@ -491,6 +558,8 @@ def code_add_prefix(stock_code):
         return f"sh{code}"
     elif first_digit in ('0', '3', '2'):  # 深市包含主板/创业板/B股
         return f"sz{code}"
+    elif first_digit in ('8'):  # 深市包含主板/创业板/B股
+        return f"bj{code}"
     else:
         raise ValueError(f"无法识别的股票代码开头：{first_digit}")
 

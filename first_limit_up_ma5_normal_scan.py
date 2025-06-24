@@ -223,11 +223,12 @@ def get_target_stocks(isNeedLog=True):
         if df.empty:
             continue
 
+        theme = query_tool.get_theme_by_code(code)
         # 买入距离涨停板3天内的票
         first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d")))
+                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"),theme))
 
     # 分组排序逻辑
     today = datetime.now().date()
@@ -235,7 +236,7 @@ def get_target_stocks(isNeedLog=True):
     print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
 
     for stock in limit_up_stocks:
-        code, name, limit_date = stock
+        code, name, limit_date,theme  = stock
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
 
@@ -248,7 +249,7 @@ def get_target_stocks(isNeedLog=True):
 
     for delta, stocks in sorted_days:
         for stock in stocks:
-            code, name, date = stock
+            code, name, date,theme = stock
             standard_code = getAllStockCsv.convert_to_standard_format(code)
             target_stocks.add(standard_code)
             print("  " + "   ".join(stock) + "  ")
