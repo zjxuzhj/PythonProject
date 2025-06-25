@@ -1,5 +1,5 @@
 import requests
-
+import json
 import getAllStockCsv
 
 def updateZTThemeAndTime():
@@ -37,3 +37,7 @@ def updateZTThemeAndTime():
             print("接口返回失败：", data)
     else:
         print(f"请求失败，状态码：{response.status_code}")
+
+if __name__ == "__main__":
+    updateZTThemeAndTime()
+
