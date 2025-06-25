@@ -22,7 +22,8 @@ from position_manage.portfolio_db import save_portfolio
 from position_manage.transaction import Transaction
 
 query_tool = tools.StockQuery()
-
+# ====== 全局策略配置 ======
+PER_STOCK_TOTAL_BUDGET = 12000  # 每只股票的总买入预算 ⭐️ 统一修改点
 
 def setup_logger():
     """配置日志记录器"""
@@ -47,6 +48,17 @@ def setup_logger():
     # 同时输出到控制台
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+
+    # 关键修复：设置控制台编码为UTF-8
+    try:
+        import io
+        console_handler.setStream(io.TextIOWrapper(
+            sys.stdout.buffer,
+            encoding='utf-8',
+            errors='replace'
+        ))
+    except Exception:
+        pass  # 回退到默认流
 
     logger.addHandler(log_handler)
     logger.addHandler(console_handler)
@@ -279,7 +291,7 @@ def query_and_cancel_specific_orders(stock_code):
     print(f"操作完成：成功撤单 {success_count}/{len(target_orders)} 笔")
 
 
-def get_stock_data(symbol):
+def get_stock_data(symbol, isNeedLog):
     """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
@@ -288,7 +300,8 @@ def get_stock_data(symbol):
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
-            print(f"从缓存加载数据：{symbol}")
+            if isNeedLog:
+                print(f"从缓存加载数据：{symbol}")
             return df, True
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
@@ -301,7 +314,7 @@ def get_stock_data(symbol):
 def get_guess_ma5_price(stock_code):
     """获取指定股票的最新MA5价格"""
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
-    df, _ = get_stock_data(pure_code)
+    df, _ = get_stock_data(pure_code,False)
 
     if df.empty or len(df) < 5:
         print(f"警告：{stock_code} 数据不足，无法计算MA5")
@@ -327,7 +340,7 @@ def get_ma5_price(stock_code, current_date=None, current_price=None):
         float: 最新MA5价格（不足5日数据返回None）
     """
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
-    df, _ = get_stock_data(pure_code)
+    df, _ = get_stock_data(pure_code,False)
 
     if df.empty or len(df) < 4:  # 至少需要4日历史数据
         print(f"警告：{stock_code} 数据不足，无法计算MA5")
@@ -414,7 +427,7 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
     tier_prices = []
     for tier in tiers:
         # 模拟不同预测倍数的MA5（需重新计算历史数据）
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code))
+        df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
         if df.empty:
             continue
 
@@ -448,12 +461,12 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
     # 保底策略：若前三档未完成，合并为两档
     if len(orders) < 2 and remaining_amount > 0:
         backup_tiers = [
-            {'predict_ratio': 1.03, 'ratio': 0.50},
-            {'predict_ratio': 1.01, 'ratio': 0.50}
+            {'predict_ratio': 1.06, 'ratio': 0.50},
+            {'predict_ratio': 1.03, 'ratio': 0.50}
         ]
         tier_prices = []
         for tier in backup_tiers:
-            df, _ = get_stock_data(tools.convert_stock_code(stock_code))
+            df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
             modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
             tier_ma5 = modified_df['MA5'].iloc[-1]
             tier_prices.append({
@@ -481,7 +494,7 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
             order['shares'], xtconstant.FIX_PRICE,
             order['price'], '瀑布流策略', stock_code
         )
-        print(f"✅ 挂单成功：{order['shares']}股 @ {order['price']}（预测倍数：{order['price'] / base_ma5:.2f}x）")
+        print(f"✅ 挂单成功：{order['shares']}股 @ {order['price']}（预算: {order['shares']*order['price']:.2f}/{PER_STOCK_TOTAL_BUDGET}）")
 
     return True
 
@@ -600,20 +613,31 @@ def precompute_trigger_prices(stock_code):
     """预计算各层MA5触发价格"""
     base_ma5 = get_ma5_price(stock_code)
     if not base_ma5:
+        print(f"⚠️ 无法计算{stock_code}触发价: MA5数据缺失")
         return
 
     # 分层配置
     tiers = [
-        {'predict_ratio': 1.03, 'weight': 0.4},
-        {'predict_ratio': 1.00, 'weight': 0.3},
-        {'predict_ratio': 0.98, 'weight': 0.3},
+        {'predict_ratio': 1.06, 'weight': 0.4},
+        {'predict_ratio': 1.03, 'weight': 0.3},
+        {'predict_ratio': 1.01, 'weight': 0.3},
     ]
 
     # 生成触发价格
     for tier in tiers:
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code))
+        df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
         modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
         trigger_price = round(modified_df['MA5'].iloc[-1], 2)
+
+        # 计算预估挂单数量（100股整数倍）
+        tier_budget = PER_STOCK_TOTAL_BUDGET * tier['weight']  # 层级预算
+        estimated_shares = int(tier_budget // trigger_price) // 100 * 100  # 取整为100的倍数
+
+        # 打印触发价格和预估挂单数量
+        print(f"股票: {stock_code} | "
+              f"📊 层级触发价: {trigger_price:.2f} | "
+              f"权重: {tier['weight'] * 100}% | "
+              f"预估挂单: {estimated_shares}股")
 
         # 去重后存入全局变量
         if trigger_price not in trigger_prices[stock_code]:
@@ -626,8 +650,11 @@ def precompute_trigger_prices(stock_code):
 
 def subscribe_target_stocks(target_stocks):
     for stock_code in target_stocks:
+        # 预计算该股票的触发价格
+        precompute_trigger_prices(stock_code)
         # 订阅分时数据（用于实时触发）
         xtdata.subscribe_quote(stock_code, period='tick', callback=on_quote_update)
+        print(f"✅ 已订阅并计算触发价: {stock_code}")
 
 
 # 在全局定义日志记录控制变量
@@ -690,14 +717,39 @@ def process_stock_quote(stock_code, current_price, current_time):
 
     # 2. 价格变化超过2%时记录
     last_log_price = log_throttle[stock_code]['last_log_price']
+    if last_log_price < 1e-5:  # 检查是否为极小值（接近0）
+        # 重置为当前价格并跳过计算
+        log_throttle[stock_code]['last_log_price'] = current_price
+        print(f"⚠️ 重置 {stock_code} 基准价: 0 → {current_price}")
+        return
     price_diff = abs(current_price - last_log_price)
-    if price_diff / last_log_price > 0.02:
-        print(f"📈 {stock_code} 价格波动 >2%: {last_log_price} → {current_price}")
+    price_change_ratio = price_diff / last_log_price
+    if price_change_ratio > 0.02:
+        print(f"📈 {stock_code} 价格波动 >2%: {last_log_price} → {current_price} ({price_change_ratio * 100:.2f}%)")
         log_throttle[stock_code]['last_log_price'] = current_price
 
     # 3. 每60秒记录一次（即使价格无变化）
     if current_time - log_throttle[stock_code]['last_log_time'] > 60:
-        print(f"🕒 {stock_code} 行情更新: {current_price} (60秒间隔)")
+        closest_tier = None
+        min_diff = float('inf')
+        for tier in trigger_prices.get(stock_code, []):
+            if tier['triggered']:  # 跳过已触发的层级
+                continue
+
+            price_diff = abs(tier['price'] - current_price)
+            if price_diff < min_diff:
+                min_diff = price_diff
+                closest_tier = tier
+
+        # 格式化输出信息
+        if closest_tier:
+            diff_percent = abs(closest_tier['price'] - current_price) / current_price * 100
+            direction = "↑" if current_price < closest_tier['price'] else "↓"
+            print(
+                f"🕒 {stock_code} 行情: {current_price} | 最接近触发价: {closest_tier['price']} ({direction}{diff_percent:.2f}%)")
+        else:
+            print(f"🕒 {stock_code} 行情更新: {current_price} (无未触发价格层级)")
+
         log_throttle[stock_code]['last_log_time'] = current_time
 
     # 4. 触发条件检查
@@ -711,11 +763,14 @@ def process_stock_quote(stock_code, current_price, current_time):
             execute_trigger_order(stock_code, tier)
             tier['triggered'] = True
 
+
 def execute_trigger_order(stock_code, tier):
+    """执行触发挂单（修复资金分配逻辑）"""
     """执行触发挂单"""
     # 动态计算可用资金（每次触发时刷新）
     refresh_account_status()
-    available = min(available_cash * tier['weight'], 10000)
+    # 计算实际可买金额（不超过层级预算）
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['weight'], available_cash)
 
     # 计算可买数量（100股整数倍）
     buy_shares = int(available // (tier['price'] * 100)) * 100
@@ -756,10 +811,13 @@ def adjust_orders_at_950():
 
         # 5. 动态计算总可用资金
         total_available = available_cash
-        per_stock_amount = min(total_available / len(filtered_stocks), 10000)
+        per_stock_amount = min(total_available / len(filtered_stocks), PER_STOCK_TOTAL_BUDGET)
         print(f"可用资金分配：总资金={total_available:.2f}, 每支股票={per_stock_amount:.2f}")
 
         subscribe_target_stocks(filtered_stocks)
+        for code in filtered_stocks:
+            if code not in trigger_prices or not trigger_prices[code]:
+                print(f"⛔ 警告: {code} 未生成触发价格层级")
 
     except Exception as e:
         print(f"‼️ 9:50任务执行异常: {str(e)}")
@@ -861,50 +919,32 @@ if __name__ == "__main__":
     #     # 动态二次校验（防止持仓变化）
     #     if stock_code in hold_stocks:
     #         continue
-    #     success = auto_order_by_ma5(stock_code, 10000)
+    #     success = auto_order_by_ma5(stock_code, PER_STOCK_TOTAL_BUDGET)
     #     if not success:
     #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
-
-    # 设置股票交易时间过滤（排除非交易日）
     scheduler.add_job(
-        sell_breached_stocks,
+        adjust_orders_at_950,
         trigger=CronTrigger(
-            hour=14,
-            minute=54,
+            hour=9,
+            minute=50,
             day_of_week='mon-fri'  # 仅周一到周五
         ),
-        misfire_grace_time=10  # 允许5分钟内的延迟执行
+        misfire_grace_time=60  # 允许1分钟内的延迟执行
     )
-
-    # 启动定时任务
-    scheduler.start()
-    print("定时任务已启动：每日14:54执行MA5止损检测")
+    print("定时任务已添加：每日9:50执行订单调整")
+    # 设置股票交易时间过滤（排除非交易日）
     # scheduler.add_job(
-    #     adjust_orders_at_950,
+    #     sell_breached_stocks,
     #     trigger=CronTrigger(
-    #         hour=9,
-    #         minute=50,
+    #         hour=14,
+    #         minute=54,
     #         day_of_week='mon-fri'  # 仅周一到周五
     #     ),
-    #     misfire_grace_time=300  # 允许5分钟内的延迟执行
+    #     misfire_grace_time=60  # 允许1分钟内的延迟执行
     # )
-    print("定时任务已添加：每日9:50执行订单调整")
-    # tick = xtdata.get_full_tick(["603722.SH"])["603722.SH"]
+    print("定时任务已启动：每日14:54执行MA5止损检测")
+    # 启动定时任务
+    scheduler.start()
     xtdata.run()
-    # pre_order_stock( '603722.SH',5000,42.15)
-    # pre_order_stock( '603725.SH',10000,8.19)
-    # pre_order_stock( '002923.SZ',10000,14.22)
-    # query_and_cancel_specific_orders('603722.SH')
-    # query_and_cancel_specific_orders('002923.SZ')
-    # 查询当日所有的委托
-    # print("query orders:")
-    # orders = xt_trader.query_stock_orders(acc)
-    # print("orders:", len(orders))
-    # if len(orders) != 0:
-    #     print("last order:")
-    #     print("{0} {1} {2}".format(orders[-1].stock_code, orders[-1].order_volume, orders[-1].price))
-    #     order_id_to_cancel = orders[-1].order_id  # 要撤销的订单号
-    #     cancel_result = xt_trader.cancel_order_stock_async(acc, order_id_to_cancel)
-    #     print(f"撤单结果: {cancel_result}")

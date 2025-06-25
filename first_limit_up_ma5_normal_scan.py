@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, time
 
 import pandas as pd
 
@@ -26,7 +26,6 @@ def get_stock_data(symbol, isNeedLog):
 
 
 def find_recent_first_limit_up(code, old_df, days=7):
-# def find_recent_first_limit_up(code, old_df, days=3):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(("300", "301")) else "主板"
     limit_rate = 0.20 if market in ["创业板", "科创板"] else 0.10
@@ -200,19 +199,35 @@ def get_target_stocks(isNeedLog=True):
     # 新增逻辑：检查当日数据是否已存在 ======================
     base_path = "output"
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    # 获取当前完整时间信息
+    current_datetime = datetime.now()
+    current_date_str = current_datetime.strftime('%Y-%m-%d')
+    current_time = current_datetime.time()
+
+    # 定义交易时段 9:40-15:00
+    trading_start = time(9, 40)
+    trading_end = time(15, 0)
 
     # 检查文件是否存在且包含当日数据
     if os.path.exists(file_path):
         existing_df = pd.read_csv(file_path)
-        if current_date in existing_df['日期'].values:
-            # 提取当日股票列表并返回
-            stocks_str = existing_df.loc[existing_df['日期'] == current_date, '目标股票'].values[0]
-            target_stocks = stocks_str.split(',')
-            print(f"读取到当日已保存数据：{len(target_stocks)}只股票")
-            return target_stocks  # 直接返回已有数据
+        # 提取数据中的日期部分
+        existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
+        # 存在当日数据且处于交易时段
+        if current_date_str in existing_dates.unique():
+            # 判断当前是否在交易时段内
+            if trading_start <= current_time <= trading_end:
+                # 获取当日最新记录（按时间倒序）
+                today_records = existing_df[existing_dates == current_date_str]
+                today_latest = today_records.iloc[-1]
+
+                stocks_str = today_latest['目标股票']
+                target_stocks = stocks_str.split(',')
+                print(f"交易时段直接读取当日数据：{len(target_stocks)}只股票")
+                return target_stocks
 
     # ========== 以下为原有计算逻辑（当无当日数据时执行） ==========
+    excluded_stocks = set()
     limit_up_stocks = []
     query_tool = getAllStockCsv.StockQuery()
     filtered_stocks = query_tool.get_all_filter_stocks()
@@ -224,6 +239,12 @@ def get_target_stocks(isNeedLog=True):
             continue
 
         theme = query_tool.get_theme_by_code(code)
+        if "稳定币" in theme:  # 核心排除条件
+            excluded_stocks.add(code)
+            continue  # 跳过后续处理
+        if "石油" in theme:  # 核心排除条件
+            excluded_stocks.add(code)
+            continue  # 跳过后续处理
         # 买入距离涨停板3天内的票
         first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
@@ -255,15 +276,21 @@ def get_target_stocks(isNeedLog=True):
             print("  " + "   ".join(stock) + "  ")
 
     # 保存并返回新计算的数据
-    save_target_stocks(target_stocks)
+    save_target_stocks(target_stocks,excluded_stocks)
     return list(target_stocks)
 
 
-def save_target_stocks(target_stocks, base_path="output"):
+def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
     """保存目标股票列表到CSV文件（股票代码按数字部分升序排序）"""
     os.makedirs(base_path, exist_ok=True)
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
     current_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    # 格式化排除名单
+    excluded_str = ",".join(sorted(
+        excluded_stocks,
+        key=lambda x: int(''.join(filter(str.isdigit, x)))
+    )) if excluded_stocks else "无"
 
     # 关键修复：提取纯数字部分排序（保留原始带后缀格式）
     sorted_stocks = sorted(
@@ -275,7 +302,8 @@ def save_target_stocks(target_stocks, base_path="output"):
 
     today_df = pd.DataFrame({
         "日期": [current_date],
-        "目标股票": [stocks_str]
+        "目标股票": [stocks_str],
+        "排除股票": [excluded_str]
     })
 
     if os.path.exists(file_path):

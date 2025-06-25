@@ -558,7 +558,7 @@ def code_add_prefix(stock_code):
         return f"sh{code}"
     elif first_digit in ('0', '3', '2'):  # 深市包含主板/创业板/B股
         return f"sz{code}"
-    elif first_digit in ('8'):  # 深市包含主板/创业板/B股
+    elif first_digit in ('8','4'):  # 北证
         return f"bj{code}"
     else:
         raise ValueError(f"无法识别的股票代码开头：{first_digit}")

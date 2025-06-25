@@ -10,6 +10,7 @@ import getAllStockCsv
 import getTopIndustry as getTopIndustry
 import getBacktestForDepart as backtestForDepart
 import scanAllStockDepart as scan
+import http_util
 
 def addStockData(symbol, start_date):
     file_name = f"stock_{symbol}_{start_date}.parquet"
@@ -114,6 +115,8 @@ if __name__ == "__main__":
 
     print("全市场数据更新完成")
 
+    http_util.updateZTThemeAndTime()
+    print("今日涨停股票原因以及时间更新完毕")
     # getTopIndustry.get_top_industry()
     #
     # scan.setup_logger()
