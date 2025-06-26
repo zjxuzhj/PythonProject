@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging.handlers import TimedRotatingFileHandler
 
 import pandas as pd
@@ -609,6 +609,78 @@ def sell_breached_stocks():
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 
 
+def save_trigger_prices_to_csv():
+    """将全局trigger_prices数据保存到CSV文件"""
+    try:
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
+
+        # 转换数据结构为DataFrame
+        all_data = []
+        for stock_code, tiers in trigger_prices.items():
+            for tier in tiers:
+                all_data.append({
+                    'date': today_str,
+                    'stock_code': stock_code,
+                    'price': tier['price'],
+                    'weight': tier['weight'],
+                    'triggered': tier['triggered'],
+                    'trigger_time': tier.get('trigger_time', '')  # 记录触发时间
+                })
+
+        if not all_data:
+            print("⚠️ 无触发价格数据需要保存")
+            return
+
+        df = pd.DataFrame(all_data)
+
+        # 按股票代码和价格排序
+        df = df.sort_values(['stock_code', 'price'], ascending=[True, False])
+
+        # 保存到CSV（如果文件已存在则追加）
+        if os.path.exists(filename):
+            existing_df = pd.read_csv(filename)
+            df = pd.concat([existing_df, df]).drop_duplicates(
+                subset=['date', 'stock_code', 'price'],
+                keep='last'
+            )
+
+        df.to_csv(filename, index=False, encoding='utf-8-sig')
+        print(f"✅ 触发价格已保存: {filename}")
+
+    except Exception as e:
+        print(f"❌ 保存触发价格失败: {str(e)}")
+
+
+def load_trigger_prices_from_csv(date_str=None):
+    """从CSV加载指定日期的触发价格数据"""
+    if date_str is None:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+
+    try:
+        filename = os.path.join("output", f"trigger_prices_{date_str}.csv")
+        if not os.path.exists(filename):
+            print(f"⚠️ 未找到{date_str}的触发价格记录")
+            return None
+
+        df = pd.read_csv(filename)
+
+        # 转换为全局trigger_prices格式
+        loaded_data = defaultdict(list)
+        for _, row in df.iterrows():
+            loaded_data[row['stock_code']].append({
+                'price': row['price'],
+                'weight': row['weight'],
+                'triggered': row['triggered'],
+                'trigger_time': row.get('trigger_time', '')
+            })
+
+        return loaded_data
+
+    except Exception as e:
+        print(f"❌ 加载触发价格失败: {str(e)}")
+        return None
+
 def precompute_trigger_prices(stock_code):
     """预计算各层MA5触发价格"""
     base_ma5 = get_ma5_price(stock_code)
@@ -765,7 +837,6 @@ def process_stock_quote(stock_code, current_price, current_time):
 
 
 def execute_trigger_order(stock_code, tier):
-    """执行触发挂单（修复资金分配逻辑）"""
     """执行触发挂单"""
     # 动态计算可用资金（每次触发时刷新）
     refresh_account_status()
@@ -777,6 +848,10 @@ def execute_trigger_order(stock_code, tier):
     if buy_shares < 100:
         return
 
+    # 记录触发时间
+    tier['trigger_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tier['triggered'] = True
+
     # 异步挂单（限价委托）
     xt_trader.order_stock_async(
         acc, stock_code, xtconstant.STOCK_BUY,
@@ -785,11 +860,25 @@ def execute_trigger_order(stock_code, tier):
     )
     print(f"⚡触发挂单：{stock_code} {buy_shares}股 @ {tier['price']}")
 
+    # 立即保存更新后的触发状态
+    save_trigger_prices_to_csv()
 
-def adjust_orders_at_950():
-    """9:50定时任务：撤单后重新挂单，确保资金充分利用"""
+def adjust_orders_at_935():
+    """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
     try:
-        print("\n===== 9:50定时任务启动 =====")
+        print("\n===== 9:35定时任务启动 =====")
+
+        # 0. 分析昨日执行情况
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        historical_data = load_trigger_prices_from_csv(yesterday)
+
+        if historical_data:
+            print("\n=== 昨日触发价格执行情况 ===")
+            for stock_code, tiers in historical_data.items():
+                triggered = sum(1 for t in tiers if t['triggered'])
+                total = len(tiers)
+                print(f"{stock_code}: 触发 {triggered}/{total} 档 ({triggered / total * 100:.1f}%)")
+
 
         # 1. 撤掉所有未成交挂单
         cancel_all_pending_orders()
@@ -814,16 +903,63 @@ def adjust_orders_at_950():
         per_stock_amount = min(total_available / len(filtered_stocks), PER_STOCK_TOTAL_BUDGET)
         print(f"可用资金分配：总资金={total_available:.2f}, 每支股票={per_stock_amount:.2f}")
 
+        # 6. 订阅并保存触发价格
         subscribe_target_stocks(filtered_stocks)
+        save_trigger_prices_to_csv()
         for code in filtered_stocks:
             if code not in trigger_prices or not trigger_prices[code]:
                 print(f"⛔ 警告: {code} 未生成触发价格层级")
 
     except Exception as e:
-        print(f"‼️ 9:50任务执行异常: {str(e)}")
+        print(f"‼️ 9:35任务执行异常: {str(e)}")
     finally:
-        print("===== 9:50定时任务完成 =====")
+        print("===== 9:35定时任务完成 =====")
 
+
+def analyze_trigger_performance(days=5):
+    """分析最近N天的触发价格执行情况"""
+    analysis_results = []
+
+    for i in range(days):
+        date_str = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        data = load_trigger_prices_from_csv(date_str)
+
+        if data:
+            total_triggers = sum(len(tiers) for tiers in data.values())
+            triggered = sum(sum(1 for t in tiers if t['triggered']) for tiers in data.values())
+            success_rate = triggered / total_triggers * 100 if total_triggers > 0 else 0
+
+            analysis_results.append({
+                'date': date_str,
+                'stocks': len(data),
+                'total_triggers': total_triggers,
+                'triggered': triggered,
+                'success_rate': f"{success_rate:.1f}%"
+            })
+
+    if analysis_results:
+        df = pd.DataFrame(analysis_results)
+        print("\n=== 触发价格执行情况分析 ===")
+        print(df.to_string(index=False))
+    else:
+        print("⚠️ 无历史数据可供分析")
+
+
+def get_stock_trigger_details(stock_code, date_str=None):
+    """获取指定股票的详细触发情况"""
+    if date_str is None:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+
+    data = load_trigger_prices_from_csv(date_str)
+    if not data or stock_code not in data:
+        print(f"⚠️ 未找到{stock_code}在{date_str}的触发记录")
+        return
+
+    df = pd.DataFrame(data[stock_code])
+    df = df.sort_values('price', ascending=False)
+
+    print(f"\n=== {stock_code} 触发详情 ({date_str}) ===")
+    print(df[['price', 'weight', 'triggered', 'trigger_time']].to_string(index=False))
 
 def cancel_all_pending_orders():
     """撤掉所有未成交挂单"""
@@ -864,7 +1000,6 @@ if __name__ == "__main__":
     session_id = int(time.time())
     xt_trader = XtQuantTrader(path, session_id)
 
-    # 创建资金账号为 800068 的证券账号对象 股票账号为STOCK 信用CREDIT 期货FUTURE
     acc = StockAccount('8886969255', 'STOCK')
     # 创建交易回调类对象，并声明接收回调
     callback = MyXtQuantTraderCallback()
@@ -925,7 +1060,7 @@ if __name__ == "__main__":
 
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     scheduler.add_job(
-        adjust_orders_at_950,
+        adjust_orders_at_935,
         trigger=CronTrigger(
             hour=9,
             minute=35,
@@ -933,7 +1068,7 @@ if __name__ == "__main__":
         ),
         misfire_grace_time=60  # 允许1分钟内的延迟执行
     )
-    print("定时任务已添加：每日9:50执行订单调整")
+    print("定时任务已添加：每日9:35执行订单调整")
     # 设置股票交易时间过滤（排除非交易日）
     # scheduler.add_job(
     #     sell_breached_stocks,
@@ -944,7 +1079,19 @@ if __name__ == "__main__":
     #     ),
     #     misfire_grace_time=60  # 允许1分钟内的延迟执行
     # )
-    print("定时任务已启动：每日14:54执行MA5止损检测")
+    # print("定时任务已启动：每日14:54执行MA5止损检测")
     # 启动定时任务
+
+    # 添加每日收盘分析任务
+    scheduler.add_job(
+        analyze_trigger_performance,
+        trigger=CronTrigger(
+            hour=15,
+            minute=5,
+            day_of_week='mon-fri'
+        )
+    )
+    print("定时任务已添加：每日15:05执行触发价格分析")
+
     scheduler.start()
     xtdata.run()

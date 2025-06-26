@@ -7,23 +7,18 @@ import getAllStockCsv
 
 
 def get_stock_data(symbol, isNeedLog):
-    """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
-
-    # 非强制更新时尝试读取缓存
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
             if isNeedLog:
                 print(f"从缓存加载数据：{symbol}")
-            return df, True  # 返回缓存标记
+            return df, True
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
-
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
-
 
 def find_recent_first_limit_up(code, old_df, days=7):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
@@ -31,7 +26,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
     limit_rate = 0.20 if market in ["创业板", "科创板"] else 0.10
 
     # 获取当前数据的最新日期
-    end_date = old_df.index.max()  # 数据的最新交易日
+    end_date = old_df.index.max()
     if end_date is None or old_df.empty:
         return []
 
@@ -66,7 +61,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
         if day != limit_days[0]:
             continue
 
-        # 检查前一日是否涨停（排除连板）
+        # 条件0：排除前一日涨停
         prev_day = None
         try:
             prev_idx = df.index.get_loc(day) - 1
@@ -76,13 +71,11 @@ def find_recent_first_limit_up(code, old_df, days=7):
             prev_day = None
 
         if prev_day and df.loc[prev_day, 'is_limit']:
-            # 前一日涨停，排除该涨停日（连板）
             continue
 
         # 条件1：排除后一日涨停
         next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
         if next_day and df.loc[next_day, 'is_limit']:
-            # 后一日涨停，排除该涨停日（连板）
             continue
 
         # 条件2：涨停后第一天涨幅>8%的排除
@@ -93,7 +86,6 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if abs(base_price) < 1e-5:
                 continue  # 跳过无效数据
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-            # 如果次日涨幅超过8%，排除该首板日
             if next_day_change >= 8:
                 continue
 
@@ -123,7 +115,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
             # 检查前3日最高价是否触及前高的95%
             recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
             if historical_high * 0.95 <= recent_3day_high < historical_high:
-                continue  # 触发排除条件
+                continue
 
         # 条件6：排除首板后第一个交易日放量阳线+第二个交易日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有首板第二个交易日数据
@@ -136,8 +128,8 @@ def find_recent_first_limit_up(code, old_df, days=7):
             # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
             volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
             price_range = first_day_data['high'] - first_day_data['low']
-            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线）
-                candle_condition = False  # 实体占比无法计算，直接排除
+            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
+                candle_condition = False
             else:
                 # 计算实体部分（收盘价 - 开盘价）
                 candle_body = abs(first_day_data['close'] - first_day_data['open'])
@@ -156,33 +148,34 @@ def find_recent_first_limit_up(code, old_df, days=7):
 
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 print(f"条件6触发：排除{code}，涨停日{day}")
-                continue  # 触发排除
+                continue
 
         valid_days.append(day)
     return valid_days
 
 
 def generate_signals(df, first_limit_day, stock_code, stock_name):
-    base_price = df.loc[first_limit_day, 'close']  # 首板收盘价，最重要的位置，表示主力的支撑度
+    # 首板收盘价，最重要的位置，表示主力的支撑度
+    base_price = df.loc[first_limit_day, 'close']
     df['5ma'] = df['close'].rolling(5, min_periods=1).mean()
     post_limit_df = df[df.index >= first_limit_day].copy()
 
     # 条件1：涨停后每日收盘价高于首板收盘价（不包含首板日）
     always_above_base = True
     for date in post_limit_df.index:
-        if date == first_limit_day:
-            continue  # 跳过首板日（不需要比较）
+        if date == first_limit_day:  # 跳过首板日（不需要比较）
+            continue
         close_price = post_limit_df.loc[date, 'close']
         if close_price < base_price:
             always_above_base = False
             break
 
     # 判断每日是否触及五日线
-    never_touched = True  # 初始化为True
+    never_touched = True
 
-    # 条件2：涨停日及之后每日未触及五日线（不包含首板日）
+    # 条件2：涨停日及之后每日未触及五日线
     for date in post_limit_df.index:
-        if date == first_limit_day:  # 跳过首板日
+        if date == first_limit_day:  # 跳过首板日（不需要比较）
             continue
         row = post_limit_df.loc[date]
         # 判断是否触及：当日最低价 ≤ 五日线 ≤ 当日最高价
@@ -193,10 +186,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     return never_touched and always_above_base
     # return always_above_base
 
-
 def get_target_stocks(isNeedLog=True):
     """获取目标股票列表，若当日数据已存在则直接读取"""
-    # 新增逻辑：检查当日数据是否已存在 ======================
+    # 检查当日数据是否已存在
     base_path = "output"
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
     # 获取当前完整时间信息
@@ -204,8 +196,8 @@ def get_target_stocks(isNeedLog=True):
     current_date_str = current_datetime.strftime('%Y-%m-%d')
     current_time = current_datetime.time()
 
-    # 定义交易时段 9:40-15:00
-    trading_start = time(9, 40)
+    # 定义交易时段 9:31-15:00 交易时间内
+    trading_start = time(9, 31)
     trading_end = time(15, 0)
 
     # 检查文件是否存在且包含当日数据
@@ -226,7 +218,7 @@ def get_target_stocks(isNeedLog=True):
                 print(f"交易时段直接读取当日数据：{len(target_stocks)}只股票")
                 return target_stocks
 
-    # ========== 以下为原有计算逻辑（当无当日数据时执行） ==========
+    # ========== 当无当日数据时执行 ==========
     excluded_stocks = set()
     limit_up_stocks = []
     query_tool = getAllStockCsv.StockQuery()
@@ -239,13 +231,7 @@ def get_target_stocks(isNeedLog=True):
             continue
 
         theme = query_tool.get_theme_by_code(code)
-        if "稳定币" in theme:  # 核心排除条件
-            excluded_stocks.add(code)
-            continue  # 跳过后续处理
-        if "石油" in theme:  # 核心排除条件
-            excluded_stocks.add(code)
-            continue  # 跳过后续处理
-        # 买入距离涨停板3天内的票
+        # 买入距离涨停板3天内的票（越近胜率越高）
         first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
@@ -257,10 +243,17 @@ def get_target_stocks(isNeedLog=True):
     print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
 
     for stock in limit_up_stocks:
-        code, name, limit_date,theme  = stock
+        code, name, limit_date,theme  = stock # 拆包对象
+
+        # 排除板块
+        # if "稳定币" in theme:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "石油" in theme:
+        #     excluded_stocks.add(code)
+        #     continue
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
-
         if delta_days not in days_groups:
             days_groups[delta_days] = []
         days_groups[delta_days].append(stock)
@@ -292,10 +285,9 @@ def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
         key=lambda x: int(''.join(filter(str.isdigit, x)))
     )) if excluded_stocks else "无"
 
-    # 关键修复：提取纯数字部分排序（保留原始带后缀格式）
     sorted_stocks = sorted(
         target_stocks,
-        key=lambda x: int(''.join(filter(str.isdigit, x)))  # 提取数字部分转为整数
+        key=lambda x: int(''.join(filter(str.isdigit, x)))
     )
 
     stocks_str = ",".join(sorted_stocks)

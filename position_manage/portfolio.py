@@ -132,7 +132,6 @@ class Portfolio:
                             new_profit_pct = float('inf')
                         elif profit_per_remaining_share < 0:  # 理论上成本为0不应有负盈利，除非股价为负
                             new_profit_pct = float('-inf')
-                        # else profit_per_remaining_share is 0, so new_profit_pct remains 0.0
 
                 profit_pct = new_profit_pct  # 使用新的计算结果
 
