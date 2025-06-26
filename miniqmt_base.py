@@ -23,7 +23,7 @@ from position_manage.transaction import Transaction
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 12000  # 每只股票的总买入预算 ⭐️ 统一修改点
+PER_STOCK_TOTAL_BUDGET = 6000  # 每只股票的总买入预算 ⭐️ 统一修改点
 
 def setup_logger():
     """配置日志记录器"""
@@ -928,7 +928,7 @@ if __name__ == "__main__":
         adjust_orders_at_950,
         trigger=CronTrigger(
             hour=9,
-            minute=50,
+            minute=35,
             day_of_week='mon-fri'  # 仅周一到周五
         ),
         misfire_grace_time=60  # 允许1分钟内的延迟执行
