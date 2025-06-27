@@ -7,8 +7,8 @@ import pandas as pd
 
 
 class StockQuery:
-    CSV_PATH = os.path.join(os.path.dirname(__file__), 'stock_code_name.csv')
-    REPORT_CSV_PATH = os.path.join(os.path.dirname(__file__), 'merged_report_2024Q3.csv')
+    CSV_PATH = os.path.join("output", 'stock_code_name.csv')
+    REPORT_CSV_PATH = os.path.join("output", 'merged_report_2024Q3.csv')
 
     def get_simple_by_code(self, code):
         return code[2:]
@@ -227,7 +227,7 @@ class StockQuery:
             merged_df = merged_df[required_columns]
 
             # 保存结果
-            merged_df.to_csv("merged_report_2024Q3.csv", index=False)
+            merged_df.to_csv("output/merged_report_2024Q3.csv", index=False)
         except Exception as e:
             print(f"接口调用失败: {str(e)}")
 

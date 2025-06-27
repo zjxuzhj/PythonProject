@@ -7,7 +7,7 @@ import plotly.express as px
 
 class TopIndustry:
     # 类属性定义文件路径
-    CSV_PATH = os.path.join(os.path.dirname(__file__), "top30_industries.csv")
+    CSV_PATH = os.path.join("output", "top30_industries.csv")
 
     def __init__(self, auto_update=False):
         self.industry_cache = None  # 类级缓存
@@ -43,7 +43,7 @@ class TopIndustry:
 
 def get_top_industry():
     """获取行业Top30数据并缓存到CSV"""
-    cache_file = "top30_industries.csv"
+    cache_file = "output/top30_industries.csv"
     # 检查缓存文件有效性（30分钟有效期）
     if os.path.exists(cache_file):
         file_time = os.path.getmtime(cache_file)
@@ -77,7 +77,7 @@ def get_top_industry():
 
 def visualize_top30():
     """生成交互式热力图[7](@ref)"""
-    df = pd.read_csv("top30_industries.csv")
+    df = pd.read_csv("output/top30_industries.csv")
     fig = px.treemap(
         df,
         path=['名称'],
