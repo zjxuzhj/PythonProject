@@ -9,9 +9,9 @@ from position_manage.transaction import Transaction
 def add_new_position(portfolio):
     try:
         month = 6
-        day = 26
+        day = 27
         transactions = [
-            Transaction(datetime(2025, month, day), "sz003040", "SELL", 24.34, 300),
+            Transaction(datetime(2025, month, day), "sz002104", "SELL", 18.95, 100),
             # Transaction(datetime(2025, month, day), "sz002923", "SELL", 13.07, 500),
             # Transaction(datetime(2025, month, day), "sh600418", "SELL", 42.4, 200),
             # Transaction(datetime(2025, month, day), "sh603657", "SELL", 34.47, 300),

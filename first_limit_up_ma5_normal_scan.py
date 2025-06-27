@@ -246,9 +246,9 @@ def get_target_stocks(isNeedLog=True):
         code, name, limit_date,theme  = stock # 拆包对象
 
         # 排除板块
-        # if "稳定币" in theme:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "光伏" in theme: # 因为其他账户有大仓位光伏
+            excluded_stocks.add(code)
+            continue
         # if "石油" in theme:
         #     excluded_stocks.add(code)
         #     continue

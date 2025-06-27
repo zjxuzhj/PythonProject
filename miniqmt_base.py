@@ -25,6 +25,7 @@ query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
 PER_STOCK_TOTAL_BUDGET = 6000  # 每只股票的总买入预算 ⭐️ 统一修改点
 
+
 def setup_logger():
     """配置日志记录器"""
     logger = logging.getLogger("QMT_Strategy")
@@ -314,7 +315,7 @@ def get_stock_data(symbol, isNeedLog):
 def get_guess_ma5_price(stock_code):
     """获取指定股票的最新MA5价格"""
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
-    df, _ = get_stock_data(pure_code,False)
+    df, _ = get_stock_data(pure_code, False)
 
     if df.empty or len(df) < 5:
         print(f"警告：{stock_code} 数据不足，无法计算MA5")
@@ -340,7 +341,7 @@ def get_ma5_price(stock_code, current_date=None, current_price=None):
         float: 最新MA5价格（不足5日数据返回None）
     """
     pure_code = tools.convert_stock_code(stock_code)  # 如603722.SH -> sh603722
-    df, _ = get_stock_data(pure_code,False)
+    df, _ = get_stock_data(pure_code, False)
 
     if df.empty or len(df) < 4:  # 至少需要4日历史数据
         print(f"警告：{stock_code} 数据不足，无法计算MA5")
@@ -427,7 +428,7 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
     tier_prices = []
     for tier in tiers:
         # 模拟不同预测倍数的MA5（需重新计算历史数据）
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
+        df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
         if df.empty:
             continue
 
@@ -466,7 +467,7 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
         ]
         tier_prices = []
         for tier in backup_tiers:
-            df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
+            df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
             modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
             tier_ma5 = modified_df['MA5'].iloc[-1]
             tier_prices.append({
@@ -494,7 +495,8 @@ def auto_order_by_ma5(stock_code, total_amount=12000):
             order['shares'], xtconstant.FIX_PRICE,
             order['price'], '瀑布流策略', stock_code
         )
-        print(f"✅ 挂单成功：{order['shares']}股 @ {order['price']}（预算: {order['shares']*order['price']:.2f}/{PER_STOCK_TOTAL_BUDGET}）")
+        print(
+            f"✅ 挂单成功：{order['shares']}股 @ {order['price']}（预算: {order['shares'] * order['price']:.2f}/{PER_STOCK_TOTAL_BUDGET}）")
 
     return True
 
@@ -623,7 +625,7 @@ def save_trigger_prices_to_csv():
                     'date': today_str,
                     'stock_code': stock_code,
                     'price': tier['price'],
-                    'weight': tier['weight'],
+                    'weight': f"{tier['weight'] * 100}%",
                     'triggered': tier['triggered'],
                     'trigger_time': tier.get('trigger_time', '')  # 记录触发时间
                 })
@@ -681,6 +683,7 @@ def load_trigger_prices_from_csv(date_str=None):
         print(f"❌ 加载触发价格失败: {str(e)}")
         return None
 
+
 def precompute_trigger_prices(stock_code):
     """预计算各层MA5触发价格"""
     base_ma5 = get_ma5_price(stock_code)
@@ -697,7 +700,7 @@ def precompute_trigger_prices(stock_code):
 
     # 生成触发价格
     for tier in tiers:
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code),False)
+        df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
         modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
         trigger_price = round(modified_df['MA5'].iloc[-1], 2)
 
@@ -863,6 +866,7 @@ def execute_trigger_order(stock_code, tier):
     # 立即保存更新后的触发状态
     save_trigger_prices_to_csv()
 
+
 def adjust_orders_at_935():
     """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
     try:
@@ -878,7 +882,6 @@ def adjust_orders_at_935():
                 triggered = sum(1 for t in tiers if t['triggered'])
                 total = len(tiers)
                 print(f"{stock_code}: 触发 {triggered}/{total} 档 ({triggered / total * 100:.1f}%)")
-
 
         # 1. 撤掉所有未成交挂单
         cancel_all_pending_orders()
@@ -960,6 +963,7 @@ def get_stock_trigger_details(stock_code, date_str=None):
 
     print(f"\n=== {stock_code} 触发详情 ({date_str}) ===")
     print(df[['price', 'weight', 'triggered', 'trigger_time']].to_string(index=False))
+
 
 def cancel_all_pending_orders():
     """撤掉所有未成交挂单"""
@@ -1058,31 +1062,30 @@ if __name__ == "__main__":
     #     if not success:
     #         print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
+    adjust_orders_at_935()
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     scheduler.add_job(
         adjust_orders_at_935,
         trigger=CronTrigger(
             hour=9,
-            minute=35,
+            minute=38,
             day_of_week='mon-fri'  # 仅周一到周五
         ),
         misfire_grace_time=60  # 允许1分钟内的延迟执行
     )
     print("定时任务已添加：每日9:35执行订单调整")
-    # 设置股票交易时间过滤（排除非交易日）
-    # scheduler.add_job(
-    #     sell_breached_stocks,
-    #     trigger=CronTrigger(
-    #         hour=14,
-    #         minute=54,
-    #         day_of_week='mon-fri'  # 仅周一到周五
-    #     ),
-    #     misfire_grace_time=60  # 允许1分钟内的延迟执行
-    # )
-    # print("定时任务已启动：每日14:54执行MA5止损检测")
-    # 启动定时任务
 
-    # 添加每日收盘分析任务
+    scheduler.add_job(
+        sell_breached_stocks,
+        trigger=CronTrigger(
+            hour=14,
+            minute=54,
+            day_of_week='mon-fri'  # 仅周一到周五
+        ),
+        misfire_grace_time=60  # 允许1分钟内的延迟执行
+    )
+    print("定时任务已启动：每日14:54执行MA5止损检测")
+
     scheduler.add_job(
         analyze_trigger_performance,
         trigger=CronTrigger(
