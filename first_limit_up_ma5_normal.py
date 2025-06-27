@@ -201,7 +201,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 sell_data = df.loc[sell_day]
                 hold_days += 1
 
-                # 1. 检查前一天是否跌停
+                # 1. 跌停第二天卖出
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 prev_day_data = df.loc[prev_day]
                 # 判断前一天是否跌停
@@ -228,8 +228,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 if sell_data['close'] >= sell_data['limit_price']:
                     continue  # 涨停日继续持有
 
-                # 2. 断板日卖出（止盈条件）
-                # 前一日涨停但当日未涨停（断板）
+                # 2. 涨停后断板日卖出
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
@@ -245,11 +244,38 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出价': round(sell_data['close'], 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
-                        '卖出原因': '断板止盈'  # 新增字段
+                        '卖出原因': '断板止盈'
                     })
                     break
 
-                # 3. 跌破五日线卖出条件
+                # 3. 首板炸板卖出条件
+                # 条件3-1：当日最高价达到涨停价但未封板（收盘价<涨停价）
+                is_limit_touched = (sell_data['high'] >= sell_data['limit_price'])
+                is_limit_closed = (sell_data['close'] < sell_data['limit_price'])
+                # 条件3-2：前一日未涨停，也就是首板
+                prev_day = df.index[df.index.get_loc(sell_day) - 1]
+                prev_limit_price = (df.loc[prev_day, 'prev_close'] * (1 + limit_rate)).round(2)
+                is_prev_limit = (df.loc[prev_day, 'close'] >= prev_limit_price)
+
+                if is_limit_touched and is_limit_closed and not is_prev_limit:
+                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
+                    signals.append({
+                        '股票代码': stock_code,
+                        '股票名称': stock_name,
+                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                        '买入日': current_day.strftime('%Y-%m-%d'),
+                        '卖出日': sell_day.strftime('%Y-%m-%d'),
+                        '涨停后天数': days_after_limit,
+                        '持有天数': hold_days,
+                        '买入价': round(buy_price, 2),
+                        '卖出价': round(sell_data['close'], 2),
+                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                        '收益率(%)': round(profit_pct, 2),
+                        '卖出原因': '炸板卖出'
+                    })
+                    break
+
+                # 4. 跌破五日线卖出
                 if sell_data['close'] < sell_data['ma5']:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
@@ -268,7 +294,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     })
                     break
 
-                # 4. 最大持有天数限制（15天）
+                # 5. 最大持有天数限制（15天）
                 if hold_days >= 15:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
@@ -286,7 +312,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出原因': '持有超限'
                     })
                     break
-            break  # 只取第一次触碰
+            break
     return signals
 
 
@@ -384,7 +410,7 @@ if __name__ == '__main__':
         avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
         profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
         get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
-                    1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
+                1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
         print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
         print(f"总交易次数: {len(result_df)}")
