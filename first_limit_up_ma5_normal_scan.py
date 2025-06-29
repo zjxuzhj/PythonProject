@@ -249,9 +249,12 @@ def get_target_stocks(isNeedLog=True):
         if "光伏" in theme: # 因为其他账户有大仓位光伏
             excluded_stocks.add(code)
             continue
-        # if "石油" in theme:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "证券" in theme:  # 牛市旗手，跟不上，不参与
+            excluded_stocks.add(code)
+            continue
+        if "石油" in theme:  # 受海外消息影响过于严重，不参与
+            excluded_stocks.add(code)
+            continue
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
         if delta_days not in days_groups:

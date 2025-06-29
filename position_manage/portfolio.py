@@ -46,6 +46,96 @@ class Portfolio:
         self._tx_set.add(tx_id)  # 记录新交易
         return True
 
+    def get_june_closed_trades_report(self):
+        """获取6月份清仓交易报告，包含日期、股票名称、买入金额、盈亏百分比"""
+        try:
+            query_tool = stockCsv.StockQuery()
+            # 按股票代码分组交易记录
+            transactions_by_stock = {}
+            for tx in self.transaction_history:
+                if tx.stock_code not in transactions_by_stock:
+                    transactions_by_stock[tx.stock_code] = []
+                transactions_by_stock[tx.stock_code].append(tx)
+
+            closed_trades = []
+
+            # 处理每个股票的交易记录
+            for stock_code, txs in transactions_by_stock.items():
+                # 按交易日期排序
+                txs_sorted = sorted(txs, key=lambda tx: tx.date)
+
+                current_shares = 0
+                buy_amount = 0.0
+                sell_amount = 0.0
+                last_sell_date = None
+                trade_started = False
+
+                # 模拟交易过程
+                for tx in txs_sorted:
+                    if tx.action == 'BUY':
+                        current_shares += tx.shares
+                        buy_amount += tx.shares * tx.price
+                        trade_started = True
+                    else:  # SELL
+                        current_shares -= tx.shares
+                        sell_amount += tx.shares * tx.price
+                        last_sell_date = tx.date  # 记录最后一次卖出日期
+
+                    # 检查是否清仓且交易发生在6月
+                    if trade_started and current_shares == 0:
+                        # 只记录6月份清仓的交易
+                        if last_sell_date and last_sell_date.month == 6 and last_sell_date.year == 2025:
+                            # 计算盈亏百分比
+                            if buy_amount == 0:  # 避免除零错误
+                                pct = 0.0
+                            else:
+                                pct = (sell_amount - buy_amount) / buy_amount * 100.0
+
+                            stock_name = query_tool.get_name_by_code(stock_code)
+                            closed_trades.append({
+                                '日期': last_sell_date.strftime("%Y-%m-%d"),
+                                '股票名称': stock_name,
+                                '买入金额': round(buy_amount, 2),
+                                '盈亏百分比': round(pct, 2)
+                            })
+
+                        # 重置交易周期
+                        buy_amount = 0.0
+                        sell_amount = 0.0
+                        trade_started = False
+                        last_sell_date = None
+
+            # 创建DataFrame
+            df = pd.DataFrame(closed_trades, columns=['日期', '股票名称', '买入金额', '盈亏百分比'])
+            return df
+
+        except Exception as e:
+            print(f"生成6月交易报告失败: {str(e)}")
+            return pd.DataFrame()
+
+    def export_june_report_to_excel(self, filename="6月交易报告.xlsx"):
+        """导出6月交易报告到Excel文件"""
+        report_df = self.get_june_closed_trades_report()
+
+        if report_df.empty:
+            print("⚠️ 无6月份清仓交易记录")
+            return False
+
+        try:
+            # 创建输出目录
+            os.makedirs("reports", exist_ok=True)
+            filepath = os.path.join("reports", filename)
+
+            # 导出到Excel
+            report_df.to_excel(filepath, index=False)
+
+            print(f"✅ 6月交易报告已保存至: {filepath}")
+            print(f"生成记录: {len(report_df)} 条")
+            return True
+        except Exception as e:
+            print(f"❌ 导出Excel失败: {str(e)}")
+            return False
+
     def get_stock_data(self, symbol):
         """带本地缓存的数据获取，返回最后一个收盘价"""
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
