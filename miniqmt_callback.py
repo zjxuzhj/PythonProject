@@ -6,6 +6,7 @@ from xtquant.xttrader import XtQuantTraderCallback
 from position_manage.portfolio import Portfolio
 from position_manage.transaction import Transaction
 from position_manage.portfolio_db import save_portfolio
+import getAllStockCsv as tools
 
 def convert_unix_timestamp(timestamp):
     """
@@ -16,17 +17,13 @@ def convert_unix_timestamp(timestamp):
         datetime - 本地时区的datetime对象
     """
     if len(str(timestamp)) > 10:
-        # 毫秒级时间戳：截取前10位转换为秒
         return datetime.fromtimestamp(timestamp / 1000.0)
     else:
-        # 秒级时间戳直接转换
         return datetime.fromtimestamp(timestamp)
 
 # 添加数据库保存函数
-def save_transaction_to_db(tools, trade, trade_type):
-    """将交易记录保存到数据库"""
+def save_transaction_to_db(trade, trade_type):
     try:
-        # 创建交易记录对象
         transaction = Transaction(
             date=convert_unix_timestamp(trade.traded_time),
             stock_code=tools.convert_stock_code(trade.stock_code),
@@ -34,14 +31,12 @@ def save_transaction_to_db(tools, trade, trade_type):
             price=trade.traded_price,
             shares=trade.traded_volume
         )
-        # 创建投资组合对象并添加交易
         portfolio = Portfolio()
         portfolio.add_transaction(transaction)
-        # 保存到数据库
         save_portfolio(portfolio)
-        print(f"✅ 交易记录已保存: {trade_type} {trade.stock_code} {trade.traded_volume}股 @ {trade.traded_price}")
+        print(f"交易记录已保存: {trade_type} {trade.stock_code} {trade.traded_volume}股 @ {trade.traded_price}")
     except Exception as e:
-        print(f"❌ 保存交易记录失败: {str(e)}")
+        print(f"保存交易记录失败: {str(e)}")
 
 class MyXtQuantTraderCallback(XtQuantTraderCallback):
     def __init__(self, query_tool):
@@ -66,7 +61,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
               f", 委托方向: {'买入' if trade_type == 'BUY' else '卖出'}, "
               f"成交价格 {trade.traded_price} 成交数量 {trade.traded_volume}")
         # 保存交易记录到数据库
-        save_transaction_to_db(self.query_tool,trade, trade_type)
+        save_transaction_to_db(trade, trade_type)
 
     def on_order_error(self, order_error):
         print(f"委托报错回调 {order_error.order_remark} {order_error.error_msg}")

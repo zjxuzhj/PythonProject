@@ -6,7 +6,6 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from logging.handlers import TimedRotatingFileHandler
-
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -15,13 +14,11 @@ from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
 from xtquant.xttype import StockAccount
 from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
-from miniqmt_trade_utils import can_cancel_order_status, cancel_all_pending_orders, save_trigger_prices_to_csv, load_trigger_prices_from_csv
-
+from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
 from miniqmt_callback import MyXtQuantTraderCallback
 from position_manage.portfolio import Portfolio
-
 from position_manage.transaction import Transaction
 from miniqmt_logging_utils import setup_logger
 
@@ -37,18 +34,7 @@ log_throttle = defaultdict(lambda: {'last_log_time': 0, 'last_log_price': 0})
 def monitor_strategy_status(logger):
     while True:
         try:
-            # 取账号信息
-            account_info = xt_trader.query_stock_asset(acc)
-            # 取可用资金
-            available_cash = account_info.m_dCash
-            # 获取当前持仓股票集合
-            positions = xt_trader.query_stock_positions(acc)
-            hold_stocks = {pos.stock_code for pos in positions}
-            # 取各品种 总持仓 可用持仓
-            position_total_dict = {i.stock_code: i.m_nVolume for i in positions}
-            position_available_dict = {i.stock_code: i.m_nCanUseVolume for i in positions}
-            # print(acc.account_id, '可用持仓字典', position_available_dict)
-
+            refresh_account_status()
             status_msg = (
                 f"策略运行正常 | "
                 f"可用资金: {available_cash:.2f} | "
@@ -56,7 +42,6 @@ def monitor_strategy_status(logger):
                 f"总持仓: {position_total_dict}"
             )
             logger.info(status_msg)
-
             # 仅查询可撤委托
             orders = xt_trader.query_stock_orders(acc,cancelable_only=True)
             active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
@@ -67,11 +52,6 @@ def monitor_strategy_status(logger):
 
         time.sleep(30 * 60)
 
-
-def interact():
-    """执行后进入repl模式"""
-    import code
-    code.InteractiveConsole(locals=globals()).interact()
 
 def auto_order_by_ma5(stock_code, total_amount=10000):
     """瀑布流分层挂单策略"""
@@ -251,11 +231,6 @@ def sell_breached_stocks():
         print("=== 定时检测完成 ===\n")
 
 
-
-
-
-
-
 def precompute_trigger_prices(stock_code):
     """预计算各层MA5触发价格"""
     base_ma5 = get_ma5_price(stock_code)
@@ -307,8 +282,6 @@ def subscribe_target_stocks(target_stocks):
 def on_quote_update(data):
     try:
         current_time = time.time()
-
-        # 调试日志：记录接收的数据结构
         if not hasattr(on_quote_update, 'logged_data_type'):
             strategy_logger.debug(f"行情数据结构: {type(data)}")
             on_quote_update.logged_data_type = True
@@ -342,7 +315,6 @@ def on_quote_update(data):
                         processed_stocks.append(stock_code)
                         process_stock_quote(stock_code, current_price, current_time)
 
-        # 调试日志：记录处理了哪些股票
         if processed_stocks:
             strategy_logger.debug(
                 f"处理股票: {', '.join(processed_stocks[:3])}{'...' if len(processed_stocks) > 3 else ''}")
@@ -371,14 +343,13 @@ def process_stock_quote(stock_code, current_price, current_time):
                 min_diff = price_diff
                 closest_tier = tier
 
-        # 格式化输出信息
         if closest_tier:
             diff_percent = abs(closest_tier['price'] - current_price) / current_price * 100
             direction = "↑" if current_price < closest_tier['price'] else "↓"
             print(
-                f"{stock_code} 行情: {current_price} | 最接近触发价: {closest_tier['price']} ({direction}{diff_percent:.2f}%)")
+                f"{stock_code} 行情: {current_price:.2f} | 最接近触发价: {closest_tier['price']} ({direction}{diff_percent:.2f}%)")
         else:
-            print(f"{stock_code} 行情更新: {current_price} (无未触发价格层级)")
+            print(f"{stock_code} 行情更新: {current_price:.2f} (无未触发价格层级)")
 
         log_throttle[stock_code]['last_log_time'] = current_time
 
@@ -434,20 +405,17 @@ def daily_pre_market_orders():
         if not success:
             print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
 
+
 def adjust_orders_at_935():
     """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
     try:
         print("\n===== 9:35定时任务启动 =====")
-
         # 1. 撤掉所有未成交挂单
         cancel_all_pending_orders()
-
         # 2. 获取最新账户状态
         refresh_account_status()
-
         # 3. 获取目标股票列表
         target_stocks = scan.get_target_stocks(False)
-
         # 4. 过滤已持仓股票
         positions = xt_trader.query_stock_positions(acc)
         hold_stocks = {pos.stock_code for pos in positions}
@@ -457,14 +425,9 @@ def adjust_orders_at_935():
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
 
-        # 5. 动态计算总可用资金
-        total_available = available_cash
-        per_stock_amount = min(total_available / len(filtered_stocks), PER_STOCK_TOTAL_BUDGET)
-        print(f"可用资金分配：总资金={total_available:.2f}, 每支股票={per_stock_amount:.2f}")
-
-        # 6. 订阅并保存触发价格
+        # 5. 订阅并保存触发价格
         subscribe_target_stocks(filtered_stocks)
-        save_trigger_prices_to_csv()
+        save_trigger_prices_to_csv(trigger_prices)
         for code in filtered_stocks:
             if code not in trigger_prices or not trigger_prices[code]:
                 print(f"警告: {code} 未生成触发价格层级")
@@ -503,27 +466,27 @@ def analyze_trigger_performance(days=5):
     else:
         print("⚠无历史数据可供分析")
 
-
-def get_stock_trigger_details(stock_code, date_str=None):
-    """获取指定股票的详细触发情况"""
-    if date_str is None:
-        date_str = datetime.now().strftime('%Y-%m-%d')
-
-    data = load_trigger_prices_from_csv(date_str)
-    if not data or stock_code not in data:
-        print(f"⚠未找到{stock_code}在{date_str}的触发记录")
+def cancel_all_pending_orders():
+    """撤掉所有未成交挂单"""
+    orders = xt_trader.query_stock_orders(acc)
+    if not orders:
+        print("无待撤挂单")
         return
 
-    df = pd.DataFrame(data[stock_code])
-    df = df.sort_values('price', ascending=False)
+    success_count = 0
+    for order in orders:
+        if can_cancel_order_status(order.order_status):
+            cancel_result = xt_trader.cancel_order_stock_async(acc, order.order_id)
+            if cancel_result == 0:
+                success_count += 1
+                print(f"撤单成功：{order.stock_code} {order.order_volume}股")
 
-    print(f"\n=== {stock_code} 触发详情 ({date_str}) ===")
-    print(df[['price', 'weight', 'triggered', 'trigger_time']].to_string(index=False))
+    print(f"撤单完成：成功撤单 {success_count}/{len(orders)} 笔")
 
 
 def refresh_account_status():
     """刷新账户状态"""
-    global available_cash, hold_stocks
+    global available_cash, hold_stocks, positions, position_total_dict, position_available_dict
 
     # 更新可用资金
     account_info = xt_trader.query_stock_asset(acc)
@@ -532,6 +495,8 @@ def refresh_account_status():
     # 更新持仓
     positions = xt_trader.query_stock_positions(acc)
     hold_stocks = {pos.stock_code for pos in positions}
+    position_total_dict = {i.stock_code: i.m_nVolume for i in positions}
+    position_available_dict = {i.stock_code: i.m_nCanUseVolume for i in positions}
 
     print(f"账户状态更新：可用资金={available_cash:.2f}, 持仓数量={len(hold_stocks)}")
 
@@ -572,6 +537,7 @@ if __name__ == "__main__":
     positions = xt_trader.query_stock_positions(acc)
     hold_stocks = {pos.stock_code for pos in positions}
 
+    daily_pre_market_orders()
     scheduler.add_job(
         daily_pre_market_orders,
         trigger=CronTrigger(
@@ -593,7 +559,7 @@ if __name__ == "__main__":
         misfire_grace_time=60
     )
     print("定时任务已添加：每日9:35执行订单调整")
-
+    adjust_orders_at_935()
     scheduler.add_job(
         sell_breached_stocks,
         trigger=CronTrigger(

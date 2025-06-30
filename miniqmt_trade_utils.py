@@ -4,9 +4,6 @@ from datetime import datetime, timedelta
 import pandas as pd
 import os
 from xtquant import xtconstant
-from xtquant import xtdata
-from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
-from xtquant.xttype import StockAccount
 
 def can_cancel_order_status(status_code):
     # 定义一个包含所有可撤销状态的集合
@@ -19,23 +16,6 @@ def can_cancel_order_status(status_code):
     # 判断传入的状态码是否在该集合中
     return status_code in cancellable_statuses
 
-def cancel_all_pending_orders():
-    """撤掉所有未成交挂单"""
-    acc = StockAccount('8886969255', 'STOCK')
-    orders = xt_trader.query_stock_orders(acc)
-    if not orders:
-        print("无待撤挂单")
-        return
-
-    success_count = 0
-    for order in orders:
-        if can_cancel_order_status(order.order_status):
-            cancel_result = xt_trader.cancel_order_stock_async(acc, order.order_id)
-            if cancel_result == 0:
-                success_count += 1
-                print(f"撤单成功：{order.stock_code} {order.order_volume}股")
-
-    print(f"撤单完成：成功撤单 {success_count}/{len(orders)} 笔")
 
 def save_trigger_prices_to_csv(trigger_prices):
     """将全局trigger_prices数据保存到CSV文件"""

@@ -20,6 +20,7 @@ def get_stock_data(symbol, isNeedLog):
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
 
+
 def find_recent_first_limit_up(code, old_df, days=7):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     market = "科创板" if code.startswith(("688", "689")) else "创业板" if code.startswith(("300", "301")) else "主板"
@@ -31,7 +32,8 @@ def find_recent_first_limit_up(code, old_df, days=7):
         return []
 
     # 筛选有效时间范围
-    start_date = (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")
+    extended_days = 20
+    start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
     date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
     df = old_df.loc[date_mask].copy()
 
@@ -43,13 +45,15 @@ def find_recent_first_limit_up(code, old_df, days=7):
     # 识别所有涨停日（包含过滤条件）
     df['is_limit'] = df['close'] >= df['limit_price']
 
-    # 识别涨停日
-    limit_days = df[df['is_limit']].index.tolist()
+    # 筛选最近days个交易日内的涨停日（核心筛选范围）
+    recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
+    limit_days = df[df['is_limit'] & recent_days_mask].index.tolist()
 
     # 排除涨停日是最后一天的情况
     last_day = df.index.max()
+    last_day_is_limit = df.loc[last_day, 'is_limit']
     limit_days = [day for day in limit_days if day != last_day]
-    if not limit_days:
+    if not limit_days or last_day_is_limit:
         return []
 
     # 按时间降序排序（最近的排在前面）
@@ -89,7 +93,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if next_day_change >= 8:
                 continue
 
-         # 条件3：涨停后第一天量能过滤条件（放量存在出货可能）
+        # 条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
             limit_day_volume = df.loc[day, 'volume']
@@ -113,7 +117,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
             # 计算前高（10日最高价）
             historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
             # 检查前3日最高价是否触及前高的95%
-            recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
+            recent_3day_high = df.iloc[-3:]['high'].max()  # 最后3天
             if historical_high * 0.95 <= recent_3day_high < historical_high:
                 continue
 
@@ -186,6 +190,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     return never_touched and always_above_base
     # return always_above_base
 
+
 def get_target_stocks(isNeedLog=True):
     """获取目标股票列表，若当日数据已存在则直接读取"""
     # 检查当日数据是否已存在
@@ -235,7 +240,7 @@ def get_target_stocks(isNeedLog=True):
         first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"),theme))
+                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
 
     # 分组排序逻辑
     today = datetime.now().date()
@@ -243,18 +248,35 @@ def get_target_stocks(isNeedLog=True):
     print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
 
     for stock in limit_up_stocks:
-        code, name, limit_date,theme  = stock # 拆包对象
+        code, name, limit_date, theme = stock  # 拆包对象
 
         # 排除板块
-        if "光伏" in theme: # 因为其他账户有大仓位光伏
-            excluded_stocks.add(code)
-            continue
+        # if "光伏" in theme:  # 因为其他账户有大仓位光伏
+        #     excluded_stocks.add(code)
+        #     continue
         if "证券" in theme:  # 牛市旗手，跟不上，不参与
             excluded_stocks.add(code)
             continue
+        # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
+        #     excluded_stocks.add(code)
+        #     continue
         if "石油" in theme:  # 受海外消息影响过于严重，不参与
             excluded_stocks.add(code)
             continue
+        if "外贸" in theme:  # 之前被恶心过
+            excluded_stocks.add(code)
+            continue
+
+        # if "sh605378"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sh600113"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sh600113"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+
         limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
         if delta_days not in days_groups:
@@ -266,13 +288,13 @@ def get_target_stocks(isNeedLog=True):
 
     for delta, stocks in sorted_days:
         for stock in stocks:
-            code, name, date,theme = stock
+            code, name, date, theme = stock
             standard_code = getAllStockCsv.convert_to_standard_format(code)
             target_stocks.add(standard_code)
             print("  " + "   ".join(stock) + "  ")
 
     # 保存并返回新计算的数据
-    save_target_stocks(target_stocks,excluded_stocks)
+    save_target_stocks(target_stocks, excluded_stocks)
     return list(target_stocks)
 
 
@@ -317,6 +339,7 @@ def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
 
     return file_path
 
+
 if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks = get_target_stocks()
@@ -326,4 +349,3 @@ if __name__ == '__main__':
     for stock in target_stocks:
         print(stock)
     print(f"\n总数: {len(target_stocks)}只股票")
-

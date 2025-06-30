@@ -4,11 +4,9 @@ import os
 import getAllStockCsv as tools
 
 def get_stock_data(symbol, isNeedLog):
-    """带本地缓存的数据获取"""
     file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
 
-    # 非强制更新时尝试读取缓存
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
@@ -18,7 +16,6 @@ def get_stock_data(symbol, isNeedLog):
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
 
-    # 强制更新或缓存不存在时获取新数据（网页7）
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
 
@@ -83,6 +80,3 @@ def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
     return modified_df
 
 
-def auto_order_by_ma5(stock_code, total_amount=10000):
-    """瀑布流分层挂单策略"""
-    # 保持原有实现...
