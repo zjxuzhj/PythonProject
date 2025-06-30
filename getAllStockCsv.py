@@ -7,8 +7,9 @@ import pandas as pd
 
 
 class StockQuery:
-    CSV_PATH = os.path.join("output", 'stock_code_name.csv')
-    REPORT_CSV_PATH = os.path.join("output", 'merged_report_2024Q3.csv')
+    root_dir  = os.path.dirname(os.path.abspath(__file__))
+    CSV_PATH = os.path.join(root_dir, "output", "stock_code_name.csv")
+    REPORT_CSV_PATH = os.path.join(root_dir, "output", "merged_report_2024Q3.csv")
 
     def get_simple_by_code(self, code):
         return code[2:]

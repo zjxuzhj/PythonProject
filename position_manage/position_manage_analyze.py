@@ -7,7 +7,7 @@ from position_manage.portfolio_db import load_portfolio  # 修改导入
 if __name__ == '__main__':
     try:
         portfolio = load_portfolio()  # 加载数据库
-        portfolio.export_june_report_to_excel()
+        # portfolio.export_june_report_to_excel()
         print("load data successfully")
     except:
         portfolio = Portfolio()
