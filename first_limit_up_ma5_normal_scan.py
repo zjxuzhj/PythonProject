@@ -113,13 +113,14 @@ def find_recent_first_limit_up(code, old_df, days=7):
 
         # 条件5：前高压制条件
         day_idx = df.index.get_loc(day)
-        if day_idx >= 13:  # 确保10日历史数据
-            # 计算前高（10日最高价）
-            historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
-            # 检查前3日最高价是否触及前高的95%
-            recent_3day_high = df.iloc[-3:]['high'].max()  # 最后3天
-            if historical_high * 0.95 <= recent_3day_high < historical_high:
-                continue
+        if day_idx >= 20:  # 确保20日历史数据
+            # 计算前高（20日最高价）
+            historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+            recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
+            if historical_high * 0.95 <= recent_4day_high < historical_high:
+                continue  # 触发排除条件
+
 
         # 条件6：排除首板后第一个交易日放量阳线+第二个交易日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有首板第二个交易日数据
@@ -233,6 +234,11 @@ def get_target_stocks(isNeedLog=True):
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, isNeedLog)
         if df.empty:
+            continue
+
+        # 排除当前股价>90的股票
+        latest_close = df.iloc[-1]['close']  # 获取最新收盘价
+        if latest_close > 90:
             continue
 
         theme = query_tool.get_theme_by_code(code)

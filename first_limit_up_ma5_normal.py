@@ -87,12 +87,12 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
 
         # 条件5：前高压制条件
         day_idx = df.index.get_loc(day)
-        if day_idx >= 20:  # 确保10日历史数据
-            # 计算前高（10日最高价）
-            historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
-            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前3个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
-            recent_3day_high = df.iloc[day_idx - 5:day_idx]['high'].max()
-            if historical_high * 0.95 <= recent_3day_high < historical_high:
+        if day_idx >= 20:  # 确保20日历史数据
+            # 计算前高（20日最高价）
+            historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+            recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
+            if historical_high * 0.95 <= recent_4day_high < historical_high:
                 continue  # 触发排除条件
 
         # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
@@ -273,8 +273,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     break
 
                 # 4. 跌破五日线卖出
-                if sell_data['close'] < sell_data['ma5'] and \
-                        (sell_data['ma5'] - sell_data['close']) / sell_data['ma5'] > 0.008:
+                if sell_data['close'] < sell_data['ma5']:
+                # if sell_data['close'] < sell_data['ma5'] and \
+                #         (sell_data['ma5'] - sell_data['close']) / sell_data['ma5'] > 0.03:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
                         '股票代码': stock_code,
