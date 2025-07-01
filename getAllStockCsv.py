@@ -1,6 +1,6 @@
 import os
 import time
-
+import csv
 import akshare as ak
 import numpy as np
 import pandas as pd
@@ -10,6 +10,29 @@ class StockQuery:
     root_dir  = os.path.dirname(os.path.abspath(__file__))
     CSV_PATH = os.path.join(root_dir, "output", "stock_code_name.csv")
     REPORT_CSV_PATH = os.path.join(root_dir, "output", "merged_report_2024Q3.csv")
+    POSITION_CSV_PATH = os.path.join(root_dir, "output", "position_report.csv")
+
+    def load_position_csv(filepath):
+        """
+        从CSV文件读取持仓数据
+        :param filepath: CSV文件路径
+        :return: 持仓数据列表
+        """
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"CSV文件不存在: {filepath}")
+
+        positions = []
+        with open(filepath, mode='r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # 转换数据类型
+                row['shares'] = int(row['shares'])
+                row['cost_price'] = float(row['cost_price'])
+                row['current_price'] = float(row['current_price'])
+                row['market_value'] = float(row['market_value'])
+                row['profit'] = float(row['profit'])
+                positions.append(row)
+        return positions
 
     def get_simple_by_code(self, code):
         return code[2:]
@@ -485,6 +508,27 @@ class StockQuery:
             cls._instance = cls()
         return cls._instance
 
+    def load_position_csv(self):
+        if not os.path.exists(self.POSITION_CSV_PATH):
+            raise FileNotFoundError(f"CSV文件不存在")
+
+        try:
+            # 读取CSV并转换数据类型
+            df = pd.read_csv(
+                self.POSITION_CSV_PATH,
+                dtype={'stock_code': str},  # 股票代码保留为字符串[7](@ref)
+                converters={
+                    'shares': int,
+                    'cost_price': float,
+                    'current_price': float,
+                    'market_value': float,
+                    'profit': float
+                }
+            )
+            return df.to_dict('records')  # 转换为字典列表[10](@ref)
+        except Exception as e:
+            print(f"❌ CSV读取失败: {str(e)}")
+            raise
 
 def convert_stock_code(original_code):
     """

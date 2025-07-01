@@ -1,7 +1,8 @@
 import os
 
 import pandas as pd
-
+import csv
+from datetime import datetime
 import getAllStockCsv as stockCsv
 from position_manage.position import Position
 
@@ -243,6 +244,12 @@ class Portfolio:
 
             df_report = pd.DataFrame(report_data)
 
+            if self.save_position_to_csv(df_report):
+                print(f"✅ 持仓报告已保存")
+            else:
+                print("❌ 持仓报告保存失败")
+
+
             # 控制台美化输出
             if print_format == "console":
                 def calc_width(series, extra=4):
@@ -281,6 +288,7 @@ class Portfolio:
                 # 打印汇总信息
                 total_value = sum(row['当前价格'] * row['持仓数量'] for _, row in df_report.iterrows())
                 print(f"\n总持仓价值: ¥{total_value:,.2f}")
+
                 return df_report
 
             return df_report
@@ -288,3 +296,20 @@ class Portfolio:
         except Exception as e:
             print(f"❌ 生成报表失败: {e}")
             return None
+
+    def save_position_to_csv(self, df):
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            output_dir = os.path.join(base_dir, "output")
+            os.makedirs(output_dir, exist_ok=True)
+            csv_path = os.path.join(output_dir, f"position_report.csv")
+
+            df.to_csv(
+                csv_path,
+                index=False,  # 不保存行索引[9,10](@ref)
+                encoding='utf-8-sig',  # 支持Excel中文兼容[9](@ref)
+            )
+            return True
+        except Exception as e:
+            print(f"❌ CSV保存失败: {str(e)}")
+            return False

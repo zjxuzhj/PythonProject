@@ -237,7 +237,7 @@ def get_target_stocks(isNeedLog=True):
 
         theme = query_tool.get_theme_by_code(code)
         # 买入距离涨停板3天内的票（越近胜率越高）
-        first_limit_days = find_recent_first_limit_up(code, df, days=3)
+        first_limit_days = find_recent_first_limit_up(code, df, days=4)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))

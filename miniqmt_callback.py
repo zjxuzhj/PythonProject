@@ -53,7 +53,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
         order_str = "撤单成功" if order.order_status == xtconstant.ORDER_CANCELED else "挂单成功"
         stock_name = self.query_tool.get_name_by_code(order.stock_code[:6])
         print(f"{order_str}！名称：{stock_name}, 代码: {order.stock_code}, "
-              f"委托类型: {order.order_type}, 委托数量: {order.order_volume}, 委托价格: {order.price}")
+              f"委托类型: {order.order_type}, 委托数量: {order.order_volume}, 委托价格: {order.price:.2f}")
 
     def on_stock_trade(self, trade):
         trade_type = "BUY" if trade.offset_flag == xtconstant.OFFSET_FLAG_OPEN else "SELL"

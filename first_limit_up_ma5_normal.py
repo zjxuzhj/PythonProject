@@ -79,17 +79,19 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
         if df.index.get_loc(day) >= 5:
             pre5_start = df.index[df.index.get_loc(day) - 5]
             pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change >= 15:
-                continue
+            if pre5_close!=0:
+                total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+                if total_change >= 15:
+                    continue
+
 
         # 条件5：前高压制条件
         day_idx = df.index.get_loc(day)
-        if day_idx >= 13:  # 确保10日历史数据
+        if day_idx >= 20:  # 确保10日历史数据
             # 计算前高（10日最高价）
             historical_high = df.iloc[day_idx - 10:day_idx]['high'].max()
-            # 检查前3日最高价是否触及前高的95%
-            recent_3day_high = df.iloc[day_idx - 3:day_idx]['high'].max()
+            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前3个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+            recent_3day_high = df.iloc[day_idx - 5:day_idx]['high'].max()
             if historical_high * 0.95 <= recent_3day_high < historical_high:
                 continue  # 触发排除条件
 
@@ -136,12 +138,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     start_idx = df.index.get_loc(first_limit_day)
     if (start_idx + 1) >= len(df):  # 边界检查，跳过无数据的情况
         return signals
-    # day1 = df.index[start_idx + 1]
-    # if df.loc[day1, 'close'] < base_price: # 首板次日低于首板收盘价就跳过
-    #     return signals
 
-    # df['ma55'] = df['close'].rolling(60).mean()
-    # df['ma30'] = df['close'].rolling(30).mean()
     df['ma5'] = df['close'].rolling(5).mean()
 
     first_touch_flag = False
@@ -276,9 +273,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     break
 
                 # 4. 跌破五日线卖出
-                if sell_data['close'] < sell_data['ma5']:
-                # if sell_data['close'] < sell_data['ma5'] and \
-                #         (sell_data['ma5'] - sell_data['close']) / sell_data['ma5'] > 0.005:
+                if sell_data['close'] < sell_data['ma5'] and \
+                        (sell_data['ma5'] - sell_data['close']) / sell_data['ma5'] > 0.008:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
                         '股票代码': stock_code,
@@ -411,13 +407,15 @@ if __name__ == '__main__':
         avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
         avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
         profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
+        avg_hold_days = result_df['持有天数'].mean()
+
         get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
                 1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
         print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
         print(f"总交易次数: {len(result_df)}")
         print(f"胜率: {win_rate:.2f}%")
-        print(f"平均盈利: {avg_win:.2f}% | 平均亏损: {avg_loss:.2f}%")
+        print(f"平均盈利: {avg_win:.2f}% | 平均亏损: {avg_loss:.2f}% | 平均持有天数: {avg_hold_days:.2f}")
         print(f"盈亏比: {profit_ratio:.2f}:1")
         print(f"期望收益: {get_money:.3f}")
 

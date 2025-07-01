@@ -24,7 +24,7 @@ from miniqmt_logging_utils import setup_logger
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 10000  # 每只股票的总买入预算 统一修改点
+PER_STOCK_TOTAL_BUDGET = 12000  # 每只股票的总买入预算 统一修改点
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
