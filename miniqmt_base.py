@@ -143,11 +143,9 @@ def auto_order_by_ma5(stock_code, total_amount=10000):
     return True
 
 
-def check_ma5_breach():
+def check_ma5_breach(positions,position_available_dict):
     """检测持仓中跌破五日线的股票"""
     breach_list = []
-    positions = xt_trader.query_stock_positions(acc)
-    position_available_dict = {pos.stock_code: pos.m_nCanUseVolume for pos in positions}
     for stock_code, hold_vol in position_available_dict.items():
         if hold_vol <= 0:
             continue
@@ -182,13 +180,79 @@ def check_ma5_breach():
 
 
 def sell_breached_stocks():
-    """定时卖出所有跌破五日线的持仓"""
+    """定时卖出所有跌破五日线的持仓及上一交易日涨停的股票"""
     try:
         now = datetime.now().strftime("%H:%M")
         print(f"\n=== 开始执行定时检测 ({now}) ===")
-        breach_stocks = check_ma5_breach()
-        if not breach_stocks:
-            print("当前无持仓跌破五日线")
+
+        positions = xt_trader.query_stock_positions(acc)
+        # 检测跌破五日线的股票
+        breach_stocks = check_ma5_breach(positions,position_available_dict)
+        # # 检测上一交易日涨停且今日未涨停的股票
+        # yesterday_limit_up_stocks = []
+        # for pos in positions:
+        #     if pos.m_nCanUseVolume <= 0:
+        #         continue
+        #
+        #     stock_code = pos.stock_code
+        #     try:
+        #         # 使用get_stock_data获取T-1日数据（昨日）
+        #         df_yesterday, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
+        #         if df_yesterday.empty or len(df_yesterday) < 2:
+        #             continue
+        #
+        #         # 获取T-2日收盘价
+        #         t2_close = df_yesterday['close'].iloc[-2]
+        #         # 获取T-1日最高价和收盘价
+        #         t1_high = df_yesterday['high'].iloc[-1]
+        #         t1_close = df_yesterday['close'].iloc[-1]
+        #
+        #         # 计算T-1日涨停价（基于T-2日收盘价）
+        #         t1_limit_up = round(t2_close * 1.1, 2)  # 主板10%涨停
+        #         if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
+        #             t1_limit_up = round(t2_close * 1.2, 2)
+        #
+        #         # 判断T-1日是否涨停
+        #         is_yesterday_limit_up = t1_high >= t1_limit_up - 0.01  # 考虑浮点误差
+        #
+        #         today_data = xtdata.get_market_data_ex(
+        #             fields=['high'],
+        #             stock_code=[stock_code],
+        #             period='1d',
+        #             count=1,
+        #             subscribe=False
+        #         )
+        #
+        #         if stock_code not in today_data or today_data[stock_code].empty:
+        #             continue
+        #
+        #         today_high = today_data[stock_code]['high'].iloc[0]
+        #         # 计算今日涨停价（基于T-1日收盘价）
+        #         today_limit_up = round(t1_close * 1.1, 2)
+        #         if stock_code.startswith('3') or stock_code.startswith('688'):
+        #             today_limit_up = round(t1_close * 1.2, 2)
+        #
+        #         # 判断今日是否未涨停
+        #         is_today_not_limit = today_high < today_limit_up - 0.01
+        #
+        #         # 合并判断条件
+        #         if is_yesterday_limit_up and is_today_not_limit:
+        #             stock_name = query_tool.get_name_by_code(stock_code)
+        #             yesterday_limit_up_stocks.append({
+        #                 '代码': stock_code,
+        #                 '名称': stock_name,
+        #                 '持有数量': pos.m_nCanUseVolume,
+        #                 '类型': '上日涨停股'
+        #             })
+        #     except Exception as e:
+        #         print(f"检测涨停股异常 {stock_code}: {str(e)}")
+        #         continue
+
+        # 合并卖出列表
+        # all_sell_stocks = breach_stocks + yesterday_limit_up_stocks
+        all_sell_stocks = breach_stocks
+        if not all_sell_stocks:
+            print("当前无符合卖出条件的持仓")
             return
 
         for stock in breach_stocks:
@@ -205,25 +269,26 @@ def sell_breached_stocks():
             if not tick:
                 print(f"⚠无法获取 {stock_code} 实时行情")
                 continue
-            # 获取基准价格（最新成交价）
+            # 确定卖出价格（第五档买入价或99%市价）
             base_price = tick['lastPrice']
-            # 获取第五档买入价（买五价）或者现价跌1%的价格
             if 'bidPrice' in tick and len(tick['bidPrice']) >= 5:
-                sell_price = tick['bidPrice'][4]  # 第五档买入价
+                sell_price = tick['bidPrice'][4]
             else:
-                sell_price = base_price * 0.99  # 无五档数据时使用99%价格
-            # 执行市价卖出
+                sell_price = base_price * 0.99
+
+            # 执行卖出
             async_seq = xt_trader.order_stock_async(
                 acc,
                 stock_code,
-                xtconstant.STOCK_SELL,  # 卖出方向
+                xtconstant.STOCK_SELL,
                 hold_vol,
-                xtconstant.FIX_PRICE,  # 限价单模式
-                sell_price,  # 计算的卖出价格
-                'MA5止损策略',
+                xtconstant.FIX_PRICE,
+                sell_price,
+                '涨停次日卖出策略' if '类型' in stock and stock['类型'] == '上日涨停股' else 'MA5止损策略',
                 stock_code
             )
-            print(f"已提交卖出订单：{stock_name}({stock_code}) {hold_vol}股")
+            reason = "上日涨停股" if '类型' in stock and stock['类型'] == '上日涨停股' else "跌破五日线"
+            print(f"已提交卖出：{stock_name}({stock_code}) {hold_vol}股 | 原因：{reason}")
 
     except Exception as e:
         print(f"‼定时任务执行异常: {str(e)}")
@@ -537,7 +602,6 @@ if __name__ == "__main__":
     positions = xt_trader.query_stock_positions(acc)
     hold_stocks = {pos.stock_code for pos in positions}
 
-    daily_pre_market_orders()
     scheduler.add_job(
         daily_pre_market_orders,
         trigger=CronTrigger(
@@ -559,7 +623,22 @@ if __name__ == "__main__":
         misfire_grace_time=60
     )
     print("定时任务已添加：每日9:35执行订单调整")
-    adjust_orders_at_935()
+
+
+    # 检查当前时间并立即执行
+    def check_and_execute():
+        now = datetime.now()
+        start_time = now.replace(hour=9, minute=35, second=0, microsecond=0)
+        end_time = now.replace(hour=14, minute=50, second=0, microsecond=0)
+
+        if start_time <= now <= end_time and now.weekday() < 5:  # 0-4 表示周一到周五
+            print("🕒 当前时间在 9:35-14:50 之间，立即执行订单调整")
+            adjust_orders_at_935()
+
+
+    # 启动前执行检查
+    check_and_execute()
+
     scheduler.add_job(
         sell_breached_stocks,
         trigger=CronTrigger(

@@ -274,8 +274,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
                 # 4. 跌破五日线卖出
                 if sell_data['close'] < sell_data['ma5']:
-                # if sell_data['close'] < sell_data['ma5'] and \
-                #         (sell_data['ma5'] - sell_data['close']) / sell_data['ma5'] > 0.03:
                     profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
                     signals.append({
                         '股票代码': stock_code,
@@ -388,7 +386,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = True  # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = False  # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:
