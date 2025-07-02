@@ -88,7 +88,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
             next_day = df.index[next_day_idx]
             base_price = df.loc[day, 'close']
             if abs(base_price) < 1e-5:
-                continue  # 跳过无效数据
+                continue
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
             if next_day_change >= 8:
                 continue
@@ -136,20 +136,14 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
                 candle_condition = False
             else:
-                # 计算实体部分（收盘价 - 开盘价）
-                candle_body = abs(first_day_data['close'] - first_day_data['open'])
-                # 计算实体占总价格范围的比例
-                body_ratio = candle_body / price_range
-                # 阳线且实体占比超过50%
-                candle_condition = (first_day_data['close'] > first_day_data['open']) and (body_ratio > 0.5)
+                body_ratio = (first_day_data['close'] - first_day_data['open']) / price_range
+                candle_condition = (body_ratio > 0.5) and (first_day_data['close'] > first_day_data['open'])
 
             # 条件6-2：第二日低开且未收复前日实体中点
             # 计算实体中点：开盘价和收盘价的平均（因为是阳线）
             midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
-            # 第二日低开：开盘低于前一日收盘
-            low_open_condition = (second_day_data['open'] < first_day_data['close'])
-            # 未收复实体中点：收盘价低于实体中点
-            recover_condition = (second_day_data['close'] < midpoint)
+            low_open_condition = (second_day_data['open'] < first_day_data['close']) # 低开
+            recover_condition = (second_day_data['close'] < midpoint) # 盘中最高点未达中点
 
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 print(f"条件6触发：排除{code}，涨停日{day}")
@@ -243,7 +237,7 @@ def get_target_stocks(isNeedLog=True):
 
         theme = query_tool.get_theme_by_code(code)
         # 买入距离涨停板3天内的票（越近胜率越高）
-        first_limit_days = find_recent_first_limit_up(code, df, days=4)
+        first_limit_days = find_recent_first_limit_up(code, df, days=3)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
@@ -257,29 +251,22 @@ def get_target_stocks(isNeedLog=True):
         code, name, limit_date, theme = stock  # 拆包对象
 
         # 排除板块
-        # if "光伏" in theme:  # 因为其他账户有大仓位光伏
-        #     excluded_stocks.add(code)
-        #     continue
         if "证券" in theme:  # 牛市旗手，跟不上，不参与
             excluded_stocks.add(code)
             continue
-        # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
-        #     excluded_stocks.add(code)
-        #     continue
         if "石油" in theme:  # 受海外消息影响过于严重，不参与
             excluded_stocks.add(code)
             continue
         if "外贸" in theme:  # 之前被恶心过
             excluded_stocks.add(code)
             continue
-
+        # if "光伏" in theme:  # 因为其他账户有大仓位光伏
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
+        #     excluded_stocks.add(code)
+        #     continue
         # if "sh605378"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sh600113"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sh600113"==code:
         #     excluded_stocks.add(code)
         #     continue
 

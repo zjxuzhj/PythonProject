@@ -189,68 +189,61 @@ def sell_breached_stocks():
         # 检测跌破五日线的股票
         breach_stocks = check_ma5_breach(positions,position_available_dict)
         # # 检测上一交易日涨停且今日未涨停的股票
-        # yesterday_limit_up_stocks = []
-        # for pos in positions:
-        #     if pos.m_nCanUseVolume <= 0:
-        #         continue
-        #
-        #     stock_code = pos.stock_code
-        #     try:
-        #         # 使用get_stock_data获取T-1日数据（昨日）
-        #         df_yesterday, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-        #         if df_yesterday.empty or len(df_yesterday) < 2:
-        #             continue
-        #
-        #         # 获取T-2日收盘价
-        #         t2_close = df_yesterday['close'].iloc[-2]
-        #         # 获取T-1日最高价和收盘价
-        #         t1_high = df_yesterday['high'].iloc[-1]
-        #         t1_close = df_yesterday['close'].iloc[-1]
-        #
-        #         # 计算T-1日涨停价（基于T-2日收盘价）
-        #         t1_limit_up = round(t2_close * 1.1, 2)  # 主板10%涨停
-        #         if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
-        #             t1_limit_up = round(t2_close * 1.2, 2)
-        #
-        #         # 判断T-1日是否涨停
-        #         is_yesterday_limit_up = t1_high >= t1_limit_up - 0.01  # 考虑浮点误差
-        #
-        #         today_data = xtdata.get_market_data_ex(
-        #             fields=['high'],
-        #             stock_code=[stock_code],
-        #             period='1d',
-        #             count=1,
-        #             subscribe=False
-        #         )
-        #
-        #         if stock_code not in today_data or today_data[stock_code].empty:
-        #             continue
-        #
-        #         today_high = today_data[stock_code]['high'].iloc[0]
-        #         # 计算今日涨停价（基于T-1日收盘价）
-        #         today_limit_up = round(t1_close * 1.1, 2)
-        #         if stock_code.startswith('3') or stock_code.startswith('688'):
-        #             today_limit_up = round(t1_close * 1.2, 2)
-        #
-        #         # 判断今日是否未涨停
-        #         is_today_not_limit = today_high < today_limit_up - 0.01
-        #
-        #         # 合并判断条件
-        #         if is_yesterday_limit_up and is_today_not_limit:
-        #             stock_name = query_tool.get_name_by_code(stock_code)
-        #             yesterday_limit_up_stocks.append({
-        #                 '代码': stock_code,
-        #                 '名称': stock_name,
-        #                 '持有数量': pos.m_nCanUseVolume,
-        #                 '类型': '上日涨停股'
-        #             })
-        #     except Exception as e:
-        #         print(f"检测涨停股异常 {stock_code}: {str(e)}")
-        #         continue
+        yesterday_limit_up_stocks = []
+        for pos in positions:
+            if pos.m_nCanUseVolume <= 0:
+                continue
+
+            stock_code = pos.stock_code
+            try:
+                df_yesterday, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
+                if df_yesterday.empty or len(df_yesterday) < 2:
+                    continue
+                # iloc[-1]：获取 DataFrame最后一行（最新交易日，记为T-1 日）
+                t2_close = df_yesterday['close'].iloc[-2]
+                t1_close = df_yesterday['close'].iloc[-1]
+                t1_limit_up = round(t2_close * 1.1, 2)  # 主板10%涨停
+                if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
+                    t1_limit_up = round(t2_close * 1.2, 2)
+
+                # 判断T-1日是否涨停
+                is_yesterday_limit_up = t1_close >= t1_limit_up - 0.01  # 考虑浮点误差
+
+                # 获取实时 Tick 数据（关键补充）
+                try:
+                    # 获取实时全推数据（包含涨停价字段）
+                    realtime_data = xtdata.get_full_tick([stock_code])
+
+                    if stock_code in realtime_data:
+                        tick = realtime_data[stock_code]
+                        last_close  = tick.get('lastClose')  # 昨天的收盘价
+                        current_price  = tick.get('lastPrice')  # 最新成交价
+                        today_limit_up  = round(last_close  * 1.1, 2)  # 主板10%涨停
+                        if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
+                            today_limit_up  = round(last_close  * 1.2, 2)
+                        # 判断实时是否涨停（考虑浮点误差）
+                        is_today_not_limit = current_price < (today_limit_up - 0.01) if today_limit_up else False
+                    else:
+                        is_today_not_limit = False
+                except Exception as e:
+                    print(f"股票 {stock_code} 实时数据获取失败: {str(e)}")
+                    is_today_not_limit = False
+
+                # 合并判断条件
+                if is_yesterday_limit_up and is_today_not_limit:
+                    stock_name = query_tool.get_name_by_code(stock_code)
+                    yesterday_limit_up_stocks.append({
+                        '代码': stock_code,
+                        '名称': stock_name,
+                        '持有数量': pos.m_nCanUseVolume,
+                        '类型': '上日涨停股'
+                    })
+            except Exception as e:
+                print(f"检测涨停股异常 {stock_code}: {str(e)}")
+                continue
 
         # 合并卖出列表
-        # all_sell_stocks = breach_stocks + yesterday_limit_up_stocks
-        all_sell_stocks = breach_stocks
+        all_sell_stocks = breach_stocks + yesterday_limit_up_stocks
         if not all_sell_stocks:
             print("当前无符合卖出条件的持仓")
             return

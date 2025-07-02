@@ -14,18 +14,15 @@ def get_stock_data(symbol, is_19_data_test=False):
     cache_path_name = "back_test_data_cache" if is_19_data_test else "data_cache"
     file_name = f"stock_{symbol}_{date}.parquet"
     cache_path = os.path.join(cache_path_name, file_name)
-
-    # 非强制更新时尝试读取缓存
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
             # df['vol_ma5'] = df['volume'].rolling(5).mean()
             # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
             print(f"从缓存加载数据：{symbol}")
-            return df, True  # 返回缓存标记
+            return df, True
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
-
     print(f"数据获取失败：{symbol}")
     return pd.DataFrame()
 
@@ -47,7 +44,7 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
         if day < pd.Timestamp('2024-03-01') and not is_19_data_test:
             continue
 
-        # 条件1：排除连板（次日不涨停）
+        # 条件1：排除后一日涨停
         next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
         if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
             continue
@@ -58,14 +55,12 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
             next_day = df.index[next_day_idx]
             base_price = df.loc[day, 'close']
             if abs(base_price) < 1e-5:
-                continue  # 跳过无效数据
+                continue
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-            # 如果次日涨幅超过8%，排除该首板日
             if next_day_change >= 8:
                 continue
 
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
-        next_day_idx = df.index.get_loc(day) + 1
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
             limit_day_volume = df.loc[day, 'volume']
@@ -79,11 +74,10 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
         if df.index.get_loc(day) >= 5:
             pre5_start = df.index[df.index.get_loc(day) - 5]
             pre5_close = df.loc[pre5_start, 'close']
-            if pre5_close!=0:
+            if pre5_close != 0:
                 total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
                 if total_change >= 15:
                     continue
-
 
         # 条件5：前高压制条件
         day_idx = df.index.get_loc(day)
@@ -103,11 +97,11 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
             second_day = df.index[next_day_idx + 1]
             second_day_data = df.loc[second_day]
 
-            # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>40%）
+            # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
             volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
             price_range = first_day_data['high'] - first_day_data['low']
-            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线）
-                candle_condition = False  # 实体占比无法计算，直接排除
+            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
+                candle_condition = False
             else:
                 body_ratio = (first_day_data['close'] - first_day_data['open']) / price_range
                 candle_condition = (body_ratio > 0.5) and (first_day_data['close'] > first_day_data['open'])
