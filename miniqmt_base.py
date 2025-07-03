@@ -1,26 +1,22 @@
-import logging
-import os
-import sys
 import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from logging.handlers import TimedRotatingFileHandler
+
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from xtquant import xtconstant
 from xtquant import xtdata
-from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
+from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
-from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
-from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv
+
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
 from miniqmt_callback import MyXtQuantTraderCallback
-from position_manage.portfolio import Portfolio
-from position_manage.transaction import Transaction
+from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
 from miniqmt_logging_utils import setup_logger
+from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
@@ -29,6 +25,45 @@ PER_STOCK_TOTAL_BUDGET = 12000  # 每只股票的总买入预算 统一修改点
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
 log_throttle = defaultdict(lambda: {'last_log_time': 0, 'last_log_price': 0})
+# ====== 全局风险偏好配置 ======
+RISK_LEVEL = 'low'  # 可选项：'high', 'medium', 'low'
+
+
+# ====== 风险偏好设置函数 ======
+def set_risk_level(level):
+    """设置全局风险偏好"""
+    global RISK_LEVEL
+    valid_levels = ['high', 'medium', 'low']
+
+    if level.lower() in valid_levels:
+        RISK_LEVEL = level.lower()
+        print(f"✅ 风险偏好已更新为: {RISK_LEVEL.upper()}")
+    else:
+        print(f"⚠ 无效风险等级: {level}。有效选项: {', '.join(valid_levels)}")
+
+
+# ====== 分层策略配置 ======
+def get_tiers_by_risk_level():
+    """根据风险偏好返回对应的分层配置"""
+    if RISK_LEVEL == 'high':
+        return [
+            {'predict_ratio': 1.06, 'ratio': 0.50},
+            {'predict_ratio': 1.04, 'ratio': 0.25},
+            {'predict_ratio': 1.02, 'ratio': 0.25}
+        ]
+    elif RISK_LEVEL == 'low':
+        return [
+            {'predict_ratio': 1.03, 'ratio': 0.50},
+            {'predict_ratio': 1.01, 'ratio': 0.25},
+            {'predict_ratio': 0.98, 'ratio': 0.25}
+        ]
+    else:  # 默认中风险
+        return [
+            {'predict_ratio': 1.04, 'ratio': 0.50},
+            {'predict_ratio': 1.025, 'ratio': 0.25},
+            {'predict_ratio': 1.01, 'ratio': 0.25}
+        ]
+
 
 # 创建状态监控函数，每30分钟记录程序状态
 def monitor_strategy_status(logger):
@@ -43,7 +78,7 @@ def monitor_strategy_status(logger):
             )
             logger.info(status_msg)
             # 仅查询可撤委托
-            orders = xt_trader.query_stock_orders(acc,cancelable_only=True)
+            orders = xt_trader.query_stock_orders(acc, cancelable_only=True)
             active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
             logger.info(f"活跃挂单数量: {len(active_orders)}")
 
@@ -55,20 +90,14 @@ def monitor_strategy_status(logger):
 
 def auto_order_by_ma5(stock_code, total_amount=10000):
     """瀑布流分层挂单策略"""
+    current_tiers = get_tiers_by_risk_level()
     base_ma5 = get_ma5_price(stock_code)
     if base_ma5 is None:
         return False
 
-    # 分层配置（价格预测系数与金额比例）
-    tiers = [
-        {'predict_ratio': 1.04,'ratio': 0.50 },  # 第一档：预测1.04倍
-        {'predict_ratio': 1.025,'ratio': 0.25 },  # 第二档：预测1.025倍
-        {'predict_ratio': 1.01,'ratio': 0.25}  # 第三档：预测1.01倍
-    ]
-
     # 动态计算每层MA5预测价格
     tier_prices = []
-    for tier in tiers:
+    for tier in current_tiers:
         # 模拟不同预测倍数的MA5（需重新计算历史数据）
         df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
         if df.empty:
@@ -104,8 +133,8 @@ def auto_order_by_ma5(stock_code, total_amount=10000):
     # 保底策略：若前三档未完成，合并为两档
     if len(orders) < 2 and remaining_amount > 0:
         backup_tiers = [
-            {'predict_ratio': 1.06, 'ratio': 0.50},
-            {'predict_ratio': 1.03, 'ratio': 0.50}
+            {'predict_ratio': 1.04, 'ratio': 0.50},
+            {'predict_ratio': 1.01, 'ratio': 0.50}
         ]
         tier_prices = []
         for tier in backup_tiers:
@@ -143,7 +172,7 @@ def auto_order_by_ma5(stock_code, total_amount=10000):
     return True
 
 
-def check_ma5_breach(positions,position_available_dict):
+def check_ma5_breach(positions, position_available_dict):
     """检测持仓中跌破五日线的股票"""
     breach_list = []
     for stock_code, hold_vol in position_available_dict.items():
@@ -187,7 +216,7 @@ def sell_breached_stocks():
 
         positions = xt_trader.query_stock_positions(acc)
         # 检测跌破五日线的股票
-        breach_stocks = check_ma5_breach(positions,position_available_dict)
+        breach_stocks = check_ma5_breach(positions, position_available_dict)
         # # 检测上一交易日涨停且今日未涨停的股票
         yesterday_limit_up_stocks = []
         for pos in positions:
@@ -216,11 +245,11 @@ def sell_breached_stocks():
 
                     if stock_code in realtime_data:
                         tick = realtime_data[stock_code]
-                        last_close  = tick.get('lastClose')  # 昨天的收盘价
-                        current_price  = tick.get('lastPrice')  # 最新成交价
-                        today_limit_up  = round(last_close  * 1.1, 2)  # 主板10%涨停
+                        last_close = tick.get('lastClose')  # 昨天的收盘价
+                        current_price = tick.get('lastPrice')  # 最新成交价
+                        today_limit_up = round(last_close * 1.1, 2)  # 主板10%涨停
                         if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
-                            today_limit_up  = round(last_close  * 1.2, 2)
+                            today_limit_up = round(last_close * 1.2, 2)
                         # 判断实时是否涨停（考虑浮点误差）
                         is_today_not_limit = current_price < (today_limit_up - 0.01) if today_limit_up else False
                     else:
@@ -291,39 +320,33 @@ def sell_breached_stocks():
 
 def precompute_trigger_prices(stock_code):
     """预计算各层MA5触发价格"""
+    current_tiers = get_tiers_by_risk_level()
     base_ma5 = get_ma5_price(stock_code)
     if not base_ma5:
         print(f"⚠无法计算{stock_code}触发价: MA5数据缺失")
         return
 
-    # 分层配置
-    tiers = [
-        {'predict_ratio': 1.06, 'weight': 0.4},
-        {'predict_ratio': 1.03, 'weight': 0.3},
-        {'predict_ratio': 1.01, 'weight': 0.3},
-    ]
-
     # 生成触发价格
-    for tier in tiers:
+    for tier in current_tiers:
         df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
         modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
         trigger_price = round(modified_df['MA5'].iloc[-1], 2)
 
         # 计算预估挂单数量（100股整数倍）
-        tier_budget = PER_STOCK_TOTAL_BUDGET * tier['weight']  # 层级预算
+        tier_budget = PER_STOCK_TOTAL_BUDGET * tier['ratio']  # 层级预算
         estimated_shares = int(tier_budget // trigger_price) // 100 * 100  # 取整为100的倍数
 
         # 打印触发价格和预估挂单数量
         print(f"股票: {stock_code} | "
               f"层级触发价: {trigger_price:.2f} | "
-              f"权重: {tier['weight'] * 100}% | "
+              f"权重: {tier['ratio'] * 100}% | "
               f"预估挂单: {estimated_shares}股")
 
         # 去重后存入全局变量
         if trigger_price not in trigger_prices[stock_code]:
             trigger_prices[stock_code].append({
                 'price': trigger_price,
-                'weight': tier['weight'],
+                'ratio': tier['ratio'],
                 'triggered': False  # 触发标记
             })
 
@@ -383,9 +406,11 @@ def on_quote_update(data):
 
 def process_stock_quote(stock_code, current_price, current_time):
     """处理单只股票的行情更新"""
+    stock_name = query_tool.get_name_by_code(stock_code)
+    name_display = f"{stock_name}{'  ' if len(stock_name) == 3 else ''}"
     # 1. 首次触发记录
     if stock_code not in log_throttle:
-        print(f"开始监控 {stock_code} 实时行情，当前价格: {current_price}")
+        print(f"开始监控 {name_display} 实时行情，当前价格: {current_price:.2f}")
         log_throttle[stock_code] = {'last_log_time': current_time, 'last_log_price': current_price}
 
     # 2. 每60秒记录一次
@@ -405,9 +430,9 @@ def process_stock_quote(stock_code, current_price, current_time):
             diff_percent = abs(closest_tier['price'] - current_price) / current_price * 100
             direction = "↑" if current_price < closest_tier['price'] else "↓"
             print(
-                f"{stock_code} 行情: {current_price:.2f} | 最接近触发价: {closest_tier['price']} ({direction}{diff_percent:.2f}%)")
+                f"{name_display} 行情: {current_price:.2f} | 最接近触发价: {closest_tier['price']} ({direction}{diff_percent:.2f}%)")
         else:
-            print(f"{stock_code} 行情更新: {current_price:.2f} (无未触发价格层级)")
+            print(f"{name_display} 行情更新: {current_price:.2f} (无未触发价格层级)")
 
         log_throttle[stock_code]['last_log_time'] = current_time
 
@@ -418,17 +443,17 @@ def process_stock_quote(stock_code, current_price, current_time):
 
         # 触发条件：当前价 <= 触发价（买入方向）
         if current_price <= tier['price']:
-            strategy_logger.info(f"触发条件: {stock_code} 当前价 {current_price} ≤ 目标价 {tier['price']}")
-            execute_trigger_order(stock_code, tier)
+            strategy_logger.info(f"触发条件: {name_display} 当前价 {current_price} ≤ 目标价 {tier['price']}")
+            execute_trigger_order(name_display, stock_code, tier)
             tier['triggered'] = True
 
 
-def execute_trigger_order(stock_code, tier):
+def execute_trigger_order(name_display, stock_code, tier):
     """执行触发挂单"""
     # 动态计算可用资金（每次触发时刷新）
     refresh_account_status()
     # 计算实际可买金额（不超过层级预算）
-    available = min(PER_STOCK_TOTAL_BUDGET * tier['weight'], available_cash)
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
 
     # 计算可买数量（100股整数倍）
     buy_shares = int(available // (tier['price'] * 100)) * 100
@@ -445,10 +470,11 @@ def execute_trigger_order(stock_code, tier):
         buy_shares, xtconstant.FIX_PRICE,
         tier['price'], 'MA5触发策略', ''
     )
-    print(f"⚡触发挂单：{stock_code} {buy_shares}股 @ {tier['price']}")
+    print(f"⚡触发挂单：{name_display} {buy_shares}股 @ {tier['price']}")
 
     # 立即保存更新后的触发状态
     save_trigger_prices_to_csv(trigger_prices)
+
 
 def daily_pre_market_orders():
     """每日盘前挂单"""
@@ -524,6 +550,7 @@ def analyze_trigger_performance(days=5):
     else:
         print("⚠无历史数据可供分析")
 
+
 def cancel_all_pending_orders():
     """撤掉所有未成交挂单"""
     orders = xt_trader.query_stock_orders(acc)
@@ -560,6 +587,7 @@ def refresh_account_status():
 
 
 if __name__ == "__main__":
+    set_risk_level('medium')
     xtdata.enable_hello = False
     path = r'D:\备份\国金证券QMT交易端\userdata_mini'
     session_id = int(time.time())
@@ -625,7 +653,7 @@ if __name__ == "__main__":
         end_time = now.replace(hour=14, minute=50, second=0, microsecond=0)
 
         if start_time <= now <= end_time and now.weekday() < 5:  # 0-4 表示周一到周五
-            print("🕒 当前时间在 9:35-14:50 之间，立即执行订单调整")
+            print("当前时间在 9:35-14:50 之间，立即执行订单调整")
             adjust_orders_at_935()
 
 

@@ -1,13 +1,14 @@
+import csv
 import os
 import time
-import csv
+
 import akshare as ak
 import numpy as np
 import pandas as pd
 
 
 class StockQuery:
-    root_dir  = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(os.path.abspath(__file__))
     CSV_PATH = os.path.join(root_dir, "output", "stock_code_name.csv")
     REPORT_CSV_PATH = os.path.join(root_dir, "output", "merged_report_2024Q3.csv")
     POSITION_CSV_PATH = os.path.join(root_dir, "output", "position_report.csv")
@@ -113,7 +114,7 @@ class StockQuery:
                 df.to_csv(self.CSV_PATH, index=False)
         else:
             # 创建新文件时包含time列
-            pd.DataFrame(columns=['stock_code', 'stock_name', 'theme','time']).to_csv(
+            pd.DataFrame(columns=['stock_code', 'stock_name', 'theme', 'time']).to_csv(
                 self.CSV_PATH, index=False)
 
     def _init_roe_data(self):
@@ -297,6 +298,7 @@ class StockQuery:
         except FileNotFoundError:
             raise RuntimeError("股票数据文件不存在，请先执行数据更新")
 
+    # 该方法默认支持所有编码格式，只需保证包含正确的6位编码即可
     def get_name_by_code(self, code):
         # 步骤1：统一格式化股票代码
         normalized_code = self._normalize_stock_code(code)
@@ -416,7 +418,6 @@ class StockQuery:
         """根据涨停时间关键词搜索股票"""
         return self.df[self.df['time'].str.contains(keyword, case=False, na=False)]
 
-
     def update_themes(self, theme_dict):
         """
         批量更新股票题材
@@ -530,6 +531,7 @@ class StockQuery:
             print(f"❌ CSV读取失败: {str(e)}")
             raise
 
+
 def convert_stock_code(original_code):
     """
     "603722.SH" -> "sh603722"
@@ -587,6 +589,7 @@ def convert_to_standard_format(compact_code):
 
     return f"{number_part}.{exchange}"
 
+
 def code_add_prefix(stock_code):
     """
     "603722" -> "sh603722"
@@ -603,7 +606,7 @@ def code_add_prefix(stock_code):
         return f"sh{code}"
     elif first_digit in ('0', '3', '2'):  # 深市包含主板/创业板/B股
         return f"sz{code}"
-    elif first_digit in ('8','4'):  # 北证
+    elif first_digit in ('8', '4'):  # 北证
         return f"bj{code}"
     else:
         raise ValueError(f"无法识别的股票代码开头：{first_digit}")

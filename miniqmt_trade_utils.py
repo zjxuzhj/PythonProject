@@ -31,7 +31,7 @@ def save_trigger_prices_to_csv(trigger_prices):
                     'date': today_str,
                     'stock_code': stock_code,
                     'price': tier['price'],
-                    'weight': f"{tier['weight'] * 100}%",
+                    'ratio': f"{tier['ratio'] * 100}%",
                     'triggered': tier['triggered'],
                     'trigger_time': tier.get('trigger_time', '')  # 记录触发时间
                 })
@@ -77,7 +77,7 @@ def load_trigger_prices_from_csv(date_str=None):
         for _, row in df.iterrows():
             loaded_data[row['stock_code']].append({
                 'price': row['price'],
-                'weight': row['weight'],
+                'ratio': row['ratio'],
                 'triggered': row['triggered'],
                 'trigger_time': row.get('trigger_time', '')
             })
