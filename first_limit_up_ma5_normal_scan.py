@@ -5,6 +5,7 @@ import pandas as pd
 
 import getAllStockCsv
 
+query_tool = getAllStockCsv.StockQuery()
 
 def get_stock_data(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
@@ -149,6 +150,11 @@ def find_recent_first_limit_up(code, old_df, days=7):
                 print(f"条件6触发：排除{code}，涨停日{day}")
                 continue
 
+        # 条件7：排除市值大于400亿的股票
+        market_value = query_tool.get_stock_market_value(code)
+        if market_value > 400:
+            continue
+
         valid_days.append(day)
     return valid_days
 
@@ -221,7 +227,6 @@ def get_target_stocks(isNeedLog=True):
     # ========== 当无当日数据时执行 ==========
     excluded_stocks = set()
     limit_up_stocks = []
-    query_tool = getAllStockCsv.StockQuery()
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
 
@@ -237,7 +242,7 @@ def get_target_stocks(isNeedLog=True):
 
         theme = query_tool.get_theme_by_code(code)
         # 买入距离涨停板3天内的票（越近胜率越高）
-        first_limit_days = find_recent_first_limit_up(code, df, days=3)
+        first_limit_days = find_recent_first_limit_up(code, df, days=3) # days=3 再也不要变了，晚了就不要了，不要强行上仓位
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
@@ -254,6 +259,9 @@ def get_target_stocks(isNeedLog=True):
         if "证券" in theme:  # 牛市旗手，跟不上，不参与
             excluded_stocks.add(code)
             continue
+        if "白酒" in theme:  # 废物
+            excluded_stocks.add(code)
+            continue
         if "石油" in theme:  # 受海外消息影响过于严重，不参与
             excluded_stocks.add(code)
             continue
@@ -266,7 +274,11 @@ def get_target_stocks(isNeedLog=True):
         # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
         #     excluded_stocks.add(code)
         #     continue
+        # 特定股票排除
         # if "sh605378"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sh605001"==code:
         #     excluded_stocks.add(code)
         #     continue
 

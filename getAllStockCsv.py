@@ -194,12 +194,18 @@ class StockQuery:
             print(f"数据更新失败: {str(e)}")
             raise
 
-    # 给财报数据列新增总市值和流通市值
-    def addStockYjbbEm(self):
+    # 给财报数据列新增或更新市值
+    def update_stock_market_value(self):
+        # 步骤1：读取CSV时指定列名，避免列名冲突
         df_csv = pd.read_csv(self.REPORT_CSV_PATH)
 
         # 2. 获取全市场实时数据（含动态市盈率、市净率、总市值、流通市值）
         spot_data = ak.stock_zh_a_spot_em()
+
+        # 步骤2：若原始列存在，先删除
+        for col in ['市盈率-动态', '市净率', '总市值', '流通市值']:
+            if col in df_csv.columns:
+                df_csv.drop(col, axis=1, inplace=True)
 
         # 3. 预处理股票代码
         df_csv['clean_code'] = df_csv['stock_code'].str.extract(r'(\d{6})')[0]
@@ -616,21 +622,21 @@ def code_add_prefix(stock_code):
 if __name__ == "__main__":
     # 初始化查询工具（自动检测数据文件是否存在）
     query_tool = StockQuery()
-    # query_tool.addStockYjbbEm()
-    srt = "创新药"
-    themes_to_update = {
-        'sz002162': srt,
-        # 'sz002094': srt,
-        # 'sz002537': srt,
-        # 'sz300682': srt,
-        # 'sz300368': srt,
-        # 'sz300546': srt,
-        # 'sz000890': srt,
-        # 'sz002015': srt,
-        # 'sz300468': srt,
-        # 'sz002104': srt,
-    }
-    query_tool.update_themes(themes_to_update)
+    query_tool.update_stock_market_value()
+    # srt = "创新药"
+    # themes_to_update = {
+    #     'sz002162': srt,
+    #     # 'sz002094': srt,
+    #     # 'sz002537': srt,
+    #     # 'sz300682': srt,
+    #     # 'sz300368': srt,
+    #     # 'sz300546': srt,
+    #     # 'sz000890': srt,
+    #     # 'sz002015': srt,
+    #     # 'sz300468': srt,
+    #     # 'sz002104': srt,
+    # }
+    # query_tool.update_themes(themes_to_update)
     # print("丰光精密题材:", query_tool.get_theme_by_code('bj430510'))
     # 精确查询示例
     # print(query_tool.get_name_by_code(add_stock_prefix("603881")))  # 输出代码对应名称

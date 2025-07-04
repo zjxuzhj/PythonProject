@@ -20,7 +20,7 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 12000  # 每只股票的总买入预算 统一修改点
+PER_STOCK_TOTAL_BUDGET = 18000  # 每只股票的总买入预算 统一修改点
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
@@ -496,6 +496,9 @@ def adjust_orders_at_935():
         print("\n===== 9:35定时任务启动 =====")
         # 1. 撤掉所有未成交挂单
         cancel_all_pending_orders()
+        print("等待撤单操作完成及资金释放(10秒)...")
+        time.sleep(10)
+        print("撤单等待结束，继续执行...")
         # 2. 获取最新账户状态
         refresh_account_status()
         # 3. 获取目标股票列表
@@ -587,7 +590,7 @@ def refresh_account_status():
 
 
 if __name__ == "__main__":
-    set_risk_level('medium')
+    set_risk_level('low')
     xtdata.enable_hello = False
     path = r'D:\备份\国金证券QMT交易端\userdata_mini'
     session_id = int(time.time())
@@ -671,6 +674,7 @@ if __name__ == "__main__":
     )
     print("定时任务已启动：每日14:54执行MA5止损检测")
 
+    sell_breached_stocks()
     scheduler.add_job(
         analyze_trigger_performance,
         trigger=CronTrigger(

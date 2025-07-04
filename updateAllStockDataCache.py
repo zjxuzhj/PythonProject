@@ -116,7 +116,14 @@ if __name__ == "__main__":
     print("全市场数据更新完成")
 
     http_util.updateZTThemeAndTime()
-    print("今日涨停股票原因以及时间更新完毕")
+    print("今日涨停原因以及时间更新完毕")
+
+    time.sleep(15) # 防止短时间多次调用被屏蔽
+    query_tool.update_stock_market_value()
+    print("今日股票市值更新完毕")
+
+    print("所有数据均更新完毕，请放心！！！")
+
     # getTopIndustry.get_top_industry()
     #
     # scan.setup_logger()

@@ -114,6 +114,11 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 continue  # 触发排除
 
+        # 条件7：排除市值大于400亿的股票
+        market_value = query_tool.get_stock_market_value(symbol)
+        if market_value > 400:
+            continue
+
         valid_days.append(day)
     return valid_days
 
