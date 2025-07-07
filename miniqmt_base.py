@@ -20,7 +20,7 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 18000  # 每只股票的总买入预算 统一修改点
+PER_STOCK_TOTAL_BUDGET = 16000  # 每只股票的总买入预算 统一修改点
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
@@ -53,9 +53,9 @@ def get_tiers_by_risk_level():
         ]
     elif RISK_LEVEL == 'low':
         return [
-            {'predict_ratio': 1.03, 'ratio': 0.50},
-            {'predict_ratio': 1.01, 'ratio': 0.25},
-            {'predict_ratio': 0.98, 'ratio': 0.25}
+            {'predict_ratio': 1.05, 'ratio': 0.40},
+            {'predict_ratio': 1.00, 'ratio': 0.30},
+            {'predict_ratio': 0.95, 'ratio': 0.30}
         ]
     else:  # 默认中风险
         return [
@@ -630,12 +630,12 @@ if __name__ == "__main__":
         daily_pre_market_orders,
         trigger=CronTrigger(
             hour=9,
-            minute=15,
+            minute=10,
             day_of_week='mon-fri'
         ),
         misfire_grace_time=60
     )
-    print("定时任务已添加：每日9:15执行盘前挂单")
+    print("定时任务已添加：每日9:10执行盘前挂单")
 
     scheduler.add_job(
         adjust_orders_at_935,
@@ -649,19 +649,28 @@ if __name__ == "__main__":
     print("定时任务已添加：每日9:35执行订单调整")
 
 
-    # 检查当前时间并立即执行
-    def check_and_execute():
-        now = datetime.now()
-        start_time = now.replace(hour=9, minute=35, second=0, microsecond=0)
-        end_time = now.replace(hour=14, minute=50, second=0, microsecond=0)
+    def check_execute():
+        now_1 = datetime.now()
+        now_2 = datetime.now()
+        start_time_daily_pre_market_orders = now_1.replace(hour=9, minute=11, second=0, microsecond=0)
+        end_time_daily_pre_market_orders = now_1.replace(hour=9, minute=35, second=0, microsecond=0)
 
-        if start_time <= now <= end_time and now.weekday() < 5:  # 0-4 表示周一到周五
-            print("当前时间在 9:35-14:50 之间，立即执行订单调整")
-            adjust_orders_at_935()
+        start_time_adjust_orders_at_935 = now_2.replace(hour=9, minute=35, second=0, microsecond=0)
+        end_time_adjust_orders_at_935 = now_2.replace(hour=14, minute=50, second=0, microsecond=0)
+
+        if datetime.now().weekday() < 5:  # 0-4 表示周一到周五
+            if start_time_daily_pre_market_orders <= datetime.now() <= end_time_daily_pre_market_orders:
+                print("当前时间在 9:11-9:35 之间，立即执行盘前挂单")
+                orders = xt_trader.query_stock_orders(acc)
+                active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
+                if not active_orders:
+                    daily_pre_market_orders()
+            if start_time_adjust_orders_at_935 <= datetime.now() <= end_time_adjust_orders_at_935:
+                print("当前时间在 9:35-14:50 之间，立即执行动态买入")
+                adjust_orders_at_935()
 
 
-    # 启动前执行检查
-    check_and_execute()
+    check_execute()
 
     scheduler.add_job(
         sell_breached_stocks,
@@ -674,16 +683,15 @@ if __name__ == "__main__":
     )
     print("定时任务已启动：每日14:54执行MA5止损检测")
 
-    sell_breached_stocks()
     scheduler.add_job(
         analyze_trigger_performance,
         trigger=CronTrigger(
             hour=15,
-            minute=5,
+            minute=1,
             day_of_week='mon-fri'
         )
     )
-    print("定时任务已添加：每日15:05执行触发价格分析")
+    print("定时任务已添加：每日15:01执行触发价格分析")
 
     scheduler.start()
     xtdata.run()
