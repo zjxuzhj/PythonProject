@@ -118,7 +118,7 @@ if __name__ == "__main__":
     http_util.updateZTThemeAndTime()
     print("今日涨停原因以及时间更新完毕")
 
-    time.sleep(15) # 防止短时间多次调用被屏蔽
+    time.sleep(60) # 防止短时间多次调用被屏蔽
     query_tool.update_stock_market_value()
     print("今日股票市值更新完毕")
 

@@ -88,90 +88,6 @@ def monitor_strategy_status(logger):
         time.sleep(30 * 60)
 
 
-def auto_order_by_ma5(stock_code, total_amount=10000):
-    """瀑布流分层挂单策略"""
-    current_tiers = get_tiers_by_risk_level()
-    base_ma5 = get_ma5_price(stock_code)
-    if base_ma5 is None:
-        return False
-
-    # 动态计算每层MA5预测价格
-    tier_prices = []
-    for tier in current_tiers:
-        # 模拟不同预测倍数的MA5（需重新计算历史数据）
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-        if df.empty:
-            continue
-
-        modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
-        tier_ma5 = modified_df['MA5'].iloc[-1]
-        tier_prices.append({
-            'price': round(tier_ma5, 2),
-            'ratio': tier['ratio']
-        })
-
-    # 智能股数分配（严格100股整数倍）
-    orders = []
-    remaining_amount = min(total_amount, available_cash)
-
-    # 第一轮：尝试三档分层
-    for tier in tier_prices:
-        if remaining_amount <= 0:
-            break
-
-        tier_max_amount = total_amount * tier['ratio']
-        actual_amount = min(tier_max_amount, remaining_amount)
-
-        # 计算可买股数（向下取整至100股）
-        shares = int(actual_amount // (tier['price'] * 100)) * 100
-        if shares == 0:
-            continue  # 跳过无法成交的档位
-
-        orders.append({'price': tier['price'], 'shares': shares})
-        remaining_amount -= shares * tier['price']
-
-    # 保底策略：若前三档未完成，合并为两档
-    if len(orders) < 2 and remaining_amount > 0:
-        backup_tiers = [
-            {'predict_ratio': 1.04, 'ratio': 0.50},
-            {'predict_ratio': 1.01, 'ratio': 0.50}
-        ]
-        tier_prices = []
-        for tier in backup_tiers:
-            df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-            modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
-            tier_ma5 = modified_df['MA5'].iloc[-1]
-            tier_prices.append({
-                'price': round(tier_ma5, 2),
-                'ratio': tier['ratio']
-            })
-
-        # 重新分配剩余资金
-        remaining_amount = min(total_amount, available_cash)
-        for tier in tier_prices:
-            if remaining_amount <= 0:
-                break
-
-            tier_max_amount = total_amount * tier['ratio']
-            actual_amount = min(tier_max_amount, remaining_amount)
-            shares = int(actual_amount // (tier['price'] * 100)) * 100
-            if shares > 0:
-                orders.append({'price': tier['price'], 'shares': shares})
-                remaining_amount -= shares * tier['price']
-
-    # 执行挂单（需异步防阻塞）
-    for order in orders:
-        xt_trader.order_stock_async(
-            acc, stock_code, xtconstant.STOCK_BUY,
-            order['shares'], xtconstant.FIX_PRICE,
-            order['price'], '瀑布流策略', stock_code
-        )
-        print(
-            f"挂单成功：{order['shares']}股 @ {order['price']}（预算: {order['shares'] * order['price']:.2f}/{PER_STOCK_TOTAL_BUDGET}）")
-
-    return True
-
-
 def check_ma5_breach(positions, position_available_dict):
     """检测持仓中跌破五日线的股票"""
     breach_list = []
@@ -477,17 +393,96 @@ def execute_trigger_order(name_display, stock_code, tier):
 
 
 def daily_pre_market_orders():
-    """每日盘前挂单"""
-    target_stocks = scan.get_target_stocks(False)
-    filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
-    # 遍历过滤后的股票执行交易
-    for stock_code in filtered_stocks:
-        # 动态二次校验（防止持仓变化）
-        if stock_code in hold_stocks:
-            continue
-        success = auto_order_by_ma5(stock_code, PER_STOCK_TOTAL_BUDGET)
-        if not success:
-            print(f"【风控拦截】{stock_code} 下单失败，请检查数据完整性")
+    """
+        每日盘前“广度优先”挂单策略。
+        为所有目标股票计算分层价格，然后只挂出每个股票的第一档买单。
+        """
+    try:
+        now = datetime.now().strftime("%H:%M")
+        print(f"\n===== 开始执行盘前广度优先挂单 ({now}) =====")
+
+        # 1. 刷新账户状态，获取最新的可用资金和持仓
+        refresh_account_status()
+
+        # 2. 获取目标股票列表，并过滤掉已持仓的
+        target_stocks = scan.get_target_stocks(False)
+        filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
+
+        if not filtered_stocks:
+            print("所有目标股票均已持仓或无新目标，无需挂单。")
+            return
+
+        print(f"筛选后得到 {len(filtered_stocks)} 个目标股票: {filtered_stocks}")
+
+        # 3. 清空旧的触发价格，为当天计算做准备
+        trigger_prices.clear()
+
+        # 4. 为所有目标股票预计算并填充所有层级的触发价格到全局变量
+        for stock_code in filtered_stocks:
+            precompute_trigger_prices(stock_code)
+
+        # 5. 将今天所有计划的触发价格（所有档位）保存到CSV，作为今日交易计划的备份
+        if trigger_prices:
+            save_trigger_prices_to_csv(trigger_prices)
+            print("今日所有目标股票的触发价格已计算并保存。")
+        else:
+            print("⚠ 未能为任何股票生成触发价格，盘前挂单终止。")
+            return
+
+        # 6. 遍历所有股票，只挂出第一档买单
+        # 使用一个局部变量来追踪模拟挂单后的可用资金
+        available_cash_tracker = available_cash
+        print(f"开始挂单... 初始可用资金: {available_cash_tracker:.2f}")
+
+        for stock_code, tiers in trigger_prices.items():
+            if not tiers:
+                print(f"⚠ {stock_code} 无有效触发价格层级，跳过。")
+                continue
+
+            # 获取第一档（最高优先级）的触发信息
+            first_tier = tiers[0]
+            order_price = first_tier['price']
+
+            # 根据第一档的预算比例计算挂单金额和股数
+            tier_budget = PER_STOCK_TOTAL_BUDGET * first_tier['ratio']
+            order_shares = int(tier_budget // (order_price * 100)) * 100
+
+            if order_shares < 100:
+                print(f"跳过 {stock_code}: 根据预算计算股数不足100股。")
+                continue
+
+            order_cost = order_price * order_shares
+
+            # 检查模拟资金是否足够
+            if available_cash_tracker >= order_cost:
+                # 资金充足，执行异步挂单
+                xt_trader.order_stock_async(
+                    acc,
+                    stock_code,
+                    xtconstant.STOCK_BUY,
+                    order_shares,
+                    xtconstant.FIX_PRICE,
+                    order_price,
+                    '广度优先-第一档',  # 使用清晰的备注
+                    stock_code
+                )
+                # 更新模拟可用资金
+                available_cash_tracker -= order_cost
+                stock_name = query_tool.get_name_by_code(stock_code)
+                print(
+                    f"✅ 已提交第一档买单: {stock_name}({stock_code}) {order_shares}股 @ {order_price:.2f} | 预估成本: {order_cost:.2f}")
+                print(f"   剩余模拟资金: {available_cash_tracker:.2f}")
+
+            else:
+                print(
+                    f"资金不足，无法为 {stock_code} 挂单。所需资金: {order_cost:.2f}, 剩余: {available_cash_tracker:.2f}")
+                # 后续的股票也不再尝试，因为资金已经不足
+                break
+
+    except Exception as e:
+        print(f"‼ 盘前广度优先挂单任务执行异常: {str(e)}")
+    finally:
+        print("===== 盘前广度优先挂单完成 =====\n")
 
 
 def adjust_orders_at_935():
@@ -506,15 +501,34 @@ def adjust_orders_at_935():
         # 4. 过滤已持仓股票
         positions = xt_trader.query_stock_positions(acc)
         hold_stocks = {pos.stock_code for pos in positions}
-        filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
+
+        # 4. 加载当日触发价格记录（优先内存，其次CSV）
+        loaded_data = load_trigger_prices_from_csv()
+        if not trigger_prices:
+            if loaded_data:
+                trigger_prices.update(loaded_data)
+
+        # 5. 动态过滤：只处理有未触发档位的股票
+        filtered_stocks = []
+        for code in target_stocks:
+            # 检查触发记录
+            if code in trigger_prices:
+                untriggered_tiers = [t for t in trigger_prices[code] if not t['triggered']]
+                if untriggered_tiers:
+                    filtered_stocks.append(code)
+            # 无记录时视为新股票
+            else:
+                if code not in hold_stocks:
+                    filtered_stocks.append(code)
 
         if not filtered_stocks:
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
 
-        # 5. 订阅并保存触发价格
+        # 6. 订阅并保存触发价格
         subscribe_target_stocks(filtered_stocks)
-        save_trigger_prices_to_csv(trigger_prices)
+        if not loaded_data:
+            save_trigger_prices_to_csv(trigger_prices)
         for code in filtered_stocks:
             if code not in trigger_prices or not trigger_prices[code]:
                 print(f"警告: {code} 未生成触发价格层级")
@@ -598,7 +612,9 @@ if __name__ == "__main__":
 
     acc = StockAccount('8886969255', 'STOCK')
     # 创建交易回调类对象，并声明接收回调
-    callback = MyXtQuantTraderCallback(query_tool)
+    callback = MyXtQuantTraderCallback(query_tool, trigger_prices_ref=trigger_prices,  # 传入全局字典
+                                       save_func_ref=save_trigger_prices_to_csv  # 传入保存函数
+                                       )
     xt_trader.register_callback(callback)
     # 启动交易线程
     xt_trader.start()

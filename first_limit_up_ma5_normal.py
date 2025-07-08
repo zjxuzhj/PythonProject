@@ -140,7 +140,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         next_day_2 = df.index[start_idx + 2]
         base_price = df.loc[first_limit_day, 'close']
         next_day_1_close = df.loc[next_day_1, 'close']
-        next_day_2_close = df.loc[next_day_2, 'close']
+        next_day_2_close = df.loc[next_day_2, 'low']
         if abs(base_price) > 1e-5:  # 防止除零错误
             next_day_2_pct = (next_day_2_close - next_day_1_close) / next_day_1_close * 100
 
@@ -209,11 +209,11 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
             hold_days = 0
 
-            prev_day = df.index[start_idx + offset - 1]  # 获取前一日
-            prev_close = df.loc[prev_day, 'close']  # 前一日收盘价
-            daily_change = (current_data['close'] - prev_close) / prev_close * 100  # 计算当日涨幅
-            if daily_change >-5:  # 涨幅超过6%排除不买入
-                continue
+            # prev_day = df.index[start_idx + offset - 1]  # 获取前一日
+            # prev_close = df.loc[prev_day, 'close']  # 前一日收盘价
+            # daily_change = (current_data['close'] - prev_close) / prev_close * 100  # 计算当日涨幅
+            # if daily_change >-5:  # 涨幅超过6%排除不买入
+            #     continue
 
             # 卖出逻辑
             for sell_offset in range(1, 20):  # 最多持有20日

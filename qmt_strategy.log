@@ -1,38 +1,280 @@
-2025-07-07 09:20:37 - INFO - ===== 策略启动 =====
-2025-07-07 09:20:37 - INFO - 策略运行正常 | 可用资金: 95182.07 | 持仓数量: 9 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 09:20:37 - INFO - 活跃挂单数量: 0
-2025-07-07 09:21:14 - INFO - ===== 策略启动 =====
-2025-07-07 09:21:14 - INFO - 策略运行正常 | 可用资金: 95182.07 | 持仓数量: 9 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 09:21:14 - INFO - 活跃挂单数量: 0
-2025-07-07 09:40:18 - INFO - ===== 策略启动 =====
-2025-07-07 09:40:18 - INFO - 策略运行正常 | 可用资金: 56718.19 | 持仓数量: 13 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300}
-2025-07-07 09:40:18 - INFO - 活跃挂单数量: 0
-2025-07-07 09:41:50 - INFO - ===== 策略启动 =====
-2025-07-07 09:41:50 - INFO - 策略运行正常 | 可用资金: 56718.19 | 持仓数量: 13 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300}
-2025-07-07 09:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 09:45:44 - INFO - 触发条件: 盈方微   当前价 7.87 ≤ 目标价 7.87
-2025-07-07 10:09:19 - INFO - 触发条件: 凯盛新能 当前价 11.97 ≤ 目标价 11.97
-2025-07-07 10:11:50 - INFO - 策略运行正常 | 可用资金: 44426.13 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 500}
-2025-07-07 10:11:50 - INFO - 活跃挂单数量: 0
-2025-07-07 10:25:46 - INFO - 触发条件: 凯盛新能 当前价 11.84 ≤ 目标价 11.84
-2025-07-07 10:41:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 900}
-2025-07-07 10:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 11:11:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 900}
-2025-07-07 11:11:50 - INFO - 活跃挂单数量: 0
-2025-07-07 11:41:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 900}
-2025-07-07 11:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 12:11:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 900}
-2025-07-07 12:11:50 - INFO - 活跃挂单数量: 0
-2025-07-07 12:41:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '603040.SH': 400, '603127.SH': 800, '603579.SH': 100, '603823.SH': 1200, '888880.SH': 0, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400, '600481.SH': 2100, '601005.SH': 11300, '605277.SH': 300, '603151.SH': 300, '000670.SZ': 800, '600876.SH': 900}
-2025-07-07 12:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 13:11:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 400, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 1200, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 13:11:50 - INFO - 活跃挂单数量: 0
-2025-07-07 13:41:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 400, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 1200, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 13:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 14:11:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 400, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 1200, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 14:11:50 - INFO - 活跃挂单数量: 0
-2025-07-07 14:41:50 - INFO - 策略运行正常 | 可用资金: 39684.58 | 持仓数量: 15 | 总持仓: {'600201.SH': 200, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 400, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 1200, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 2900, '002206.SZ': 1600, '002729.SZ': 400}
-2025-07-07 14:41:50 - INFO - 活跃挂单数量: 0
-2025-07-07 14:55:39 - INFO - ===== 策略启动 =====
-2025-07-07 14:55:39 - INFO - 策略运行正常 | 可用资金: 96987.04 | 持仓数量: 15 | 总持仓: {'600201.SH': 0, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 0, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 0, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 0, '002206.SZ': 1600, '002729.SZ': 0}
-2025-07-07 14:55:39 - INFO - 活跃挂单数量: 0
+2025-07-08 01:14:23 - INFO - ===== 策略启动 =====
+2025-07-08 01:14:23 - INFO - 策略运行正常 | 可用资金: 76994.55 | 持仓数量: 15 | 总持仓: {'600201.SH': 0, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 0, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 0, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 0, '002206.SZ': 1600, '002729.SZ': 0}
+2025-07-08 01:14:23 - INFO - 活跃挂单数量: 0
+2025-07-08 01:15:00 - INFO - ===== 策略启动 =====
+2025-07-08 01:15:00 - INFO - 策略运行正常 | 可用资金: 76994.55 | 持仓数量: 15 | 总持仓: {'600201.SH': 0, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603040.SH': 0, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '603823.SH': 0, '605277.SH': 300, '888880.SH': 0, '000670.SZ': 800, '000677.SZ': 0, '002206.SZ': 1600, '002729.SZ': 0}
+2025-07-08 01:15:00 - INFO - 活跃挂单数量: 0
+2025-07-08 09:10:15 - INFO - ===== 策略启动 =====
+2025-07-08 09:10:15 - INFO - 策略运行正常 | 可用资金: 77893.40 | 持仓数量: 9 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600}
+2025-07-08 09:10:15 - INFO - 活跃挂单数量: 6
+2025-07-08 09:12:34 - INFO - ===== 策略启动 =====
+2025-07-08 09:12:34 - INFO - 策略运行正常 | 可用资金: 45325.40 | 持仓数量: 9 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600}
+2025-07-08 09:12:34 - INFO - 活跃挂单数量: 5
+2025-07-08 09:38:18 - INFO - 触发条件: 柳化股份 当前价 3.65 ≤ 目标价 3.65
+2025-07-08 09:38:18 - INFO - 触发条件: 柳化股份 当前价 3.65 ≤ 目标价 3.65
+2025-07-08 09:42:34 - INFO - 策略运行正常 | 可用资金: 92003.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 400, '600423.SH': 3400}
+2025-07-08 09:42:34 - INFO - 活跃挂单数量: 0
+2025-07-08 09:54:29 - INFO - ===== 策略启动 =====
+2025-07-08 09:54:29 - INFO - 策略运行正常 | 可用资金: 92003.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 400, '600423.SH': 3400}
+2025-07-08 09:54:29 - INFO - 活跃挂单数量: 0
+2025-07-08 09:54:40 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 09:54:40 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:54:43 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 09:54:43 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:54:49 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 09:54:49 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:54:52 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 09:54:52 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:54:55 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 09:54:56 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:54:58 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 09:54:58 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:55:01 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 09:55:01 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:59:07 - INFO - ===== 策略启动 =====
+2025-07-08 09:59:07 - INFO - 策略运行正常 | 可用资金: 92003.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 400, '600423.SH': 3400}
+2025-07-08 09:59:07 - INFO - 活跃挂单数量: 0
+2025-07-08 09:59:19 - INFO - 触发条件: 金房能源 当前价 14.97 ≤ 目标价 15.0
+2025-07-08 09:59:19 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:59:22 - INFO - 触发条件: 金房能源 当前价 14.96 ≤ 目标价 15.0
+2025-07-08 09:59:22 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:59:25 - INFO - 触发条件: 金房能源 当前价 14.97 ≤ 目标价 15.0
+2025-07-08 09:59:25 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 09:59:28 - INFO - 触发条件: 金房能源 当前价 14.96 ≤ 目标价 15.0
+2025-07-08 09:59:28 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:00:37 - INFO - ===== 策略启动 =====
+2025-07-08 10:00:37 - INFO - 策略运行正常 | 可用资金: 92003.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 400, '600423.SH': 3400}
+2025-07-08 10:00:37 - INFO - 活跃挂单数量: 0
+2025-07-08 10:00:49 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 10:00:49 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:00:52 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 10:00:52 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:00:55 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 10:00:55 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:00:58 - INFO - 触发条件: 金房能源 当前价 14.99 ≤ 目标价 15.0
+2025-07-08 10:00:58 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:01:01 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:01:01 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:01:04 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:01:04 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:01:07 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:01:07 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:01:10 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:01:10 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:01:22 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:01:22 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 302, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 363, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 372, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-08 10:02:29 - INFO - ===== 策略启动 =====
+2025-07-08 10:02:29 - INFO - 策略运行正常 | 可用资金: 92003.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 400, '600423.SH': 3400}
+2025-07-08 10:02:29 - INFO - 活跃挂单数量: 0
+2025-07-08 10:02:40 - INFO - 触发条件: 金房能源 当前价 14.98 ≤ 目标价 15.16
+2025-07-08 10:02:40 - INFO - 触发条件: 金房能源 当前价 14.98 ≤ 目标价 15.0
+2025-07-08 10:32:29 - INFO - 策略运行正常 | 可用资金: 81499.93 | 持仓数量: 11 | 总持仓: {'600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '002206.SZ': 1600, '001210.SZ': 1100, '600423.SH': 3400}
+2025-07-08 10:32:29 - INFO - 活跃挂单数量: 0
+2025-07-08 10:41:59 - INFO - ===== 策略启动 =====
+2025-07-08 10:42:00 - INFO - 策略运行正常 | 可用资金: 81499.93 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1100, '002206.SZ': 1600}
+2025-07-08 10:42:00 - INFO - 活跃挂单数量: 0
+2025-07-08 10:42:13 - INFO - 触发条件: 金房能源 当前价 15.01 ≤ 目标价 15.16
+2025-07-08 10:45:16 - INFO - 触发条件: 金房能源 当前价 15.0 ≤ 目标价 15.0
+2025-07-08 10:45:38 - INFO - ===== 策略启动 =====
+2025-07-08 10:45:38 - INFO - 策略运行正常 | 可用资金: 70980.93 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 10:45:38 - INFO - 活跃挂单数量: 1
+2025-07-08 10:45:55 - INFO - ===== 策略启动 =====
+2025-07-08 10:45:55 - INFO - 策略运行正常 | 可用资金: 75480.93 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 10:45:55 - INFO - 活跃挂单数量: 0
+2025-07-08 12:49:55 - INFO - ===== 策略启动 =====
+2025-07-08 12:49:55 - INFO - 策略运行正常 | 可用资金: 75486.43 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 12:49:55 - INFO - 活跃挂单数量: 0
+2025-07-08 13:19:55 - INFO - 策略运行正常 | 可用资金: 75486.43 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 13:19:55 - INFO - 活跃挂单数量: 0
+2025-07-08 13:49:55 - INFO - 策略运行正常 | 可用资金: 75486.43 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 13:49:55 - INFO - 活跃挂单数量: 0
+2025-07-08 14:19:55 - INFO - 策略运行正常 | 可用资金: 75486.43 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 14:19:55 - INFO - 活跃挂单数量: 0
+2025-07-08 14:49:55 - INFO - 策略运行正常 | 可用资金: 75486.43 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 800, '603151.SH': 300, '603579.SH': 100, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 14:49:55 - INFO - 活跃挂单数量: 0
+2025-07-08 14:58:42 - INFO - ===== 策略启动 =====
+2025-07-08 14:58:42 - INFO - 策略运行正常 | 可用资金: 97796.03 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 0, '603151.SH': 300, '603579.SH': 0, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 14:58:42 - INFO - 活跃挂单数量: 0
+2025-07-08 14:58:59 - INFO - ===== 策略启动 =====
+2025-07-08 14:58:59 - INFO - 策略运行正常 | 可用资金: 97796.03 | 持仓数量: 11 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603127.SH': 0, '603151.SH': 300, '603579.SH': 0, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
+2025-07-08 14:58:59 - INFO - 活跃挂单数量: 0
