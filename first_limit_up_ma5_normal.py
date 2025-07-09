@@ -141,7 +141,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         base_price = df.loc[first_limit_day, 'close']
         next_day_1_close = df.loc[next_day_1, 'close']
         next_day_2_close = df.loc[next_day_2, 'low']
-        if abs(base_price) > 1e-5:  # 防止除零错误
+        if abs(next_day_1_close) > 1e-5:  # 防止除零错误
             next_day_2_pct = (next_day_2_close - next_day_1_close) / next_day_1_close * 100
 
     df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 跌停价字段
@@ -418,7 +418,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = False  # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = True  # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:

@@ -20,7 +20,7 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 16000  # 每只股票的总买入预算 统一修改点
+PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算 统一修改点
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
@@ -53,9 +53,9 @@ def get_tiers_by_risk_level():
         ]
     elif RISK_LEVEL == 'low':
         return [
-            {'predict_ratio': 1.05, 'ratio': 0.40},
-            {'predict_ratio': 1.00, 'ratio': 0.30},
-            {'predict_ratio': 0.95, 'ratio': 0.30}
+            {'predict_ratio': 1.04, 'ratio': 0.40},
+            {'predict_ratio': 0.98, 'ratio': 0.40},
+            {'predict_ratio': 0.95, 'ratio': 0.20}
         ]
     else:  # 默认中风险
         return [
@@ -181,7 +181,7 @@ def sell_breached_stocks():
                         '代码': stock_code,
                         '名称': stock_name,
                         '持有数量': pos.m_nCanUseVolume,
-                        '类型': '上日涨停股'
+                        '类型': '涨停断板'
                     })
             except Exception as e:
                 print(f"检测涨停股异常 {stock_code}: {str(e)}")
@@ -193,19 +193,25 @@ def sell_breached_stocks():
             print("当前无符合卖出条件的持仓")
             return
 
-        for stock in breach_stocks:
+        print("--- 待卖出列表 ---")
+        for stock in all_sell_stocks:
+            reason = "涨停断板" if '类型' in stock and stock['类型'] == '涨停断板' else "跌破五日线"
+            print(f"  - 代码: {stock['代码']}, 名称: {stock['名称']}, 数量: {stock['持有数量']}, 原因: {reason}")
+        print("--------------------")
+
+        for stock in all_sell_stocks:
             stock_code = stock['代码']
             stock_name = stock['名称']
             hold_vol = stock['持有数量']
             position = next((p for p in xt_trader.query_stock_positions(acc)
                              if p.stock_code == stock_code), None)
             if not position or position.m_nCanUseVolume <= 0:
-                print(f"{stock_name}({stock_code}) 无可卖持仓")
+                print(f"{stock_name}({stock_code}) 无可卖持仓，跳过。")
                 continue
             # 获取实时行情数据（包含五档盘口）
             tick = xtdata.get_full_tick([stock_code])[stock_code]
             if not tick:
-                print(f"⚠无法获取 {stock_code} 实时行情")
+                print(f"⚠无法获取 {stock_code} 实时行情，跳过。")
                 continue
             # 确定卖出价格（第五档买入价或99%市价）
             base_price = tick['lastPrice']
@@ -215,6 +221,7 @@ def sell_breached_stocks():
                 sell_price = base_price * 0.99
 
             # 执行卖出
+            reason_memo = "涨停次日卖出策略" if '类型' in stock and stock['类型'] == '涨停断板' else "MA5止损策略"
             async_seq = xt_trader.order_stock_async(
                 acc,
                 stock_code,
@@ -222,10 +229,10 @@ def sell_breached_stocks():
                 hold_vol,
                 xtconstant.FIX_PRICE,
                 sell_price,
-                '涨停次日卖出策略' if '类型' in stock and stock['类型'] == '上日涨停股' else 'MA5止损策略',
+                reason_memo,
                 stock_code
             )
-            reason = "上日涨停股" if '类型' in stock and stock['类型'] == '上日涨停股' else "跌破五日线"
+            reason = "涨停断板" if '类型' in stock and stock['类型'] == '涨停断板' else "跌破五日线"
             print(f"已提交卖出：{stock_name}({stock_code}) {hold_vol}股 | 原因：{reason}")
 
     except Exception as e:
@@ -267,11 +274,8 @@ def precompute_trigger_prices(stock_code):
             })
 
 
-def subscribe_target_stocks(target_stocks):
-    for stock_code in target_stocks:
-        # 预计算该股票的触发价格
-        precompute_trigger_prices(stock_code)
-        # 订阅分时数据（用于实时触发）
+def subscribe_target_stocks(filtered_stocks):
+    for stock_code in filtered_stocks:
         xtdata.subscribe_quote(stock_code, period='tick', callback=on_quote_update)
         print(f"已订阅并计算触发价: {stock_code}")
 
@@ -525,9 +529,12 @@ def adjust_orders_at_935():
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
 
-        # 6. 订阅并保存触发价格
+        # 6. 订阅价格监控
         subscribe_target_stocks(filtered_stocks)
         if not loaded_data:
+            # 没有csv数据时单独计算每个股的档位价格
+            for stock_code in filtered_stocks:
+                precompute_trigger_prices(stock_code)
             save_trigger_prices_to_csv(trigger_prices)
         for code in filtered_stocks:
             if code not in trigger_prices or not trigger_prices[code]:
