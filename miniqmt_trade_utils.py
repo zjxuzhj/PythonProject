@@ -1,9 +1,11 @@
 # utils/trade_utils.py
-from collections import defaultdict
-from datetime import datetime, timedelta
-import pandas as pd
 import os
+from collections import defaultdict
+from datetime import datetime
+
+import pandas as pd
 from xtquant import xtconstant
+
 
 def can_cancel_order_status(status_code):
     # 定义一个包含所有可撤销状态的集合
@@ -45,19 +47,25 @@ def save_trigger_prices_to_csv(trigger_prices):
         # 按股票代码和价格排序
         df = df.sort_values(['stock_code', 'price'], ascending=[True, False])
 
-        # 保存到CSV（如果文件已存在则追加）
+        # 如果有历史文件，合并时保留最新触发状态
         if os.path.exists(filename):
             existing_df = pd.read_csv(filename)
-            df = pd.concat([existing_df, df]).drop_duplicates(
-                subset=['date', 'stock_code', 'price'],
-                keep='last'
-            )
 
-        df.to_csv(filename, index=False, encoding='utf-8-sig')
+            # 仅当所有字段相同时才去重，保留最后一个（即最新状态）
+            merged = pd.concat([existing_df, df])
+
+            # 使用全字段判断重复（包括triggered状态）
+            cols = ['date', 'stock_code', 'price', 'ratio']
+            merged.drop_duplicates(subset=cols, keep='last', inplace=True)
+            merged.to_csv(filename, index=False, encoding='utf-8-sig')
+        else:
+            df.to_csv(filename, index=False, encoding='utf-8-sig')
+
         print(f"触发价格已保存: {filename}")
 
     except Exception as e:
         print(f"保存触发价格失败: {str(e)}")
+
 
 def load_trigger_prices_from_csv(date_str=None):
     """从CSV加载指定日期的触发价格数据"""
@@ -75,9 +83,11 @@ def load_trigger_prices_from_csv(date_str=None):
         # 转换为全局trigger_prices格式
         loaded_data = defaultdict(list)
         for _, row in df.iterrows():
+            ratio_str = str(row['ratio']).replace('%', '')
+            ratio_val = float(ratio_str) / 100
             loaded_data[row['stock_code']].append({
                 'price': row['price'],
-                'ratio': row['ratio'],
+                'ratio': ratio_val,
                 'triggered': row['triggered'],
                 'trigger_time': row.get('trigger_time', '')
             })

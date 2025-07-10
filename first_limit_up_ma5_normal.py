@@ -17,8 +17,6 @@ def get_stock_data(symbol, is_19_data_test=False):
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
-            # df['vol_ma5'] = df['volume'].rolling(5).mean()
-            # df['volume_ratio'] = df['volume'] / df['vol_ma5'].replace(0, 1)  # 防除零错误
             print(f"从缓存加载数据：{symbol}")
             return df, True
         except Exception as e:
@@ -58,6 +56,22 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
                 continue
             next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
             if next_day_change >= 8:
+                continue
+
+        # 条件2：排除涨停后第一天最高价大于9%但收盘价低于5%的股票
+        next_day_idx = df.index.get_loc(day) + 1
+        if next_day_idx < len(df):
+            next_day = df.index[next_day_idx]
+            base_price = df.loc[day, 'close']
+            if abs(base_price) < 1e-5:
+                continue
+
+            # 计算最高价涨幅和收盘价涨幅
+            high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
+            close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
+
+            # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
+            if high_change > 9.9 and close_change < 0.6:
                 continue
 
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
@@ -123,6 +137,50 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
     return valid_days
 
 
+def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
+    """模拟预测MA5的核心方法"""
+    if df.empty or len(df) < 2:
+        raise ValueError("数据不足，至少需要2个交易日数据")
+
+    modified_df = df.copy().sort_index(ascending=True)
+    modified_df['adjusted_close'] = modified_df['close']
+
+    new_row = modified_df.iloc[-1].copy()
+    new_row['close'] *= predict_ratio
+    new_row.name = new_row.name + pd.Timedelta(days=1)
+    modified_df = pd.concat([modified_df, new_row.to_frame().T], axis=0)
+
+    modified_df['MA5'] = modified_df['close'].rolling(
+        window=5, min_periods=1
+    ).mean().round(2)
+    return modified_df
+
+
+def simulate_ma5_order_prices(df, current_day, lookback_days=5):
+    """模拟预测买入日MA5值，然后计算三个挂单价格"""
+    current_idx = df.index.get_loc(current_day)
+
+    if current_idx < lookback_days:
+        return None, None, None, None
+
+    prev_data = df.iloc[current_idx - lookback_days: current_idx]
+
+    try:
+        price1 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
+        price2 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
+        price3 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
+
+        return price1, price2, price3
+    except Exception as e:
+        print(f"预测MA5失败: {e}")
+        return None, None, None, None
+
+
+def calculate_actual_fill_price(open_price, order_price):
+    """计算实际成交价：如果开盘价低于挂单价，以开盘价成交"""
+    return min(open_price, order_price) if order_price is not None else None
+
+
 def generate_signals(df, first_limit_day, stock_code, stock_name):
     """生成买卖信号"""
     signals = []
@@ -144,7 +202,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         if abs(next_day_1_close) > 1e-5:  # 防止除零错误
             next_day_2_pct = (next_day_2_close - next_day_1_close) / next_day_1_close * 100
 
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)  # 跌停价字段
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
 
     start_idx = df.index.get_loc(first_limit_day)
     if (start_idx + 1) >= len(df):  # 边界检查，跳过无数据的情况
@@ -152,16 +210,12 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     df['ma5'] = df['close'].rolling(5).mean()
 
-    first_touch_flag = False
-
-    for offset in range(2, 10):  # 最多检查10个交易日 range(2,5)会生成2,3,4 range(2,2)生成的序列为空
+    for offset in range(2, 4):  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
-
-
 
         # 检查中间是否有新的涨停
         has_new_limit = False
@@ -192,46 +246,77 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         touch_condition = (current_data['low'] <= current_data['ma5']) & \
                           (current_data['high'] >= current_data['ma5'])
 
+        # 计算三个挂单价格
+        price1, price2, price3 = simulate_ma5_order_prices(df, current_day)
+        if price1 is None:
+            continue
+
+        # 获取当日价格数据
+        day_open = current_data['open']
+        day_low = current_data['low']
+        day_high = current_data['high']
+
+        # 检查挂单价是否在当日价格范围内
+        order1_valid = day_low <= price1 <= day_high
+        order2_valid = day_low <= price2 <= day_high
+        order3_valid = day_low <= price3 <= day_high
+
+        # 如果没有一个价格有效，则跳过
+        if not (order1_valid or order2_valid or order3_valid):
+            continue
+
+        if price1>=day_open:
+            order1_valid=True
+
+        # 计算实际成交价（考虑开盘价）
+        actual_price1 = calculate_actual_fill_price(day_open, price1) if order1_valid else None
+        actual_price2 = calculate_actual_fill_price(day_open, price2) if order2_valid else None
+        actual_price3 = calculate_actual_fill_price(day_open, price3) if order3_valid else None
+
+        # 仓位分配比例（修正为正确的比例）
+        position_percentage1 = 0.5 if actual_price1 else 0.0
+        position_percentage2 = 0.25 if actual_price2 else 0.0
+        position_percentage3 = 0.25 if actual_price3 else 0.0
+
+        # 确保总仓位不超过100%
+        total_percentage = position_percentage1 + position_percentage2 + position_percentage3
+        if abs(total_percentage) < 1e-5:
+            continue
+
+        # 计算加权平均买入价
+        weighted_avg_price = (
+            (position_percentage1 * actual_price1 if actual_price1 else 0) +
+            (position_percentage2 * actual_price2 if actual_price2 else 0) +
+            (position_percentage3 * actual_price3 if actual_price3 else 0)
+        ) / total_percentage
+
         buy_day_timestamp = pd.Timestamp(current_day)
         days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
         history_window = df.iloc[start_idx + 1: start_idx + offset]
         history_condition = (history_window['close'] > history_window['ma5']).all()
 
-        if not first_touch_flag and touch_condition and history_condition:
-            first_touch_flag = True  # 标记首次触碰
-            buy_price = current_data['ma5']  # 以五日均线值为买入价
+        if not history_condition:
+            continue
 
-            # prev_day_index = df.index.get_loc(current_day) - 1
-            # prev_close = df.iloc[prev_day_index]['close']
+        # 持有期卖出逻辑
+        hold_days = 0
+        for sell_offset in range(1, 20):
+            if start_idx + offset + sell_offset >= len(df):
+                break
 
-            # 新的买入价 = 当日MA5价格 + 前一日收盘价 * 2%
-            # buy_price = current_data['ma5'] + prev_close * +0.0005
+            sell_day = df.index[start_idx + offset + sell_offset]
+            sell_data = df.loc[sell_day]
+            hold_days += 1
 
-            hold_days = 0
-
-            # prev_day = df.index[start_idx + offset - 1]  # 获取前一日
-            # prev_close = df.loc[prev_day, 'close']  # 前一日收盘价
-            # daily_change = (current_data['close'] - prev_close) / prev_close * 100  # 计算当日涨幅
-            # if daily_change >-5:  # 涨幅超过6%排除不买入
-            #     continue
-
-            # 卖出逻辑
-            for sell_offset in range(1, 20):  # 最多持有20日
-                if start_idx + offset + sell_offset >= len(df):
-                    break
-
-                sell_day = df.index[start_idx + offset + sell_offset]
-                sell_data = df.loc[sell_day]
-                hold_days += 1
-
-                # 1. 跌停第二天卖出
+            # 1. 跌停第二天卖出
+            if df.index.get_loc(sell_day) >= 1:
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 prev_day_data = df.loc[prev_day]
                 # 判断前一天是否跌停
                 if prev_day_data['close'] <= prev_day_data['down_limit_price']:
                     # 第二天收盘价卖出
                     sell_price = sell_data['close']
-                    profit_pct = (sell_price - buy_price) / buy_price * 100
+                    profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                     signals.append({
                         '股票代码': stock_code,
                         '股票名称': stock_name,
@@ -240,13 +325,23 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
                         '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
+                        '实际均价': round(weighted_avg_price, 2),
                         '卖出价': round(sell_price, 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                         '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '跌停止损'
-
+                        '卖出原因': '跌停止损',
+                        '挂单价1': round(price1, 2) if price1 else None,
+                        '挂单价2': round(price2, 2) if price2 else None,
+                        '挂单价3': round(price3, 2) if price3 else None,
+                        '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                        '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                        '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                        '是否成交1': '是' if actual_price1 else '否',
+                        '是否成交2': '是' if actual_price2 else '否',
+                        '是否成交3': '是' if actual_price3 else '否',
+                        '买入比例': round(total_percentage * 100, 2)
                     })
                     break
 
@@ -256,7 +351,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 # 2. 涨停后断板日卖出
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
+                    sell_price = sell_data['close']
+                    profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                     signals.append({
                         '股票代码': stock_code,
                         '股票名称': stock_name,
@@ -265,99 +361,149 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                         '卖出日': sell_day.strftime('%Y-%m-%d'),
                         '涨停后天数': days_after_limit,
                         '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
+                        '实际均价': round(weighted_avg_price, 2),
+                        '卖出价': round(sell_price, 2),
                         '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                         '收益率(%)': round(profit_pct, 2),
+                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                         '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '断板止盈'
+                        '卖出原因': '断板止盈',
+                        '挂单价1': round(price1, 2) if price1 else None,
+                        '挂单价2': round(price2, 2) if price2 else None,
+                        '挂单价3': round(price3, 2) if price3 else None,
+                        '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                        '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                        '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                        '是否成交1': '是' if actual_price1 else '否',
+                        '是否成交2': '是' if actual_price2 else '否',
+                        '是否成交3': '是' if actual_price3 else '否',
+                        '买入比例': round(total_percentage * 100, 2)
                     })
                     break
 
-                # 3. 首板炸板卖出条件
-                # 条件3-1：当日最高价达到涨停价但未封板（收盘价<涨停价）
-                is_limit_touched = (sell_data['high'] >= sell_data['limit_price'])
-                is_limit_closed = (sell_data['close'] < sell_data['limit_price'])
-                # 条件3-2：前一日未涨停，也就是首板
-                prev_day = df.index[df.index.get_loc(sell_day) - 1]
-                prev_limit_price = (df.loc[prev_day, 'prev_close'] * (1 + limit_rate)).round(2)
-                is_prev_limit = (df.loc[prev_day, 'close'] >= prev_limit_price)
+            # 3. 首板炸板卖出条件
+            # 条件3-1：当日最高价达到涨停价但未封板（收盘价<涨停价
+            is_limit_touched = (sell_data['high'] >= sell_data['limit_price'])
+            is_limit_closed = (sell_data['close'] < sell_data['limit_price'])
+            # 条件3-2：前一日未涨停，也就是首板
+            prev_day = df.index[df.index.get_loc(sell_day) - 1]
+            prev_limit_price = (df.loc[prev_day, 'prev_close'] * (1 + limit_rate)).round(2)
+            is_prev_limit = (df.loc[prev_day, 'close'] >= prev_limit_price)
 
-                if is_limit_touched and is_limit_closed and not is_prev_limit:
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '涨停后天数': days_after_limit,
-                        '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '炸板卖出'
-                    })
-                    break
+            if is_limit_touched and is_limit_closed and not is_prev_limit:
+                sell_price = sell_data['close']
+                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
+                signals.append({
+                    '股票代码': stock_code,
+                    '股票名称': stock_name,
+                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                    '买入日': current_day.strftime('%Y-%m-%d'),
+                    '卖出日': sell_day.strftime('%Y-%m-%d'),
+                    '涨停后天数': days_after_limit,
+                    '持有天数': hold_days,
+                    '实际均价': round(weighted_avg_price, 2),
+                     '卖出价': round(sell_price, 2),
+                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                    '收益率(%)': round(profit_pct, 2),
+                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
+                    '卖出原因': '炸板卖出',
+                    '挂单价1': round(price1, 2) if price1 else None,
+                    '挂单价2': round(price2, 2) if price2 else None,
+                    '挂单价3': round(price3, 2) if price3 else None,
+                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                    '是否成交1': '是' if actual_price1 else '否',
+                    '是否成交2': '是' if actual_price2 else '否',
+                    '是否成交3': '是' if actual_price3 else '否',
+                    '买入比例': round(total_percentage * 100, 2)
+                })
+                break
 
-                # 4. 跌破五日线卖出
-                if sell_data['close'] < sell_data['ma5']:
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '涨停后天数': days_after_limit,
-                        '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '跌破五日线'
-                    })
-                    break
 
-                # 5. 最大持有天数限制（15天）
-                if hold_days >= 15:
-                    profit_pct = (sell_data['close'] - buy_price) / buy_price * 100
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '涨停后天数': days_after_limit,
-                        '持有天数': hold_days,
-                        '买入价': round(buy_price, 2),
-                        '卖出价': round(sell_data['close'], 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '持有超限'
-                    })
-                    break
-            break
+            # 3. 跌破五日线卖出
+            if sell_data['close'] < sell_data['ma5']:
+                sell_price = sell_data['close']
+                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
+                signals.append({
+                    '股票代码': stock_code,
+                    '股票名称': stock_name,
+                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                    '买入日': current_day.strftime('%Y-%m-%d'),
+                    '卖出日': sell_day.strftime('%Y-%m-%d'),
+                    '涨停后天数': days_after_limit,
+                    '持有天数': hold_days,
+                    '实际均价': round(weighted_avg_price, 2),
+                    '卖出价': round(sell_price, 2),
+                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                    '收益率(%)': round(profit_pct, 2),
+                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
+                    '卖出原因': '跌破五日线',
+                    '挂单价1': round(price1, 2) if price1 else None,
+                    '挂单价2': round(price2, 2) if price2 else None,
+                    '挂单价3': round(price3, 2) if price3 else None,
+                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                    '是否成交1': '是' if actual_price1 else '否',
+                    '是否成交2': '是' if actual_price2 else '否',
+                    '是否成交3': '是' if actual_price3 else '否',
+                    '买入比例': round(total_percentage * 100, 2)
+                })
+                break
+
+            # 4. 最大持有天数限制（15天）
+            if hold_days >= 15:
+                sell_price = sell_data['close']
+                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
+                signals.append({
+                    '股票代码': stock_code,
+                    '股票名称': stock_name,
+                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                    '买入日': current_day.strftime('%Y-%m-%d'),
+                    '卖出日': sell_day.strftime('%Y-%m-%d'),
+                    '涨停后天数': days_after_limit,
+                    '持有天数': hold_days,
+                    '实际均价': round(weighted_avg_price, 2),
+                    '卖出价': round(sell_price, 2),
+                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                    '收益率(%)': round(profit_pct, 2),
+                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
+                    '卖出原因': '持有超限',
+                    '挂单价1': round(price1, 2) if price1 else None,
+                    '挂单价2': round(price2, 2) if price2 else None,
+                    '挂单价3': round(price3, 2) if price3 else None,
+                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                    '是否成交1': '是' if actual_price1 else '否',
+                    '是否成交2': '是' if actual_price2 else '否',
+                    '是否成交3': '是' if actual_price3 else '否',
+                    '买入比例': round(total_percentage * 100, 2)
+                })
+                break
+        break  # 只处理第一个符合条件的买入点
     return signals
 
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
-                    '持有天数', '买入价', '卖出价','涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
+                    '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因',
+                    '挂单价1', '挂单价2', '挂单价3', '实际成交价1', '实际成交价2', '实际成交价3',
+                    '是否成交1', '是否成交2', '是否成交3', '买入比例']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
     """专业级Excel导出函数"""
     # 生成带时间戳的文件名
-    excel_name = f"首板交易记录_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+    excel_name = f"首板交易记录_{timestamp}.xlsx"
 
     # 创建带格式的Excel写入器
-    with pd.ExcelWriter(excel_name, engine='xlsxwriter',
-                        engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
+    with pd.ExcelWriter(excel_name, engine='xlsxwriter') as writer:
         # 写入原始数据
         result_df.to_excel(writer, sheet_name='交易明细', index=False)
 
@@ -367,11 +513,7 @@ def save_trades_excel(result_df):
 
         # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):
-            series = result_df[col]
-            max_len = max((
-                series.astype(str).map(len).max(),  # 数据最大长度
-                len(col)  # 列名长度
-            )) + 2
+            max_len = max(result_df[col].astype(str).map(len).max(), len(col)) + 2
             worksheet.set_column(idx, idx, max_len)
 
         # 2. 条件格式(收益率红涨绿跌)
@@ -379,8 +521,6 @@ def save_trades_excel(result_df):
         format_red = workbook.add_format({'font_color': '#FF0000', 'num_format': '0.00%'})
 
         # 将收益率转换为小数格式
-        worksheet.write(0, result_df.columns.get_loc('收益率(%)'), '收益率',
-                        workbook.add_format({'bold': True}))
         for row in range(1, len(result_df) + 1):
             cell_value = result_df.iloc[row - 1]['收益率(%)'] / 100
             if cell_value >= 0:
@@ -418,7 +558,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = True  # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = False # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:

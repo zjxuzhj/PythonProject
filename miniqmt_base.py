@@ -53,9 +53,9 @@ def get_tiers_by_risk_level():
         ]
     elif RISK_LEVEL == 'low':
         return [
-            {'predict_ratio': 1.04, 'ratio': 0.40},
-            {'predict_ratio': 0.98, 'ratio': 0.40},
-            {'predict_ratio': 0.95, 'ratio': 0.20}
+            {'predict_ratio': 1.03, 'ratio': 0.40},
+            {'predict_ratio': 1.03, 'ratio': 0.30},
+            {'predict_ratio': 1.03, 'ratio': 0.30}
         ]
     else:  # 默认中风险
         return [
@@ -664,32 +664,32 @@ if __name__ == "__main__":
         adjust_orders_at_935,
         trigger=CronTrigger(
             hour=9,
-            minute=35,
+            minute=31,
             day_of_week='mon-fri'
         ),
         misfire_grace_time=60
     )
-    print("定时任务已添加：每日9:35执行订单调整")
+    print("定时任务已添加：每日9:31执行订单调整")
 
 
     def check_execute():
         now_1 = datetime.now()
         now_2 = datetime.now()
         start_time_daily_pre_market_orders = now_1.replace(hour=9, minute=11, second=0, microsecond=0)
-        end_time_daily_pre_market_orders = now_1.replace(hour=9, minute=35, second=0, microsecond=0)
+        end_time_daily_pre_market_orders = now_1.replace(hour=9, minute=30, second=0, microsecond=0)
 
-        start_time_adjust_orders_at_935 = now_2.replace(hour=9, minute=35, second=0, microsecond=0)
+        start_time_adjust_orders_at_935 = now_2.replace(hour=9, minute=31, second=0, microsecond=0)
         end_time_adjust_orders_at_935 = now_2.replace(hour=14, minute=50, second=0, microsecond=0)
 
         if datetime.now().weekday() < 5:  # 0-4 表示周一到周五
             if start_time_daily_pre_market_orders <= datetime.now() <= end_time_daily_pre_market_orders:
-                print("当前时间在 9:11-9:35 之间，立即执行盘前挂单")
+                print("当前时间在 9:11-9:30 之间，立即执行盘前挂单")
                 orders = xt_trader.query_stock_orders(acc)
                 active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
                 if not active_orders:
                     daily_pre_market_orders()
             if start_time_adjust_orders_at_935 <= datetime.now() <= end_time_adjust_orders_at_935:
-                print("当前时间在 9:35-14:50 之间，立即执行动态买入")
+                print("当前时间在 9:31-14:50 之间，立即执行动态买入")
                 adjust_orders_at_935()
 
 

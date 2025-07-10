@@ -1,36 +1,303 @@
-2025-07-09 09:06:32 - INFO - ===== 策略启动 =====
-2025-07-09 09:06:32 - ERROR - 状态监控异常: 'NoneType' object has no attribute 'm_dCash'
-2025-07-09 09:08:54 - INFO - ===== 策略启动 =====
-2025-07-09 09:08:54 - INFO - 策略运行正常 | 可用资金: 81845.03 | 持仓数量: 9 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600}
-2025-07-09 09:08:54 - INFO - 活跃挂单数量: 0
-2025-07-09 09:38:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 09:38:54 - INFO - 活跃挂单数量: 0
-2025-07-09 10:08:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 10:08:54 - INFO - 活跃挂单数量: 0
-2025-07-09 10:38:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 10:38:54 - INFO - 活跃挂单数量: 0
-2025-07-09 11:08:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 11:08:54 - INFO - 活跃挂单数量: 0
-2025-07-09 11:38:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 11:38:54 - INFO - 活跃挂单数量: 0
-2025-07-09 12:08:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 12:08:54 - INFO - 活跃挂单数量: 0
-2025-07-09 12:38:54 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 12:38:54 - INFO - 活跃挂单数量: 0
-2025-07-09 12:49:00 - INFO - ===== 策略启动 =====
-2025-07-09 12:49:00 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 12:49:00 - INFO - 活跃挂单数量: 0
-2025-07-09 12:57:37 - INFO - ===== 策略启动 =====
-2025-07-09 12:57:37 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 12:57:37 - INFO - 活跃挂单数量: 0
-2025-07-09 13:27:37 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 13:27:37 - INFO - 活跃挂单数量: 0
-2025-07-09 13:57:37 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 13:57:37 - INFO - 活跃挂单数量: 0
-2025-07-09 14:05:16 - INFO - ===== 策略启动 =====
-2025-07-09 14:05:16 - INFO - 策略运行正常 | 可用资金: 75758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 14:05:16 - INFO - 活跃挂单数量: 0
-2025-07-09 14:35:16 - INFO - 策略运行正常 | 可用资金: 45758.47 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 2100, '600876.SH': 900, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 300, '000670.SZ': 800, '001210.SZ': 1500, '002206.SZ': 1600, '605028.SH': 300}
-2025-07-09 14:35:16 - INFO - 活跃挂单数量: 0
-2025-07-09 15:05:16 - INFO - 策略运行正常 | 可用资金: 113359.34 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '600481.SH': 0, '600876.SH': 0, '601005.SH': 11300, '603151.SH': 300, '605277.SH': 0, '000670.SZ': 0, '001210.SZ': 0, '002206.SZ': 0, '605028.SH': 300}
-2025-07-09 15:05:16 - INFO - 活跃挂单数量: 0
+2025-07-10 09:12:01 - INFO - ===== 策略启动 =====
+2025-07-10 09:12:01 - INFO - 策略运行正常 | 可用资金: 136362.84 | 持仓数量: 4 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300}
+2025-07-10 09:12:01 - INFO - 活跃挂单数量: 0
+2025-07-10 09:14:45 - INFO - ===== 策略启动 =====
+2025-07-10 09:14:45 - INFO - 策略运行正常 | 可用资金: 38837.54 | 持仓数量: 4 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300}
+2025-07-10 09:14:45 - INFO - 活跃挂单数量: 14
+2025-07-10 09:31:11 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:11 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:14 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:14 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:20 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:20 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:22 - INFO - 触发条件: 正川股份 当前价 20.31 ≤ 目标价 20.31
+2025-07-10 09:31:22 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:26 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:26 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:29 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:29 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:35 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:35 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:38 - INFO - 触发条件: 石基信息 当前价 9.22 ≤ 目标价 9.23
+2025-07-10 09:31:38 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:41 - INFO - 触发条件: 石基信息 当前价 9.22 ≤ 目标价 9.23
+2025-07-10 09:31:41 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:44 - INFO - 触发条件: 石基信息 当前价 9.22 ≤ 目标价 9.23
+2025-07-10 09:31:44 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:46 - INFO - 触发条件: 正川股份 当前价 20.31 ≤ 目标价 20.31
+2025-07-10 09:31:46 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:47 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:47 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:49 - INFO - 触发条件: 正川股份 当前价 20.28 ≤ 目标价 20.31
+2025-07-10 09:31:49 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:50 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:31:50 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:31:52 - INFO - 触发条件: 正川股份 当前价 20.25 ≤ 目标价 20.31
+2025-07-10 09:31:52 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:32:01 - INFO - ===== 策略启动 =====
+2025-07-10 09:32:01 - INFO - 策略运行正常 | 可用资金: 38837.54 | 持仓数量: 6 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300}
+2025-07-10 09:32:01 - INFO - 活跃挂单数量: 0
+2025-07-10 09:32:11 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:32:11 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:32:14 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:32:14 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:32:17 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:32:17 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:32:20 - INFO - 触发条件: 石基信息 当前价 9.23 ≤ 目标价 9.23
+2025-07-10 09:32:20 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:32:20 - INFO - 触发条件: 吉宏股份 当前价 15.92 ≤ 目标价 15.93
+2025-07-10 09:32:20 - ERROR - 行情处理异常: '<' not supported between instances of 'float' and 'str'
+Traceback (most recent call last):
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 306, in on_quote_update
+    process_stock_quote(stock_code, current_price, current_time)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 367, in process_stock_quote
+    execute_trigger_order(name_display, stock_code, tier)
+  File "C:\Users\melot\PycharmProjects\PythonProject\miniqmt_base.py", line 376, in execute_trigger_order
+    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '<' not supported between instances of 'float' and 'str'
+2025-07-10 09:36:46 - INFO - ===== 策略启动 =====
+2025-07-10 09:36:46 - INFO - 策略运行正常 | 可用资金: 122874.78 | 持仓数量: 6 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300}
+2025-07-10 09:36:46 - INFO - 活跃挂单数量: 0
+2025-07-10 09:36:59 - INFO - 触发条件: 吉宏股份 当前价 15.860000000000001 ≤ 目标价 15.93
+2025-07-10 09:36:59 - INFO - 触发条件: 吉宏股份 当前价 15.860000000000001 ≤ 目标价 15.93
+2025-07-10 09:36:59 - INFO - 触发条件: 吉宏股份 当前价 15.860000000000001 ≤ 目标价 15.93
+2025-07-10 09:38:46 - INFO - ===== 策略启动 =====
+2025-07-10 09:38:46 - INFO - 策略运行正常 | 可用资金: 103830.78 | 持仓数量: 7 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300, '002803.SZ': 1200}
+2025-07-10 09:38:46 - INFO - 活跃挂单数量: 0
+2025-07-10 09:40:19 - INFO - ===== 策略启动 =====
+2025-07-10 09:40:19 - INFO - 策略运行正常 | 可用资金: 103814.28 | 持仓数量: 7 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300, '002803.SZ': 1200}
+2025-07-10 09:40:19 - INFO - 活跃挂单数量: 0
+2025-07-10 09:41:38 - INFO - 触发条件: 广合科技 当前价 63.77 ≤ 目标价 63.8
+2025-07-10 09:41:38 - INFO - 触发条件: 广合科技 当前价 63.77 ≤ 目标价 63.8
+2025-07-10 09:41:38 - INFO - 触发条件: 广合科技 当前价 63.77 ≤ 目标价 63.79
+2025-07-10 09:46:02 - INFO - ===== 策略启动 =====
+2025-07-10 09:46:02 - INFO - 策略运行正常 | 可用资金: 91043.28 | 持仓数量: 8 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200}
+2025-07-10 09:46:02 - INFO - 活跃挂单数量: 0
+2025-07-10 09:47:20 - INFO - ===== 策略启动 =====
+2025-07-10 09:47:20 - INFO - 策略运行正常 | 可用资金: 91043.28 | 持仓数量: 8 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 800, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200}
+2025-07-10 09:47:20 - INFO - 活跃挂单数量: 0
+2025-07-10 10:17:20 - INFO - 策略运行正常 | 可用资金: 83621.78 | 持仓数量: 8 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200}
+2025-07-10 10:17:20 - INFO - 活跃挂单数量: 0
+2025-07-10 10:35:26 - INFO - 触发条件: 奥 特 迅 当前价 14.6 ≤ 目标价 14.6
+2025-07-10 10:35:26 - INFO - 触发条件: 奥 特 迅 当前价 14.6 ≤ 目标价 14.6
+2025-07-10 10:35:26 - INFO - 触发条件: 奥 特 迅 当前价 14.6 ≤ 目标价 14.6
+2025-07-10 10:42:14 - INFO - 触发条件: 普利特   当前价 11.36 ≤ 目标价 11.36
+2025-07-10 10:42:14 - INFO - 触发条件: 普利特   当前价 11.36 ≤ 目标价 11.36
+2025-07-10 10:42:14 - INFO - 触发条件: 普利特   当前价 11.36 ≤ 目标价 11.36
+2025-07-10 10:45:39 - INFO - ===== 策略启动 =====
+2025-07-10 10:45:39 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 10:45:39 - INFO - 活跃挂单数量: 0
+2025-07-10 10:48:01 - INFO - ===== 策略启动 =====
+2025-07-10 10:48:01 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 10:48:01 - INFO - 活跃挂单数量: 0
+2025-07-10 11:06:46 - INFO - ===== 策略启动 =====
+2025-07-10 11:06:46 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 11:06:46 - INFO - 活跃挂单数量: 0
+2025-07-10 11:08:33 - INFO - ===== 策略启动 =====
+2025-07-10 11:08:33 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 11:08:33 - INFO - 活跃挂单数量: 0
+2025-07-10 11:09:48 - INFO - ===== 策略启动 =====
+2025-07-10 11:09:48 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 11:09:48 - INFO - 活跃挂单数量: 0
+2025-07-10 11:17:04 - INFO - ===== 策略启动 =====
+2025-07-10 11:17:04 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 11:17:04 - INFO - 活跃挂单数量: 0
+2025-07-10 11:47:04 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 11:47:04 - INFO - 活跃挂单数量: 0
+2025-07-10 12:17:04 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:17:04 - INFO - 活跃挂单数量: 0
+2025-07-10 12:41:18 - INFO - ===== 策略启动 =====
+2025-07-10 12:41:18 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:41:18 - INFO - 活跃挂单数量: 0
+2025-07-10 12:47:10 - INFO - ===== 策略启动 =====
+2025-07-10 12:47:10 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:47:10 - INFO - 活跃挂单数量: 0
+2025-07-10 12:50:30 - INFO - ===== 策略启动 =====
+2025-07-10 12:50:30 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:50:30 - INFO - 活跃挂单数量: 0
+2025-07-10 12:51:24 - INFO - ===== 策略启动 =====
+2025-07-10 12:51:24 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:51:24 - INFO - 活跃挂单数量: 0
+2025-07-10 12:56:21 - INFO - ===== 策略启动 =====
+2025-07-10 12:56:21 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 12:56:21 - INFO - 活跃挂单数量: 0
+2025-07-10 13:26:21 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 13:26:21 - INFO - 活跃挂单数量: 0
+2025-07-10 13:56:21 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 13:56:21 - INFO - 活跃挂单数量: 0
+2025-07-10 14:26:21 - INFO - 策略运行正常 | 可用资金: 46756.78 | 持仓数量: 10 | 总持仓: {'600423.SH': 3400, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 300, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 14:26:21 - INFO - 活跃挂单数量: 0
+2025-07-10 14:56:21 - INFO - 策略运行正常 | 可用资金: 65244.34 | 持仓数量: 10 | 总持仓: {'600423.SH': 0, '601005.SH': 11300, '603151.SH': 300, '605028.SH': 0, '002153.SZ': 1600, '603976.SH': 300, '002803.SZ': 1200, '001389.SZ': 200, '002227.SZ': 1200, '002324.SZ': 1700}
+2025-07-10 14:56:21 - INFO - 活跃挂单数量: 0

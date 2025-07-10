@@ -274,11 +274,23 @@ def get_target_stocks(isNeedLog=True):
         # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
         #     excluded_stocks.add(code)
         #     continue
-        # 特定股票排除
-        # if "sh605378"==code:
+        # 特定股票排除，切记少用
+        # if "sh603185"==code:
         #     excluded_stocks.add(code)
         #     continue
-        # if "sh605001"==code:
+        # if "sz002803"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz001389"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz002153"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz002227"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz002324"==code:
         #     excluded_stocks.add(code)
         #     continue
 
