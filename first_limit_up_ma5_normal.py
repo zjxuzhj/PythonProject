@@ -59,20 +59,20 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
                 continue
 
         # 条件2：排除涨停后第一天最高价大于9%但收盘价低于5%的股票
-        next_day_idx = df.index.get_loc(day) + 1
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            base_price = df.loc[day, 'close']
-            if abs(base_price) < 1e-5:
-                continue
-
-            # 计算最高价涨幅和收盘价涨幅
-            high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
-            close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-
-            # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
-            if high_change > 9.9 and close_change < 0.6:
-                continue
+        # next_day_idx = df.index.get_loc(day) + 1
+        # if next_day_idx < len(df):
+        #     next_day = df.index[next_day_idx]
+        #     base_price = df.loc[day, 'close']
+        #     if abs(base_price) < 1e-5:
+        #         continue
+        #
+        #     # 计算最高价涨幅和收盘价涨幅
+        #     high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
+        #     close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
+        #
+        #     # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
+        #     if high_change > 9.9 and close_change < 0.6:
+        #         continue
 
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         if next_day_idx < len(df):
