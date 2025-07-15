@@ -229,10 +229,16 @@ def get_target_stocks(isNeedLog=True):
     limit_up_stocks = []
     filtered_stocks = query_tool.get_all_filter_stocks()
     stock_list = filtered_stocks[['stock_code', 'stock_name']].values
+    today_str = datetime.now().strftime("%Y%m%d")
 
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, isNeedLog)
         if df.empty:
+            continue
+
+        if pd.isna(df["close"].iloc[-1]):
+            if isNeedLog:
+                print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
             continue
 
         # 排除当前股价>90的股票
@@ -275,9 +281,9 @@ def get_target_stocks(isNeedLog=True):
         #     excluded_stocks.add(code)
         #     continue
         # 特定股票排除，切记少用
-        # if "sh603185"==code:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "sz002506"==code: # 傻逼协鑫集成
+            excluded_stocks.add(code)
+            continue
         # if "sz002803"==code:
         #     excluded_stocks.add(code)
         #     continue
