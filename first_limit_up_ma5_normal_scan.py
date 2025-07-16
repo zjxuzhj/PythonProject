@@ -284,9 +284,9 @@ def get_target_stocks(isNeedLog=True):
         if "sz002506"==code: # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        # if "sz002803"==code:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "sz002153"==code:
+            excluded_stocks.add(code)
+            continue
         # if "sz001389"==code:
         #     excluded_stocks.add(code)
         #     continue

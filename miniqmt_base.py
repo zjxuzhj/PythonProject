@@ -507,8 +507,8 @@ def adjust_orders_at_935():
         hold_stocks = {pos.stock_code for pos in positions}
 
         # 4. 加载当日触发价格记录（优先内存，其次CSV）
-        loaded_data = load_trigger_prices_from_csv()
         if not trigger_prices:
+            loaded_data = load_trigger_prices_from_csv()
             if loaded_data:
                 trigger_prices.update(loaded_data)
 
@@ -518,6 +518,7 @@ def adjust_orders_at_935():
             # 检查触发记录
             if code in trigger_prices:
                 untriggered_tiers = [t for t in trigger_prices[code] if not t['triggered']]
+                # 如果存在未触发的层级，加入筛选结果
                 if untriggered_tiers:
                     filtered_stocks.append(code)
             # 无记录时视为新股票
@@ -695,15 +696,15 @@ if __name__ == "__main__":
 
     check_execute()
 
-    scheduler.add_job(
-        sell_breached_stocks,
-        trigger=CronTrigger(
-            hour=14,
-            minute=54,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=60
-    )
+    # scheduler.add_job(
+    #     sell_breached_stocks,
+    #     trigger=CronTrigger(
+    #         hour=14,
+    #         minute=54,
+    #         day_of_week='mon-fri'
+    #     ),
+    #     misfire_grace_time=60
+    # )
     print("定时任务已启动：每日14:54执行MA5止损检测")
 
     scheduler.add_job(
