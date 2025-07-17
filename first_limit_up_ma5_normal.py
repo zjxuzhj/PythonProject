@@ -58,23 +58,6 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
             if next_day_change >= 8:
                 continue
 
-        # 条件2：排除涨停后第一天最高价大于9%但收盘价低于5%的股票
-        # next_day_idx = df.index.get_loc(day) + 1
-        # if next_day_idx < len(df):
-        #     next_day = df.index[next_day_idx]
-        #     base_price = df.loc[day, 'close']
-        #     if abs(base_price) < 1e-5:
-        #         continue
-        #
-        #     # 计算最高价涨幅和收盘价涨幅
-        #     high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
-        #     close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-        #
-        #     # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
-        #     if high_change < 9 :
-        #     # if high_change < 9 and close_change <1:
-        #         continue
-
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         if next_day_idx < len(df):
             next_day = df.index[next_day_idx]
@@ -130,9 +113,9 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
                 continue  # 触发排除
 
         # 条件7：排除市值大于400亿的股票
-        # market_value = query_tool.get_stock_market_value(symbol)
-        # if market_value > 250:
-        #     continue
+        market_value = query_tool.get_stock_market_value(symbol)
+        if market_value > 250:
+            continue
 
         valid_days.append(day)
     return valid_days
@@ -211,7 +194,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     df['ma5'] = df['close'].rolling(5).mean()
 
-    for offset in range(2, 4):  # 检查涨停后第2、3、4、5天
+    for offset in range(2, 5):  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
@@ -653,7 +636,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = True # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = False # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:

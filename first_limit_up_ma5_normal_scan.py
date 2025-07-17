@@ -152,7 +152,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
 
         # 条件7：排除市值大于400亿的股票
         market_value = query_tool.get_stock_market_value(code)
-        if market_value > 400:
+        if market_value > 250:
             continue
 
         valid_days.append(day)
@@ -247,8 +247,8 @@ def get_target_stocks(isNeedLog=True):
             continue
 
         theme = query_tool.get_theme_by_code(code)
-        # 买入距离涨停板3天内的票（越近胜率越高）
-        first_limit_days = find_recent_first_limit_up(code, df, days=3) # days=3 再也不要变了，晚了就不要了，不要强行上仓位
+        # 买入距离涨停板3天内的票（越近胜率越高），计划day4，改为1.03提前买入后，day4的胜率更高
+        first_limit_days = find_recent_first_limit_up(code, df, days=4) # days=3 再也不要变了，晚了就不要了，不要强行上仓位
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
