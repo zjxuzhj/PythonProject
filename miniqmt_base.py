@@ -493,56 +493,68 @@ def adjust_orders_at_935():
     """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
     try:
         print("\n===== 9:35定时任务启动 =====")
-        # 1. 撤掉所有未成交挂单
+        # 撤掉所有未成交挂单
         cancel_all_pending_orders()
         print("等待撤单操作完成及资金释放(10秒)...")
         time.sleep(10)
         print("撤单等待结束，继续执行...")
-        # 2. 获取最新账户状态
+        # 获取最新账户状态
         refresh_account_status()
-        # 3. 获取目标股票列表
-        target_stocks = scan.get_target_stocks(False)
-        # 4. 过滤已持仓股票
-        positions = xt_trader.query_stock_positions(acc)
-        hold_stocks = {pos.stock_code for pos in positions}
 
-        # 4. 加载当日触发价格记录（优先内存，其次CSV）
-        if not trigger_prices:
-            loaded_data = load_trigger_prices_from_csv()
-            if loaded_data:
-                trigger_prices.update(loaded_data)
-
-        # 5. 动态过滤：只处理有未触发档位的股票
         filtered_stocks = []
-        for code in target_stocks:
-            # 检查触发记录
-            if code in trigger_prices:
-                untriggered_tiers = [t for t in trigger_prices[code] if not t['triggered']]
-                # 如果存在未触发的层级，加入筛选结果
-                if untriggered_tiers:
-                    filtered_stocks.append(code)
-            # 无记录时视为新股票
+        if trigger_prices:
+            print("内存中存在触发价格数据，直接使用")
+            all_codes = list(set(trigger_prices.keys()))
+            for code in all_codes:
+                filtered_stocks.append(code)
+        else:
+            target_stocks = scan.get_target_stocks(False)
+            # 过滤已持仓股票
+            positions = xt_trader.query_stock_positions(acc)
+            hold_stocks = {pos.stock_code for pos in positions}
+            file_data = load_trigger_prices_from_csv()
+            if file_data:
+                trigger_prices.update(file_data)
+                # 动态过滤：只处理有未触发档位的股票
+                for code in target_stocks:
+                    # 检查触发记录
+                    if code in trigger_prices:
+                        untriggered_tiers = [t for t in trigger_prices[code] if not t['triggered']]
+                        # 如果存在未触发的层级，加入筛选结果
+                        if untriggered_tiers:
+                            filtered_stocks.append(code)
+                    # 无记录时视为新股票
+                    else:
+                        if code not in hold_stocks:
+                            filtered_stocks.append(code)
             else:
-                if code not in hold_stocks:
-                    filtered_stocks.append(code)
+                # 没有csv数据时单独计算每个股的档位价格
+                for stock_code in filtered_stocks:
+                    precompute_trigger_prices(stock_code)
+                save_trigger_prices_to_csv(trigger_prices)
 
         if not filtered_stocks:
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
 
-        # 6. 订阅价格监控
+        # 订阅价格监控
         subscribe_target_stocks(filtered_stocks)
-        if not loaded_data:
-            # 没有csv数据时单独计算每个股的档位价格
-            for stock_code in filtered_stocks:
-                precompute_trigger_prices(stock_code)
-            save_trigger_prices_to_csv(trigger_prices)
+
+        # 验证触发价格数据完整性
+        valid_stocks = []
         for code in filtered_stocks:
             if code not in trigger_prices or not trigger_prices[code]:
                 print(f"警告: {code} 未生成触发价格层级")
+            else:
+                valid_stocks.append(code)
+        if not valid_stocks:
+            print("⚠ 所有目标股票均缺少有效触发价格数据")
+            return
 
     except Exception as e:
         print(f"‼ 9:35任务执行异常: {str(e)}")
+        import traceback
+        traceback.print_exc()
     finally:
         print("===== 9:35定时任务完成 =====")
 
@@ -696,15 +708,15 @@ if __name__ == "__main__":
 
     check_execute()
 
-    # scheduler.add_job(
-    #     sell_breached_stocks,
-    #     trigger=CronTrigger(
-    #         hour=14,
-    #         minute=54,
-    #         day_of_week='mon-fri'
-    #     ),
-    #     misfire_grace_time=60
-    # )
+    scheduler.add_job(
+        sell_breached_stocks,
+        trigger=CronTrigger(
+            hour=14,
+            minute=54,
+            day_of_week='mon-fri'
+        ),
+        misfire_grace_time=60
+    )
     print("定时任务已启动：每日14:54执行MA5止损检测")
 
     scheduler.add_job(

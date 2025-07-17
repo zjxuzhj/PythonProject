@@ -59,21 +59,21 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
                 continue
 
         # 条件2：排除涨停后第一天最高价大于9%但收盘价低于5%的股票
-        next_day_idx = df.index.get_loc(day) + 1
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            base_price = df.loc[day, 'close']
-            if abs(base_price) < 1e-5:
-                continue
-
-            # 计算最高价涨幅和收盘价涨幅
-            high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
-            close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-
-            # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
-            if high_change < 9 :
-            # if high_change < 9 and close_change <1:
-                continue
+        # next_day_idx = df.index.get_loc(day) + 1
+        # if next_day_idx < len(df):
+        #     next_day = df.index[next_day_idx]
+        #     base_price = df.loc[day, 'close']
+        #     if abs(base_price) < 1e-5:
+        #         continue
+        #
+        #     # 计算最高价涨幅和收盘价涨幅
+        #     high_change = (df.loc[next_day, 'high'] - base_price) / base_price * 100
+        #     close_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
+        #
+        #     # 如果最高价涨幅>9%且收盘价涨幅<5%，则排除
+        #     if high_change < 9 :
+        #     # if high_change < 9 and close_change <1:
+        #         continue
 
         #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
         if next_day_idx < len(df):
@@ -131,7 +131,7 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
 
         # 条件7：排除市值大于400亿的股票
         # market_value = query_tool.get_stock_market_value(symbol)
-        # if market_value > 400:
+        # if market_value > 250:
         #     continue
 
         valid_days.append(day)
@@ -533,6 +533,100 @@ def save_trades_excel(result_df):
         worksheet.freeze_panes(1, 0)
         # 4. 自动筛选
         worksheet.autofilter(0, 0, len(result_df), len(result_df.columns) - 1)
+
+        # 2. 添加单支股票表现统计表
+        # 确保有交易数据
+        if not result_df.empty:
+            # 创建分组统计
+            stock_stats = result_df.groupby(['股票代码', '股票名称']).agg(
+                交易次数=('收益率(%)', 'size'),
+                胜率=('收益率(%)', lambda x: (x > 0).sum() / len(x)),
+                平均收益=('收益率(%)', lambda x: x[x > 0].mean() if any(x > 0) else 0),
+                平均亏损=('收益率(%)', lambda x: x[x <= 0].mean() if any(x <= 0) else 0),
+                总收益=('收益率(%)', lambda x: x.sum()),
+                总盈利=('收益率(%)', lambda x: x[x > 0].sum()),
+                总亏损=('收益率(%)', lambda x: x[x <= 0].sum()),
+                胜利次数=('收益率(%)', lambda x: (x > 0).sum()),
+                失败次数=('收益率(%)', lambda x: (x <= 0).sum())
+            ).reset_index()
+
+            # 格式化胜率为百分比
+            stock_stats['胜率'] = stock_stats['胜率'].apply(lambda x: f"{x * 100:.2f}%")
+
+            # 添加列：盈亏比
+            stock_stats['盈亏比'] = stock_stats.apply(
+                lambda row: abs(row['平均收益'] / row['平均亏损']) if row['平均亏损'] != 0 else np.inf,
+                axis=1
+            )
+
+            # 对盈亏比进行格式化
+            def format_profit_ratio(value):
+                if value == np.inf:
+                    return "无穷大"
+                elif value > 100:
+                    return f"{value:.0f}:1"
+                else:
+                    return f"{value:.2f}:1"
+
+            stock_stats['盈亏比'] = stock_stats['盈亏比'].apply(format_profit_ratio)
+
+            # 重命名列名
+            stock_stats = stock_stats.rename(columns={
+                '平均收益': '平均收益(%)',
+                '平均亏损': '平均亏损(%)',
+                '总收益': '总收益(%)',
+                '总盈利': '总盈利(%)',
+                '总亏损': '总亏损(%)'
+            })
+
+            # 重新排列列顺序
+            stock_stats = stock_stats[['股票代码', '股票名称', '交易次数', '胜利次数', '失败次数',
+                                       '胜率', '平均收益(%)', '平均亏损(%)', '盈亏比',
+                                       '总收益(%)', '总盈利(%)', '总亏损(%)']]
+
+            # 写入新工作表
+            stock_stats.to_excel(writer, sheet_name='个股表现统计', index=False)
+
+            # 获取股票统计表工作表
+            stock_worksheet = writer.sheets['个股表现统计']
+
+            # 设置股票统计表的格式
+            # 列宽自适应
+            for idx, col in enumerate(stock_stats.columns):
+                max_len = max(stock_stats[col].astype(str).map(len).max(), len(col)) + 2
+                stock_worksheet.set_column(idx, idx, max_len)
+
+            # 添加条件格式（正收益绿色，负收益红色）
+            # 获取需要格式化的列索引
+            num_cols = [stock_stats.columns.get_loc(col) for col in
+                        ['平均收益(%)', '平均亏损(%)', '总收益(%)', '总盈利(%)', '总亏损(%)']]
+
+            for col_idx in num_cols:
+                # 为总亏损应用红色格式（因为它本身是负值）
+                if stock_stats.columns[col_idx] == '总亏损(%)':
+                    stock_worksheet.conditional_format(
+                        1, col_idx, len(stock_stats), col_idx,
+                        {
+                            'type': 'data_bar',
+                            'bar_color': '#FF0000',
+                            'bar_border_color': '#FF0000'
+                        }
+                    )
+                else:
+                    stock_worksheet.conditional_format(
+                        1, col_idx, len(stock_stats), col_idx,
+                        {
+                            'type': 'data_bar',
+                            'bar_color': '#00B050',
+                            'bar_border_color': '#00B050'
+                        }
+                    )
+
+            # 冻结首行
+            stock_worksheet.freeze_panes(1, 0)
+            # 自动筛选
+            stock_worksheet.autofilter(0, 0, len(stock_stats), len(stock_stats.columns) - 1)
+
         # 5. 添加统计页
         stats_df = pd.DataFrame({
             '统计指标': ['总交易次数', '胜率', '平均盈利', '平均亏损', '盈亏比'],
@@ -559,7 +653,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = False # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = True # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:
