@@ -112,7 +112,7 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 continue  # 触发排除
 
-        # 条件7：排除市值大于400亿的股票
+        # 条件7：排除市值大于250亿的股票
         market_value = query_tool.get_stock_market_value(symbol)
         if market_value > 250:
             continue
@@ -150,9 +150,9 @@ def simulate_ma5_order_prices(df, current_day, lookback_days=5):
     prev_data = df.iloc[current_idx - lookback_days: current_idx]
 
     try:
-        price1 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
-        price2 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
-        price3 = modify_last_days_and_calc_ma5(prev_data,1.03)['MA5'].iloc[-1]
+        price1 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
+        price2 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
+        price3 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
 
         return price1, price2, price3
     except Exception as e:
@@ -249,8 +249,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         if not (order1_valid or order2_valid or order3_valid):
             continue
 
-        if price1>=day_open:
-            order1_valid=True
+        if price1 >= day_open:
+            order1_valid = True
 
         # 计算实际成交价（考虑开盘价）
         actual_price1 = calculate_actual_fill_price(day_open, price1) if order1_valid else None
@@ -269,10 +269,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
         # 计算加权平均买入价
         weighted_avg_price = (
-            (position_percentage1 * actual_price1 if actual_price1 else 0) +
-            (position_percentage2 * actual_price2 if actual_price2 else 0) +
-            (position_percentage3 * actual_price3 if actual_price3 else 0)
-        ) / total_percentage
+                                     (position_percentage1 * actual_price1 if actual_price1 else 0) +
+                                     (position_percentage2 * actual_price2 if actual_price2 else 0) +
+                                     (position_percentage3 * actual_price3 if actual_price3 else 0)
+                             ) / total_percentage
 
         buy_day_timestamp = pd.Timestamp(current_day)
         days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
@@ -386,10 +386,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     '涨停后天数': days_after_limit,
                     '持有天数': hold_days,
                     '实际均价': round(weighted_avg_price, 2),
-                     '卖出价': round(sell_price, 2),
+                    '卖出价': round(sell_price, 2),
                     '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                     '收益率(%)': round(profit_pct, 2),
-                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
                     '卖出原因': '炸板卖出',
                     '挂单价1': round(price1, 2) if price1 else None,
@@ -405,9 +405,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                 })
                 break
 
-
-            # 3. 跌破五日线卖出
-            if sell_data['close'] < sell_data['ma5']:
+            # 3. 跌破五日线卖出(改为跌破五日线千分之三卖出)
+            # if sell_data['close'] < sell_data['ma5']:
+            if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= -0.004:
                 sell_price = sell_data['close']
                 profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
@@ -422,7 +422,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     '卖出价': round(sell_price, 2),
                     '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                     '收益率(%)': round(profit_pct, 2),
-                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
                     '卖出原因': '跌破五日线',
                     '挂单价1': round(price1, 2) if price1 else None,
@@ -454,7 +454,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                     '卖出价': round(sell_price, 2),
                     '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
                     '收益率(%)': round(profit_pct, 2),
-                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
+                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
                     '卖出原因': '持有超限',
                     '挂单价1': round(price1, 2) if price1 else None,
@@ -636,7 +636,7 @@ if __name__ == '__main__':
     total = len(stock_list)
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = False # 是否使用19年1月数据回测，否则使用24年2月
+    is_19_data_test = False  # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
         df, _ = get_stock_data(code, is_19_data_test)
         if df.empty:

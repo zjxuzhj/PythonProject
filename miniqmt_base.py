@@ -106,17 +106,18 @@ def check_ma5_breach(positions, position_available_dict):
                 current_date=current_time,
                 current_price=current_price
             )
-            if ma5_price is None:
+            if ma5_price is None or ma5_price == 0:
                 continue
 
-            if round(current_price, 2) < round(ma5_price, 2):
+            deviation = (current_price - ma5_price) / ma5_price
+            if deviation <= -0.004:  # 跌幅超过五日线的0.4%卖出
                 stock_name = query_tool.get_name_by_code(stock_code)
                 breach_list.append({
                     '代码': stock_code,
                     '名称': stock_name,
                     '持有数量': hold_vol,
                     '当前价格': current_price,
-                    'MA5价格': ma5_price
+                    'MA5价格': ma5_price,
                 })
         except Exception as e:
             print(f"检测异常 {stock_code}: {str(e)}")
@@ -669,7 +670,7 @@ if __name__ == "__main__":
             minute=10,
             day_of_week='mon-fri'
         ),
-        misfire_grace_time=60
+        misfire_grace_time=300
     )
     print("定时任务已添加：每日9:10执行盘前挂单")
 
@@ -712,7 +713,7 @@ if __name__ == "__main__":
         sell_breached_stocks,
         trigger=CronTrigger(
             hour=14,
-            minute=54,
+            minute=56,
             day_of_week='mon-fri'
         ),
         misfire_grace_time=60

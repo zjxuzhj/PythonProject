@@ -150,7 +150,7 @@ def find_recent_first_limit_up(code, old_df, days=7):
                 print(f"条件6触发：排除{code}，涨停日{day}")
                 continue
 
-        # 条件7：排除市值大于400亿的股票
+        # 条件7：排除市值大于250亿的股票
         market_value = query_tool.get_stock_market_value(code)
         if market_value > 250:
             continue
