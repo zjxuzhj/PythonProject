@@ -53,9 +53,9 @@ def get_tiers_by_risk_level():
         ]
     elif RISK_LEVEL == 'low':
         return [
-            {'predict_ratio': 1.03, 'ratio': 0.40},
-            {'predict_ratio': 1.03, 'ratio': 0.35},
-            {'predict_ratio': 1.03, 'ratio': 0.25}
+            {'predict_ratio': 1.04, 'ratio': 0.40},
+            {'predict_ratio': 1.04, 'ratio': 0.35},
+            {'predict_ratio': 1.04, 'ratio': 0.25}
         ]
     else:  # 默认中风险
         return [

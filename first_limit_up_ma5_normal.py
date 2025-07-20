@@ -19,7 +19,7 @@ class StrategyConfig:
     MAX_MARKET_CAP_BILLIONS = 250 # 条件7: 最大市值过滤（单位：亿）
 
     # --- 买入参数 ---
-    PREDICT_PRICE_INCREASE_RATIO = 1.05 # 用于预测MA5的价格涨幅
+    PREDICT_PRICE_INCREASE_RATIO = 1.04 # 用于预测MA5的价格涨幅
     POSITION_ALLOCATION: Tuple[float, float, float] = (0.4, 0.35, 0.25) # 三个挂单的仓位分配
 
     # --- 卖出参数 ---
