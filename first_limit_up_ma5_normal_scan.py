@@ -192,8 +192,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
             never_touched = False
             break  # 一旦触及即退出循环
 
-    return never_touched and always_above_base
-    # return always_above_base
+    # return never_touched and always_above_base
+    return always_above_base
 
 
 def get_target_stocks(isNeedLog=True):
@@ -266,6 +266,9 @@ def get_target_stocks(isNeedLog=True):
         code, name, limit_date, theme = stock  # 拆包对象
 
         # 排除板块
+        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
+            excluded_stocks.add(code)
+            continue
         if "证券" in theme:  # 牛市旗手，跟不上，不参与
             excluded_stocks.add(code)
             continue
@@ -367,9 +370,85 @@ def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
     return file_path
 
 
+def backtest_on_date(target_date, isNeedLog=True):
+    """根据指定日期进行回测，返回该日期的目标股票列表"""
+    # 确保target_date是datetime.date类型
+    if isinstance(target_date, str):
+        target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+
+    # ========== 初始化变量 ==========
+    excluded_stocks = set()
+    limit_up_stocks = []
+    filtered_stocks = query_tool.get_all_filter_stocks()
+    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
+    today = target_date  # 使用目标日期而非当前日期
+
+    # ========== 处理每只股票 ==========
+    for idx, (code, name) in enumerate(stock_list, 1):
+        df, _ = get_stock_data(code, isNeedLog)
+        if df.empty:
+            continue
+
+        # 关键修改：过滤掉目标日期之后的数据
+        df = df[df.index < pd.Timestamp(target_date)]
+
+        if pd.isna(df["close"].iloc[-1]):
+            if isNeedLog:
+                print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
+            continue
+
+        # 排除当前股价>90的股票
+        latest_close = df.iloc[-1]['close']
+        if latest_close > 90:
+            continue
+
+        theme = query_tool.get_theme_by_code(code)
+        first_limit_days = find_recent_first_limit_up(code, df, days=4)
+
+        for day in first_limit_days:
+            if generate_signals(df, day, code, name):
+                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
+
+    # ========== 分组排序逻辑 ==========
+    days_groups = {}
+    print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
+
+    for stock in limit_up_stocks:
+        code, name, limit_date, theme = stock
+        # 排除特定板块和股票
+        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
+            excluded_stocks.add(code)
+            continue
+        if code in ["sz002506", "sz002153"]:  # 特定股票排除
+            excluded_stocks.add(code)
+            continue
+
+        limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
+        delta_days = (today - limit_day).days
+        if delta_days not in days_groups:
+            days_groups[delta_days] = []
+        days_groups[delta_days].append(stock)
+
+    # ========== 生成目标股票列表 ==========
+    target_stocks = set()
+    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
+
+    for delta, stocks in sorted_days:
+        for stock in stocks:
+            code, name, date, theme = stock
+            standard_code = getAllStockCsv.convert_to_standard_format(code)
+            target_stocks.add(standard_code)
+            if isNeedLog:
+                print("  " + "   ".join(stock) + "  ")
+
+    return list(target_stocks)
+
 if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks = get_target_stocks()
+    #
+    # target_date = "2025-07-16"
+    # target_stocks = backtest_on_date(target_date)
 
     # 打印结果
     print("\n目标股票列表:")
