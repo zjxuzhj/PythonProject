@@ -47,7 +47,11 @@ def find_recent_first_limit_up(code, old_df, days=7):
     df['is_limit'] = df['close'] >= df['limit_price']
 
     # 筛选最近days个交易日内的涨停日（核心筛选范围）
-    recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
+    # recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
+    # 只筛选第二天和第四天）：
+    target_days = [end_date - pd.offsets.BDay(1), end_date - pd.offsets.BDay(3)]
+    recent_days_mask = df.index.isin(target_days)
+
     limit_days = df[df['is_limit'] & recent_days_mask].index.tolist()
 
     # 排除涨停日是最后一天的情况

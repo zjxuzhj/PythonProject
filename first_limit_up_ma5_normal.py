@@ -4,32 +4,80 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-
+from dataclasses import dataclass, asdict
+from typing import List, Optional, Tuple
 import getAllStockCsv
 
+@dataclass
+class StrategyConfig:
+    """集中存放所有策略参数，便于统一调整。"""
+    # --- 数据设置 ---
+    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
 
-def get_stock_data(symbol, is_19_data_test=False):
+    # --- 首板涨停识别参数 ---
+    MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
+    MAX_MARKET_CAP_BILLIONS = 250 # 条件7: 最大市值过滤（单位：亿）
+
+    # --- 买入参数 ---
+    PREDICT_PRICE_INCREASE_RATIO = 1.05 # 用于预测MA5的价格涨幅
+    POSITION_ALLOCATION: Tuple[float, float, float] = (0.4, 0.35, 0.25) # 三个挂单的仓位分配
+
+    # --- 卖出参数 ---
+    SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004 # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
+
+
+def simulate_ma5_order_prices(df, current_day,config: StrategyConfig, lookback_days=5):
+    """模拟预测买入日MA5值，然后计算三个挂单价格"""
+    current_idx = df.index.get_loc(current_day)
+
+    if current_idx < lookback_days:
+        return None, None, None, None
+
+    prev_data = df.iloc[current_idx - lookback_days: current_idx]
+    predict_ratio = config.PREDICT_PRICE_INCREASE_RATIO
+
+    try:
+        price1 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
+        price2 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
+        price3 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
+
+        return price1, price2, price3
+    except Exception as e:
+        print(f"预测MA5失败: {e}")
+        return None, None, None, None
+
+
+def get_stock_data(symbol, config: StrategyConfig):
     """带本地缓存的数据获取"""
-    date = "20190101" if is_19_data_test else "20240201"
-    cache_path_name = "back_test_data_cache" if is_19_data_test else "data_cache"
-    file_name = f"stock_{symbol}_{date}.parquet"
-    cache_path = os.path.join(cache_path_name, file_name)
-    if os.path.exists(cache_path):
-        try:
-            df = pd.read_parquet(cache_path, engine='fastparquet')
-            print(f"从缓存加载数据：{symbol}")
-            return df, True
-        except Exception as e:
-            print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
-    print(f"数据获取失败：{symbol}")
-    return pd.DataFrame()
+    date_str = "20190101" if config.USE_2019_DATA else "20240201"
+    cache_dir = "back_test_data_cache" if config.USE_2019_DATA else "data_cache"
+    file_path = os.path.join(cache_dir, f"stock_{symbol}_{date_str}.parquet")
 
+    if not os.path.exists(file_path):
+        print(f"数据文件未找到: {symbol} at {file_path}")
+        return None
 
-def find_first_limit_up(symbol, df, is_19_data_test=False):
+    try:
+        df = pd.read_parquet(file_path, engine='fastparquet')
+        print(f"已从缓存加载数据: {symbol}")
+        return df, True
+    except Exception as e:
+        print(f"读取缓存文件失败 {file_path}: {e}")
+        return None
+
+def _get_market_type(symbol: str) -> str:
+    """根据股票代码判断所属板块。"""
+    if symbol.startswith(("688", "689")):
+        return "科创板"
+    if symbol.startswith(("300", "301")):
+        return "创业板"
+    return "主板"
+
+def find_first_limit_up(symbol, df, config: StrategyConfig):
     """识别首板涨停日并排除连板"""
-    market_type = "科创板" if symbol.startswith(("688", "689")) else "创业板" if symbol.startswith(
-        ("300", "301")) else "主板"
-    limit_rate = 0.20 if market_type in ["创业板", "科创板"] else 0.10
+    market_type = _get_market_type(symbol)
+    limit_rate = config.MARKET_LIMIT_RATES[market_type]
+
     # 计算涨停价
     df['prev_close'] = df['close'].shift(1)
     df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
@@ -39,7 +87,7 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
     valid_days = []
     for day in limit_days:
         # 日期过滤条件（方便回测）
-        if day < pd.Timestamp('2024-03-01') and not is_19_data_test:
+        if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
 
         # 条件1：排除后一日涨停
@@ -114,7 +162,7 @@ def find_first_limit_up(symbol, df, is_19_data_test=False):
 
         # 条件7：排除市值大于250亿的股票
         market_value = query_tool.get_stock_market_value(symbol)
-        if market_value > 250:
+        if market_value > config.MAX_MARKET_CAP_BILLIONS:
             continue
 
         valid_days.append(day)
@@ -140,32 +188,12 @@ def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
     return modified_df
 
 
-def simulate_ma5_order_prices(df, current_day, lookback_days=5):
-    """模拟预测买入日MA5值，然后计算三个挂单价格"""
-    current_idx = df.index.get_loc(current_day)
-
-    if current_idx < lookback_days:
-        return None, None, None, None
-
-    prev_data = df.iloc[current_idx - lookback_days: current_idx]
-
-    try:
-        price1 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
-        price2 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
-        price3 = modify_last_days_and_calc_ma5(prev_data, 1.03)['MA5'].iloc[-1]
-
-        return price1, price2, price3
-    except Exception as e:
-        print(f"预测MA5失败: {e}")
-        return None, None, None, None
-
-
 def calculate_actual_fill_price(open_price, order_price):
     """计算实际成交价：如果开盘价低于挂单价，以开盘价成交"""
     return min(open_price, order_price) if order_price is not None else None
 
 
-def generate_signals(df, first_limit_day, stock_code, stock_name):
+def generate_signals(df, first_limit_day, stock_code, stock_name, config: StrategyConfig):
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
@@ -194,7 +222,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
     df['ma5'] = df['close'].rolling(5).mean()
 
-    for offset in range(2, 5):  # 检查涨停后第2、3、4、5天
+    # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
+    for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
@@ -231,7 +260,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
                           (current_data['high'] >= current_data['ma5'])
 
         # 计算三个挂单价格
-        price1, price2, price3 = simulate_ma5_order_prices(df, current_day)
+        price1, price2, price3 = simulate_ma5_order_prices(df, current_day, config)
         if price1 is None:
             continue
 
@@ -258,9 +287,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         actual_price3 = calculate_actual_fill_price(day_open, price3) if order3_valid else None
 
         # 仓位分配比例（修正为正确的比例）
-        position_percentage1 = 0.5 if actual_price1 else 0.0
-        position_percentage2 = 0.25 if actual_price2 else 0.0
-        position_percentage3 = 0.25 if actual_price3 else 0.0
+        position_percentage1 = config.POSITION_ALLOCATION[0] if actual_price1 else 0.0
+        position_percentage2 = config.POSITION_ALLOCATION[1] if actual_price2 else 0.0
+        position_percentage3 = config.POSITION_ALLOCATION[2] if actual_price3 else 0.0
 
         # 确保总仓位不超过100%
         total_percentage = position_percentage1 + position_percentage2 + position_percentage3
@@ -407,7 +436,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
 
             # 3. 跌破五日线卖出(改为跌破五日线千分之三卖出)
             # if sell_data['close'] < sell_data['ma5']:
-            if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= -0.004:
+            if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= config.SELL_ON_MA_BREAKDOWN_THRESHOLD:
                 sell_price = sell_data['close']
                 profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
@@ -472,6 +501,34 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
         break  # 只处理第一个符合条件的买入点
     return signals
 
+
+def create_daily_holdings(result_df):
+    # 转换日期格式
+    result_df['买入日'] = pd.to_datetime(result_df['买入日'])
+    result_df['卖出日'] = pd.to_datetime(result_df['卖出日'])
+
+    # 生成日期范围
+    min_date = result_df['买入日'].min()
+    max_date = result_df['卖出日'].max()
+    date_range = pd.date_range(min_date, max_date)
+
+    # 创建持仓字典
+    holdings = {}
+    for date in date_range:
+        # 筛选当日持仓的股票
+        held_stocks = result_df[
+            (result_df['买入日'] <= date) &
+            (result_df['卖出日'] >= date)
+            ]['股票代码'].tolist()
+
+        # 格式化为字符串
+        holdings[date] = {
+            '日期': date.strftime('%Y-%m-%d'),
+            '持有股票': ','.join(held_stocks),
+            '数量': len(held_stocks)
+        }
+
+    return pd.DataFrame(holdings.values())
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
@@ -610,6 +667,18 @@ def save_trades_excel(result_df):
             # 自动筛选
             stock_worksheet.autofilter(0, 0, len(stock_stats), len(stock_stats.columns) - 1)
 
+        holdings_df = create_daily_holdings(result_df)
+        holdings_df.to_excel(writer, sheet_name='每日持仓情况', index=False)
+        holdings_worksheet = writer.sheets['每日持仓情况']
+
+        # 设置持仓表格式
+        for idx, col in enumerate(holdings_df.columns):
+            max_len = max(holdings_df[col].astype(str).map(len).max(), len(col)) + 2
+            holdings_worksheet.set_column(idx, idx, max_len)
+
+        holdings_worksheet.freeze_panes(1, 0)
+        holdings_worksheet.autofilter(0, 0, len(holdings_df), len(holdings_df.columns) - 1)
+
         # 5. 添加统计页
         stats_df = pd.DataFrame({
             '统计指标': ['总交易次数', '胜率', '平均盈利', '平均亏损', '盈亏比'],
@@ -628,23 +697,23 @@ def save_trades_excel(result_df):
 if __name__ == '__main__':
     total_start = time.perf_counter()  # 记录程序开始时间
 
-    all_signals = []
+
+    config = StrategyConfig()
     query_tool = getAllStockCsv.StockQuery()
     # 加载股票列表并过滤
-    filtered_stocks = query_tool.get_all_filter_stocks()
-    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
-    total = len(stock_list)
+    stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
+
+    all_signals = []
     stock_process_start = time.perf_counter()
 
-    is_19_data_test = False  # 是否使用19年1月数据回测，否则使用24年2月
     for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code, is_19_data_test)
+        df, _ = get_stock_data(code, config)
         if df.empty:
             continue
 
-        first_limit_days = find_first_limit_up(code, df, is_19_data_test)
+        first_limit_days = find_first_limit_up(code, df, config)
         for day in first_limit_days:
-            signals = generate_signals(df, day, code, name)
+            signals = generate_signals(df, day, code, name, config)
             all_signals.extend(signals)
 
     stock_process_duration = time.perf_counter() - stock_process_start
@@ -652,6 +721,21 @@ if __name__ == '__main__':
     # 生成统计报表
     result_df = pd.DataFrame(all_signals)
     if not result_df.empty:
+        # 把原有的买入日从年月日类型转为年月日时分秒，确保买入日为日期类型
+        result_df['买入日'] = pd.to_datetime(result_df['买入日'])
+        # 获取最近三个月的截止日期（含当月）
+        current_date = datetime.now()
+        three_months_ago = current_date - pd.DateOffset(months=4)
+
+        # 过滤最近三个月的交易记录
+        recent_trades = result_df[result_df['买入日'] >= three_months_ago]
+
+        # 按月分组计算收益总和
+        monthly_returns = recent_trades.resample('ME', on='买入日')['收益率(%)'].sum()
+        monthly_returns = monthly_returns.round(2)  # 保留两位小数
+        monthly_summary = [f"{month.month}月 {ret}%" for month, ret in monthly_returns.items()]
+        monthly_str = "，".join(monthly_summary)  # 中文逗号分隔
+
         win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
         avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
         avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
@@ -662,11 +746,9 @@ if __name__ == '__main__':
                 1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
         print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
-        print(f"总交易次数: {len(result_df)}")
-        print(f"胜率: {win_rate:.2f}%")
-        print(f"平均盈利: {avg_win:.2f}% | 平均亏损: {avg_loss:.2f}% | 平均持有天数: {avg_hold_days:.2f}")
-        print(f"盈亏比: {profit_ratio:.2f}:1")
-        print(f"期望收益: {get_money:.3f}")
+        print(
+            f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
+        print(f"近三月收益：{monthly_str}")
 
         # 示例输出
         print("\n\033[1m最近5笔交易记录:\033[0m")
@@ -675,6 +757,7 @@ if __name__ == '__main__':
         print("未产生有效交易信号")
 
     if not result_df.empty:
+        result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
         save_start = time.perf_counter()  # 记录Excel保存开始时间
         save_trades_excel(result_df)
         save_duration = time.perf_counter() - save_start
