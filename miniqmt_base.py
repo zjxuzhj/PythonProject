@@ -529,6 +529,9 @@ def adjust_orders_at_935():
                         if code not in hold_stocks:
                             filtered_stocks.append(code)
             else:
+                for code in target_stocks:
+                    if code not in hold_stocks:
+                        filtered_stocks.append(code)
                 # 没有csv数据时单独计算每个股的档位价格
                 for stock_code in filtered_stocks:
                     precompute_trigger_prices(stock_code)
@@ -600,7 +603,7 @@ def cancel_all_pending_orders():
     for order in orders:
         if can_cancel_order_status(order.order_status):
             cancel_result = xt_trader.cancel_order_stock_async(acc, order.order_id)
-            if cancel_result == 0:
+            if cancel_result >= 0:
                 success_count += 1
                 print(f"撤单成功：{order.stock_code} {order.order_volume}股")
 
