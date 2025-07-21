@@ -20,7 +20,9 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算 统一修改点
+PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算
+PER_FOURTH_STOCK_TOTAL_BUDGET = 25000  # 涨停后第四天的每只股票的总买入预算
+daily_fourth_day_stocks = set() # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
@@ -243,6 +245,12 @@ def sell_breached_stocks():
 
 
 def precompute_trigger_prices(stock_code):
+    # 确定股票类型和对应预算
+    if stock_code in daily_fourth_day_stocks:
+        total_budget = PER_FOURTH_STOCK_TOTAL_BUDGET
+        print(f"⭐ {stock_code} 是第四天股票，使用专用预算")
+    else:
+        total_budget = PER_STOCK_TOTAL_BUDGET
     """预计算各层MA5触发价格"""
     current_tiers = get_tiers_by_risk_level()
     base_ma5 = get_ma5_price(stock_code)
@@ -257,7 +265,7 @@ def precompute_trigger_prices(stock_code):
         trigger_price = round(modified_df['MA5'].iloc[-1], 2)
 
         # 计算预估挂单数量（100股整数倍）
-        tier_budget = PER_STOCK_TOTAL_BUDGET * tier['ratio']  # 层级预算
+        tier_budget = total_budget * tier['ratio']  # 层级预算
         estimated_shares = int(tier_budget // trigger_price) // 100 * 100  # 取整为100的倍数
 
         # 打印触发价格和预估挂单数量
@@ -371,10 +379,17 @@ def process_stock_quote(stock_code, current_price, current_time):
 
 def execute_trigger_order(name_display, stock_code, tier):
     """执行触发挂单"""
+    # 确定股票类型和对应预算
+    if stock_code in daily_fourth_day_stocks:
+        total_budget = PER_FOURTH_STOCK_TOTAL_BUDGET
+        prefix = "⚡⚡⚡"  # 特殊标记
+    else:
+        total_budget = PER_STOCK_TOTAL_BUDGET
+        prefix = "⚡"
     # 动态计算可用资金（每次触发时刷新）
     refresh_account_status()
     # 计算实际可买金额（不超过层级预算）
-    available = min(PER_STOCK_TOTAL_BUDGET * tier['ratio'], available_cash)
+    available = min(total_budget * tier['ratio'], available_cash)
 
     # 计算可买数量（100股整数倍）
     buy_shares = int(available // (tier['price'] * 100)) * 100
@@ -391,7 +406,7 @@ def execute_trigger_order(name_display, stock_code, tier):
         buy_shares, xtconstant.FIX_PRICE,
         tier['price'], 'MA5触发策略', ''
     )
-    print(f"⚡触发挂单：{name_display} {buy_shares}股 @ {tier['price']}")
+    print(f"{prefix}触发挂单：{name_display} {buy_shares}股 @ {tier['price']}")
 
     # 立即保存更新后的触发状态
     save_trigger_prices_to_csv(trigger_prices)
@@ -402,6 +417,7 @@ def daily_pre_market_orders():
         每日盘前“广度优先”挂单策略。
         为所有目标股票计算分层价格，然后只挂出每个股票的第一档买单。
         """
+    global daily_fourth_day_stocks
     try:
         now = datetime.now().strftime("%H:%M")
         print(f"\n===== 开始执行盘前广度优先挂单 ({now}) =====")
@@ -410,7 +426,8 @@ def daily_pre_market_orders():
         refresh_account_status()
 
         # 2. 获取目标股票列表，并过滤掉已持仓的
-        target_stocks = scan.get_target_stocks(False)
+        target_stocks, fourth_day_stocks = scan.get_target_stocks(False)
+        daily_fourth_day_stocks = set(fourth_day_stocks)
         filtered_stocks = [code for code in target_stocks if code not in hold_stocks]
 
         if not filtered_stocks:
@@ -492,6 +509,7 @@ def daily_pre_market_orders():
 
 def adjust_orders_at_935():
     """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
+    global daily_fourth_day_stocks
     try:
         print("\n===== 9:35定时任务启动 =====")
         # 撤掉所有未成交挂单
@@ -509,7 +527,8 @@ def adjust_orders_at_935():
             for code in all_codes:
                 filtered_stocks.append(code)
         else:
-            target_stocks = scan.get_target_stocks(False)
+            target_stocks, fourth_day_stocks = scan.get_target_stocks(False)
+            daily_fourth_day_stocks = set(fourth_day_stocks)
             # 过滤已持仓股票
             positions = xt_trader.query_stock_positions(acc)
             hold_stocks = {pos.stock_code for pos in positions}
@@ -540,6 +559,39 @@ def adjust_orders_at_935():
         if not filtered_stocks:
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
+
+        # 检查并合并三个未触发的档位
+        for stock_code in filtered_stocks:
+            if stock_code in trigger_prices:
+                tiers = trigger_prices[stock_code]
+                # 确保有三个未触发的档位
+                if len(tiers) >= 3:  # 确保至少有三个档位
+                    # 获取所有未触发的档位
+                    untriggered_tiers = [t for t in tiers if not t['triggered']]
+
+                    # 如果有正好三个未触发的档位
+                    if len(untriggered_tiers) == 3:
+                        # 计算平均价格
+                        avg_price = sum(t['price'] for t in untriggered_tiers) / 3
+
+                        # 创建新的合并档位
+                        new_tier = {
+                            'price': round(avg_price, 2),
+                            'ratio': sum(t['ratio'] for t in untriggered_tiers),  # 合并权重
+                            'triggered': False
+                        }
+
+                        # 删除原来的三个未触发档位，保留已触发的档位
+                        # 创建一个新的tiers列表，只保留已触发的档位，并添加新的合并档位
+                        new_tiers = [t for t in tiers if t['triggered']]
+                        new_tiers.append(new_tier)
+
+                        # 替换原来的层级列表
+                        trigger_prices[stock_code] = new_tiers
+                        print(f"已合并三个未触发档位: {stock_code} 新触发价={avg_price:.2f}")
+
+        # 保存更新后的触发价格
+        save_trigger_prices_to_csv(trigger_prices, True)
 
         # 订阅价格监控
         subscribe_target_stocks(filtered_stocks)

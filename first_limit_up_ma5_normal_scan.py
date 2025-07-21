@@ -7,6 +7,7 @@ import getAllStockCsv
 
 query_tool = getAllStockCsv.StockQuery()
 
+
 def get_stock_data(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
     cache_path = os.path.join("data_cache", file_name)
@@ -126,7 +127,6 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if historical_high * 0.95 <= recent_4day_high < historical_high:
                 continue  # 触发排除条件
 
-
         # 条件6：排除首板后第一个交易日放量阳线+第二个交易日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有首板第二个交易日数据
             # 获取首板次日（第一天）和次次日（第二天）数据
@@ -147,8 +147,8 @@ def find_recent_first_limit_up(code, old_df, days=7):
             # 条件6-2：第二日低开且未收复前日实体中点
             # 计算实体中点：开盘价和收盘价的平均（因为是阳线）
             midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
-            low_open_condition = (second_day_data['open'] < first_day_data['close']) # 低开
-            recover_condition = (second_day_data['close'] < midpoint) # 盘中最高点未达中点
+            low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
+            recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
 
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 print(f"条件6触发：排除{code}，涨停日{day}")
@@ -224,9 +224,11 @@ def get_target_stocks(isNeedLog=True):
                 today_latest = today_records.iloc[-1]
 
                 stocks_str = today_latest['目标股票']
+                fourth_stocks_str = today_latest['第四天股票']
                 target_stocks = stocks_str.split(',')
+                fourth_day_stocks = fourth_stocks_str.split(',')
                 print(f"交易时段直接读取当日数据：{len(target_stocks)}只股票")
-                return target_stocks
+                return target_stocks, fourth_day_stocks
 
     # ========== 当无当日数据时执行 ==========
     excluded_stocks = set()
@@ -252,7 +254,7 @@ def get_target_stocks(isNeedLog=True):
 
         theme = query_tool.get_theme_by_code(code)
         # 买入距离涨停板3天内的票（越近胜率越高），计划day4，改为1.03提前买入后，day4的胜率更高
-        first_limit_days = find_recent_first_limit_up(code, df, days=4) # days=3 再也不要变了，晚了就不要了，不要强行上仓位
+        first_limit_days = find_recent_first_limit_up(code, df, days=4)  # days=3 再也不要变了，晚了就不要了，不要强行上仓位
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
@@ -288,10 +290,10 @@ def get_target_stocks(isNeedLog=True):
         #     excluded_stocks.add(code)
         #     continue
         # 特定股票排除，切记少用
-        if "sz002506"==code: # 傻逼协鑫集成
+        if "sz002506" == code:  # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        if "sz002153"==code:
+        if "sz002153" == code:
             excluded_stocks.add(code)
             continue
         # if "sz001389"==code:
@@ -323,12 +325,20 @@ def get_target_stocks(isNeedLog=True):
             target_stocks.add(standard_code)
             print("  " + "   ".join(stock) + "  ")
 
+    # ===== 提取涨停后第四天的股票(delta_days=3) =====
+    fourth_day_stocks = set()
+    if 6 in days_groups:
+        for stock in days_groups[6]:
+            code, name, date, theme = stock
+            standard_code = getAllStockCsv.convert_to_standard_format(code)
+            fourth_day_stocks.add(standard_code)
+
     # 保存并返回新计算的数据
-    save_target_stocks(target_stocks, excluded_stocks)
-    return list(target_stocks)
+    save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks)
+    return list(target_stocks), list(fourth_day_stocks)
 
 
-def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
+def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, base_path="output"):
     """保存目标股票列表到CSV文件（股票代码按数字部分升序排序）"""
     os.makedirs(base_path, exist_ok=True)
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
@@ -347,9 +357,15 @@ def save_target_stocks(target_stocks, excluded_stocks, base_path="output"):
 
     stocks_str = ",".join(sorted_stocks)
 
+    fourth_day_str = ",".join(sorted(
+        fourth_day_stocks,
+        key=lambda x: int(''.join(filter(str.isdigit, x)))
+    )) if fourth_day_stocks else "无"
+
     today_df = pd.DataFrame({
         "日期": [current_date],
         "目标股票": [stocks_str],
+        "第四天股票": [fourth_day_str],
         "排除股票": [excluded_str]
     })
 
@@ -443,9 +459,10 @@ def backtest_on_date(target_date, isNeedLog=True):
 
     return list(target_stocks)
 
+
 if __name__ == '__main__':
     # 获取目标股票列表
-    target_stocks = get_target_stocks()
+    target_stocks, fourth_day_stocks = get_target_stocks()
     #
     # target_date = "2025-07-16"
     # target_stocks = backtest_on_date(target_date)
@@ -455,3 +472,8 @@ if __name__ == '__main__':
     for stock in target_stocks:
         print(stock)
     print(f"\n总数: {len(target_stocks)}只股票")
+
+    print("\n目标股票列表:")
+    for stock in fourth_day_stocks:
+        print(stock)
+    print(f"\n总数: {len(fourth_day_stocks)}只股票")

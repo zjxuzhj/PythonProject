@@ -19,7 +19,7 @@ def can_cancel_order_status(status_code):
     return status_code in cancellable_statuses
 
 
-def save_trigger_prices_to_csv(trigger_prices):
+def save_trigger_prices_to_csv(trigger_prices,isAllRefresh=False):
     """将全局trigger_prices数据保存到CSV文件"""
     try:
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -48,7 +48,7 @@ def save_trigger_prices_to_csv(trigger_prices):
         df = df.sort_values(['stock_code', 'price'], ascending=[True, False])
 
         # 如果有历史文件，合并时保留最新触发状态
-        if os.path.exists(filename):
+        if os.path.exists(filename) and not isAllRefresh:
             existing_df = pd.read_csv(filename)
 
             # 仅当所有字段相同时才去重，保留最后一个（即最新状态）
