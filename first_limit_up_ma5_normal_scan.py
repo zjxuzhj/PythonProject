@@ -159,6 +159,14 @@ def find_recent_first_limit_up(code, old_df, days=7):
         if market_value > 250:
             continue
 
+        # 条件8 - 排除10日内涨停次数过多的股票
+        lookback_period_9 = 10
+        if day_idx >= lookback_period_9:
+            lookback_data_9 = df.iloc[day_idx - lookback_period_9: day_idx]
+            limit_up_count = (lookback_data_9['close'] >= lookback_data_9['limit_price']).sum()
+            if limit_up_count >= 4:
+                continue
+
         valid_days.append(day)
     return valid_days
 
@@ -464,8 +472,10 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "2025-07-16"
+    # target_date = "2025-07-21"
+    # fourth_day_stocks = []
     # target_stocks = backtest_on_date(target_date)
+
 
     # 打印结果
     print("\n目标股票列表:")
@@ -473,7 +483,7 @@ if __name__ == '__main__':
         print(stock)
     print(f"\n总数: {len(target_stocks)}只股票")
 
-    print("\n目标股票列表:")
+    print("\n第四天目标股票列表:")
     for stock in fourth_day_stocks:
         print(stock)
-    print(f"\n总数: {len(fourth_day_stocks)}只股票")
+    print(f"\n第四天总数: {len(fourth_day_stocks)}只股票")

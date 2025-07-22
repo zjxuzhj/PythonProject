@@ -1,12 +1,14 @@
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, asdict
-from typing import List, Optional, Tuple
+
 import getAllStockCsv
+
 
 @dataclass
 class StrategyConfig:
@@ -16,17 +18,17 @@ class StrategyConfig:
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
-    MAX_MARKET_CAP_BILLIONS = 250 # 条件7: 最大市值过滤（单位：亿）
+    MAX_MARKET_CAP_BILLIONS = 250  # 条件7: 最大市值过滤（单位：亿）
 
     # --- 买入参数 ---
-    PREDICT_PRICE_INCREASE_RATIO = 1.04 # 用于预测MA5的价格涨幅
-    POSITION_ALLOCATION: Tuple[float, float, float] = (0.4, 0.35, 0.25) # 三个挂单的仓位分配
+    PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
+    POSITION_ALLOCATION: Tuple[float, float, float] = (0.4, 0.35, 0.25)  # 三个挂单的仓位分配
 
     # --- 卖出参数 ---
-    SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004 # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
+    SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
 
 
-def simulate_ma5_order_prices(df, current_day,config: StrategyConfig, lookback_days=5):
+def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_days=5):
     """模拟预测买入日MA5值，然后计算三个挂单价格"""
     current_idx = df.index.get_loc(current_day)
 
@@ -65,6 +67,7 @@ def get_stock_data(symbol, config: StrategyConfig):
         print(f"读取缓存文件失败 {file_path}: {e}")
         return None
 
+
 def _get_market_type(symbol: str) -> str:
     """根据股票代码判断所属板块。"""
     if symbol.startswith(("688", "689")):
@@ -72,6 +75,7 @@ def _get_market_type(symbol: str) -> str:
     if symbol.startswith(("300", "301")):
         return "创业板"
     return "主板"
+
 
 def find_first_limit_up(symbol, df, config: StrategyConfig):
     """识别首板涨停日并排除连板"""
@@ -89,6 +93,8 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
         # 日期过滤条件（方便回测）
         if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
+
+        day_idx = df.index.get_loc(day)
 
         # 条件1：排除后一日涨停
         next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
@@ -126,14 +132,13 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
                     continue
 
         # 条件5：前高压制条件
-        day_idx = df.index.get_loc(day)
         if day_idx >= 20:  # 确保20日历史数据
             # 计算前高（20日最高价）
             historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
             # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
             recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
             if historical_high * 0.95 <= recent_4day_high < historical_high:
-                continue  # 触发排除条件
+                continue  # 触发排除除条件
 
         # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有第三日数据
@@ -163,6 +168,19 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
         # 条件7：排除市值大于250亿的股票
         market_value = query_tool.get_stock_market_value(symbol)
         if market_value > config.MAX_MARKET_CAP_BILLIONS:
+            continue
+
+        # 条件8 - 排除10日内涨停次数过多的股票
+        lookback_period_9 = 10
+        if day_idx >= lookback_period_9:
+            lookback_data_9 = df.iloc[day_idx - lookback_period_9: day_idx]
+            limit_up_count = (lookback_data_9['close'] >= lookback_data_9['limit_price']).sum()
+            if limit_up_count >= 4:
+                continue
+
+        roe = query_tool.get_stock_roe(symbol)
+        roe_condition = (roe is not None) & (pd.notna(roe)) & (roe < 0)
+        if (roe_condition):
             continue
 
         valid_days.append(day)
@@ -222,7 +240,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
     df['ma5'] = df['close'].rolling(5).mean()
 
-    # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
+    # for offset in range(2,3):  # 检查涨停后第2、3、4、5天
     for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
@@ -530,6 +548,7 @@ def create_daily_holdings(result_df):
 
     return pd.DataFrame(holdings.values())
 
+
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
                     '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因',
@@ -696,7 +715,6 @@ def save_trades_excel(result_df):
 
 if __name__ == '__main__':
     total_start = time.perf_counter()  # 记录程序开始时间
-
 
     config = StrategyConfig()
     query_tool = getAllStockCsv.StockQuery()

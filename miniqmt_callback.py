@@ -84,7 +84,7 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
                 if matched_and_updated:
                     # 使用传入的函数引用来保存
                     self.save_trigger_prices_to_csv(self.trigger_prices)
-                    print(f"✅ {stock_code} 的触发状态已更新并保存。")
+                    print(f"√ {stock_code} 的触发状态已更新并保存。")
 
         # 保存交易记录到数据库
         save_transaction_to_db(trade, trade_type)
