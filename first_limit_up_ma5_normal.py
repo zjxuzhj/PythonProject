@@ -250,13 +250,25 @@ def check_double_top(df, current_idx, config):
 
     # 1. 寻找两个有效高点
     high_points = []
-    for i in range(2, len(window_data) - 2):
-        # 五日内最高点检测（前二后二）
-        if (window_data.iloc[i]['high'] > window_data.iloc[i - 2]['high'] and
-                window_data.iloc[i]['high'] > window_data.iloc[i - 1]['high'] and
-                window_data.iloc[i]['high'] > window_data.iloc[i + 1]['high'] and
-                window_data.iloc[i]['high'] > window_data.iloc[i + 2]['high']):
+    window_len = len(window_data)
+
+    # 遍历窗口内的每一个数据点，不再忽略首尾
+    for i in range(window_len):
+        current_high = window_data.iloc[i]['high']
+        neighbor_offsets = [-2, -1, 1, 2]
+        valid_neighbor_indices = [i + offset for offset in neighbor_offsets if 0 <= i + offset < window_len]
+
+        if not valid_neighbor_indices:
+            continue
+
+        is_peak = all(current_high > window_data.iloc[n_idx]['high'] for n_idx in valid_neighbor_indices)
+
+        if is_peak:
             high_points.append((i, window_data.iloc[i]['high'], window_data.iloc[i]['volume']))
+
+    # 如果找到的高点少于2个，不可能形成双头
+    if len(high_points) < 2:
+        return False
 
     # 2. 检测符合条件的双头
     for i in range(len(high_points) - 1):
@@ -275,11 +287,19 @@ def check_double_top(df, current_idx, config):
 
         # 颈线检测：两个高点之间的最低点
         neckline_idx = window_data.iloc[first_top_idx:second_top_idx]['low'].idxmin()
-        neckline_price = window_data.loc[neckline_idx]['low']
+        neckline_slice = window_data.iloc[first_top_idx + 1: second_top_idx]
+        if neckline_slice.empty:
+            continue  # 两个高点相邻，没有中间区域，无法形成颈线
+
+        neckline_price = neckline_slice['low'].min()
 
         # 突破确认：第二头部后需有收盘价跌破颈线
-        for j in range(second_top_idx + 1, len(window_data)):
-            if window_data.iloc[j]['close'] < neckline_price:
+        # 检查从第二个高点之后到窗口结尾的数据
+        breakdown_slice = window_data.iloc[second_top_idx + 1:]
+        if not breakdown_slice.empty:
+            if (breakdown_slice['close'] < neckline_price).any():
+                print(
+                    f"检测到双头形态: Top1 at index {first_top_idx}, Top2 at index {second_top_idx}, Neckline: {neckline_price:.2f}")
                 return True  # 检测到有效双头形态
 
     return False

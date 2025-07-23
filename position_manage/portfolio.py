@@ -244,6 +244,32 @@ class Portfolio:
 
             df_report = pd.DataFrame(report_data)
 
+            # 1. 计算持有金额 = 当前价格 * 持仓数量
+            df_report['持有金额'] = df_report['当前价格'] * df_report['持仓数量']
+
+            def get_sorting_theme(theme):
+                """
+                如果题材包含“机器人”或“汽车零部件”，则返回同一个分组名称。
+                否则返回原始题材。
+                """
+                if '机器人' in theme or '汽车零部件' in theme:
+                    return '机器人'  # 将它们归为一类
+                return theme
+
+            df_report['排序题材'] = df_report['题材'].apply(get_sorting_theme)
+            df_report['排序题材长度'] = df_report['排序题材'].str.len()
+            df_report = df_report.sort_values(
+                by=['排序题材长度', '持有金额'],
+                ascending=[False, False]  # 两者都降序
+            )
+            df_report = df_report.drop(columns=['排序题材', '排序题材长度'])
+
+            new_column_order = [
+                "股票代码", "股票名称", "持仓数量", "持有金额",
+                "平均成本", "当前价格", "盈亏%", "持有天数", "跌破五日", "题材"
+            ]
+            df_report = df_report[new_column_order]
+
             if self.save_position_to_csv(df_report):
                 print(f"✅ 持仓报告已保存")
             else:

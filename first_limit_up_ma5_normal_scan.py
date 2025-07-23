@@ -310,24 +310,24 @@ def get_target_stocks(isNeedLog=True):
         #     excluded_stocks.add(code)
         #     continue
         # 特定股票排除，切记少用
-        if "sh600596" == code:  # 傻逼协鑫集成
+        if "sh603109" == code:  # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        if "sh600939" == code:
-            excluded_stocks.add(code)
-            continue
-        if "sh601005"==code:
-            excluded_stocks.add(code)
-            continue
-        if "sz000010"==code:
-            excluded_stocks.add(code)
-            continue
-        if "sz002809"==code:
-            excluded_stocks.add(code)
-            continue
-        if "sh600343"==code:
-            excluded_stocks.add(code)
-            continue
+        # if "sh600939" == code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sh601005"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz000010"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sz002809"==code:
+        #     excluded_stocks.add(code)
+        #     continue
+        # if "sh600343"==code:
+        #     excluded_stocks.add(code)
+        #     continue
         # if "sz002227"==code:
         #     excluded_stocks.add(code)
         #     continue
