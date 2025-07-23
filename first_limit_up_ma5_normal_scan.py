@@ -167,6 +167,33 @@ def find_recent_first_limit_up(code, old_df, days=7):
             if limit_up_count >= 4:
                 continue
 
+        # 条件9 排除特定题材
+        theme = query_tool.get_theme_by_code(code)
+        name = query_tool.get_name_by_code(code)
+        if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
+            continue
+        if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
+            continue
+
+        # 条件10：排除10日内存在跌破一半的涨停
+        lookback_period_10 = 4
+        if day_idx >= lookback_period_10:
+            lookback_data_10 = df.iloc[day_idx - lookback_period_10: day_idx]
+            recent_limit_ups = lookback_data_10[lookback_data_10['close'] >= lookback_data_10['limit_price']]
+            if not recent_limit_ups.empty:
+                last_limit_up_day = recent_limit_ups.index[-1]
+                # 获取最近涨停日的前一日收盘价
+                prev_close_of_last_limit_up = df.loc[last_limit_up_day, 'prev_close']
+                price_floor = prev_close_of_last_limit_up * 1.035
+                intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, day_idx)
+                intermediate_days = df.iloc[intermediate_days_loc]
+
+                if not intermediate_days.empty:
+                    min_low_in_between = intermediate_days['low'].min()
+                    if min_low_in_between < price_floor:
+                        continue
+
+
         valid_days.append(day)
     return valid_days
 
@@ -276,21 +303,6 @@ def get_target_stocks(isNeedLog=True):
         code, name, limit_date, theme = stock  # 拆包对象
 
         # 排除板块
-        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
-            excluded_stocks.add(code)
-            continue
-        if "证券" in theme:  # 牛市旗手，跟不上，不参与
-            excluded_stocks.add(code)
-            continue
-        if "白酒" in theme:  # 废物
-            excluded_stocks.add(code)
-            continue
-        if "石油" in theme:  # 受海外消息影响过于严重，不参与
-            excluded_stocks.add(code)
-            continue
-        if "外贸" in theme:  # 之前被恶心过
-            excluded_stocks.add(code)
-            continue
         # if "光伏" in theme:  # 因为其他账户有大仓位光伏
         #     excluded_stocks.add(code)
         #     continue
@@ -298,18 +310,24 @@ def get_target_stocks(isNeedLog=True):
         #     excluded_stocks.add(code)
         #     continue
         # 特定股票排除，切记少用
-        if "sz002506" == code:  # 傻逼协鑫集成
+        if "sh600596" == code:  # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        if "sz002153" == code:
+        if "sh600939" == code:
             excluded_stocks.add(code)
             continue
-        # if "sz001389"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sz002153"==code:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "sh601005"==code:
+            excluded_stocks.add(code)
+            continue
+        if "sz000010"==code:
+            excluded_stocks.add(code)
+            continue
+        if "sz002809"==code:
+            excluded_stocks.add(code)
+            continue
+        if "sh600343"==code:
+            excluded_stocks.add(code)
+            continue
         # if "sz002227"==code:
         #     excluded_stocks.add(code)
         #     continue

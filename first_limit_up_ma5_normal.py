@@ -27,6 +27,10 @@ class StrategyConfig:
     # --- 卖出参数 ---
     SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
 
+    # --- 双头形态检测参数 ---
+    DOUBLE_TOP_CHECK_DAYS = 40  # 检测最近40日的双头形态
+    DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
+    DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
 
 def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_days=5):
     """模拟预测买入日MA5值，然后计算三个挂单价格"""
@@ -178,10 +182,32 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
             if limit_up_count >= 4:
                 continue
 
-        roe = query_tool.get_stock_roe(symbol)
-        roe_condition = (roe is not None) & (pd.notna(roe)) & (roe < 0)
-        if (roe_condition):
+        # 条件9 排除特定题材
+        theme = query_tool.get_theme_by_code(code)
+        name = query_tool.get_name_by_code(code)
+        if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
             continue
+        if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
+            continue
+
+        # 条件10：排除10日内存在跌破一半的涨停
+        lookback_period_10 = 4
+        if day_idx >= lookback_period_10:
+            lookback_data_10 = df.iloc[day_idx - lookback_period_10: day_idx]
+            recent_limit_ups = lookback_data_10[lookback_data_10['close'] >= lookback_data_10['limit_price']]
+            if not recent_limit_ups.empty:
+                last_limit_up_day = recent_limit_ups.index[-1]
+                # 获取最近涨停日的前一日收盘价
+                prev_close_of_last_limit_up = df.loc[last_limit_up_day, 'prev_close']
+                price_floor = prev_close_of_last_limit_up * 1.035
+                intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, day_idx)
+                intermediate_days = df.iloc[intermediate_days_loc]
+
+                if not intermediate_days.empty:
+                    min_low_in_between = intermediate_days['low'].min()
+                    if min_low_in_between < price_floor:
+                        continue
+
 
         valid_days.append(day)
     return valid_days
@@ -210,6 +236,53 @@ def calculate_actual_fill_price(open_price, order_price):
     """计算实际成交价：如果开盘价低于挂单价，以开盘价成交"""
     return min(open_price, order_price) if order_price is not None else None
 
+
+def check_double_top(df, current_idx, config):
+    """
+    检测指定位置前40日内是否存在双头形态
+    :return: 存在双头形态返回True，否则False
+    """
+    if current_idx < config.DOUBLE_TOP_CHECK_DAYS:
+        return False  # 数据不足时不检测
+
+    # 获取检测窗口数据（排除当前日）
+    window_data = df.iloc[current_idx - config.DOUBLE_TOP_CHECK_DAYS: current_idx]
+
+    # 1. 寻找两个有效高点
+    high_points = []
+    for i in range(2, len(window_data) - 2):
+        # 五日内最高点检测（前二后二）
+        if (window_data.iloc[i]['high'] > window_data.iloc[i - 2]['high'] and
+                window_data.iloc[i]['high'] > window_data.iloc[i - 1]['high'] and
+                window_data.iloc[i]['high'] > window_data.iloc[i + 1]['high'] and
+                window_data.iloc[i]['high'] > window_data.iloc[i + 2]['high']):
+            high_points.append((i, window_data.iloc[i]['high'], window_data.iloc[i]['volume']))
+
+    # 2. 检测符合条件的双头
+    for i in range(len(high_points) - 1):
+        first_top_idx, first_top_price, first_top_vol = high_points[i]
+        second_top_idx, second_top_price, second_top_vol = high_points[i + 1]
+
+        # 价格条件：两个高点差异在3%以内
+        price_diff = abs(first_top_price - second_top_price) / min(first_top_price, second_top_price)
+        if price_diff < config.DOUBLE_TOP_PRICE_TOLERANCE:
+            return True
+            # continue
+
+        # 成交量条件：第二头部成交量需小于第一头部（至少减少20%）
+        # if second_top_vol > first_top_vol * config.DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD:
+        #     continue
+
+        # 颈线检测：两个高点之间的最低点
+        neckline_idx = window_data.iloc[first_top_idx:second_top_idx]['low'].idxmin()
+        neckline_price = window_data.loc[neckline_idx]['low']
+
+        # 突破确认：第二头部后需有收盘价跌破颈线
+        for j in range(second_top_idx + 1, len(window_data)):
+            if window_data.iloc[j]['close'] < neckline_price:
+                return True  # 检测到有效双头形态
+
+    return False
 
 def generate_signals(df, first_limit_day, stock_code, stock_name, config: StrategyConfig):
     """生成买卖信号"""
@@ -248,7 +321,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
 
-        # 检查中间是否有新的涨停
+        # 买前条件1 检查中间是否有新的涨停
         has_new_limit = False
         for i in range(1, offset):
             check_day = df.index[start_idx + i]
@@ -258,7 +331,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         if has_new_limit:
             continue
 
-        # 买入前收盘价不低于首板收盘价
+        # 买前条件2 买入前收盘价不低于首板收盘价
         price_condition_met = True
         for check_offset in range(1, offset):
             check_day = df.index[start_idx + check_offset]
@@ -268,7 +341,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         if not price_condition_met:
             continue
 
-        # 获取最近5日MA5数据（防止空值）
+        # 买前条件3 获取最近5日MA5数据（防止空值）
         ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
         if ma5_data.isnull().any():
             continue
@@ -334,6 +407,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         for sell_offset in range(1, 20):
             if start_idx + offset + sell_offset >= len(df):
                 break
+
+            # 存在双头形态，跳过买入
+            # if check_double_top(df, start_idx + offset + sell_offset, config):
+            #     continue
 
             sell_day = df.index[start_idx + offset + sell_offset]
             sell_data = df.loc[sell_day]
