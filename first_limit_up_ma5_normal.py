@@ -32,6 +32,7 @@ class StrategyConfig:
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
 
+
 def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_days=5):
     """模拟预测买入日MA5值，然后计算三个挂单价格"""
     current_idx = df.index.get_loc(current_day)
@@ -208,7 +209,6 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
                     if min_low_in_between < price_floor:
                         continue
 
-
         valid_days.append(day)
     return valid_days
 
@@ -304,6 +304,7 @@ def check_double_top(df, current_idx, config):
 
     return False
 
+
 def generate_signals(df, first_limit_day, stock_code, stock_name, config: StrategyConfig):
     """生成买卖信号"""
     signals = []
@@ -332,6 +333,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         return signals
 
     df['ma5'] = df['close'].rolling(5).mean()
+    # df['ma10'] = df['close'].rolling(10).mean()
+    # df['ma20'] = df['close'].rolling(20).mean()
+    # df['ma30'] = df['close'].rolling(30).mean()
+    # df['ma55'] = df['close'].rolling(55).mean()
 
     # for offset in range(2,3):  # 检查涨停后第2、3、4、5天
     for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
@@ -435,6 +440,77 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             sell_day = df.index[start_idx + offset + sell_offset]
             sell_data = df.loc[sell_day]
             hold_days += 1
+
+            # # 卖出时检查，如果是前一天买入，并且当前价格距离20日线，30日线，55日线任意两条的距离偏差小于1%，暂时不卖出
+            # if hold_days == 1 or hold_days == 2:
+            #     price_gap = 0.01
+            #     current_price = sell_data['close']
+            #     ma10 = sell_data.get('ma10')
+            #     ma20 = sell_data.get('ma20')
+            #     ma30 = sell_data.get('ma30')
+            #     ma55 = sell_data.get('ma55')
+            #
+            #     buy_day_timestamp = pd.Timestamp(current_day)
+            #     days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
+            #     history_window = df.iloc[start_idx + 1: start_idx + offset]
+            #     history_condition = (history_window['close'] > history_window['ma5']).all()
+            #     if not history_condition:
+            #         continue
+            #
+            #     buy_day_idx = df.index.get_loc(current_day)
+            #     if buy_day_idx < 4:  # 确保有足够的数据进行5日回看
+            #         continue
+            #
+            #     lookback_window = df.iloc[buy_day_idx - 4: buy_day_idx + 1]  # 获取5日窗口
+            #     successful_days = 0
+            #     for i in range(len(lookback_window)):
+            #         day_data = lookback_window.iloc[i]
+            #         close_price = day_data['close']
+            #         ma10 = day_data.get('ma10')
+            #         ma20 = day_data.get('ma20')
+            #         ma30 = day_data.get('ma30')
+            #         ma55 = day_data.get('ma55')
+            #
+            #         # 确保均线值有效
+            #         if not (pd.notna(ma20) and pd.notna(ma30) and pd.notna(ma55)):
+            #             continue
+            #
+            #         ma_above_count = 0
+            #         if close_price > ma10:
+            #             ma_above_count += 1
+            #         if close_price > ma20:
+            #             ma_above_count += 1
+            #         if close_price > ma30:
+            #             ma_above_count += 1
+            #         if close_price > ma55:
+            #             ma_above_count += 1
+            #
+            #         if ma_above_count >= 2:  # 如果收盘价在至少两条均线之上
+            #             successful_days += 1
+            #
+            #     # Ensure MAs are valid numbers before calculation to avoid errors
+            #     if pd.notna(ma20) and pd.notna(ma30) and pd.notna(ma55) and ma20 > 0 and ma30 > 0 and ma55 > 0:
+            #         dist_ma10 = abs(current_price - ma10) / ma10
+            #         dist_ma20 = abs(current_price - ma20) / ma20
+            #         dist_ma30 = abs(current_price - ma30) / ma30
+            #         dist_ma55 = abs(current_price - ma55) / ma55
+            #
+            #         # Count how many MAs are within the 1% threshold
+            #         ma_proximity_count = 0
+            #         if dist_ma10 < price_gap:
+            #             ma_proximity_count += 1
+            #         if dist_ma20 < price_gap:
+            #             ma_proximity_count += 1
+            #         if dist_ma30 < price_gap:
+            #             ma_proximity_count += 1
+            #         if dist_ma55 < price_gap:
+            #             ma_proximity_count += 1
+            #
+            #         # If close to 2 or more MAs, skip selling for this day and hold
+            #         if ma_proximity_count >= 2 and successful_days >= 3:
+            #             print(
+            #                 f"[{sell_day.strftime('%Y-%m-%d')}] 触发持有条件: 股票 {stock_code} ({stock_name}) 接近多条均线，暂时持有。首板日: {first_limit_day.strftime('%Y-%m-%d')}")
+            #             continue  # Defer sell and check again next day
 
             # 1. 跌停第二天卖出
             if df.index.get_loc(sell_day) >= 1:

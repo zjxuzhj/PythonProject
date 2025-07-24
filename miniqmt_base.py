@@ -20,8 +20,8 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 30000  # 每只股票的总买入预算
-PER_FOURTH_STOCK_TOTAL_BUDGET = 30000  # 涨停后第四天的每只股票的总买入预算
+PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算
+PER_FOURTH_STOCK_TOTAL_BUDGET = 25000  # 涨停后第四天的每只股票的总买入预算
 daily_fourth_day_stocks = set() # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
