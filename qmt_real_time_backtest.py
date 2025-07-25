@@ -1,11 +1,11 @@
-import xtquant.xtdata as xtdata
-from datetime import datetime, timedelta, time
-import pandas as pd
-import os
-# 假设你的扫描函数在这个文件中。
-# 如果在不同文件中，请确保导入正确。
-import first_limit_up_ma5_normal_scan as scan
 import math
+import os
+from datetime import datetime, timedelta, time
+
+import pandas as pd
+import xtquant.xtdata as xtdata
+
+import first_limit_up_ma5_normal_scan as scan
 
 
 class Backtester:
@@ -21,6 +21,7 @@ class Backtester:
         self.initial_capital = initial_capital
         self.position_size = position_size
 
+
         # 单一缓存文件设置
         self.cache_path = 'all_targets_cache.csv'
         self.load_scan_cache()
@@ -32,7 +33,7 @@ class Backtester:
         self.trade_log = []
 
         # 交易时间限制
-        self.BUY_CUTOFF_TIME = time(14, 50)  # 买入截止时间
+        self.BUY_CUTOFF_TIME = time(14, 30)  # 买入截止时间
         self.SELL_CHECK_TIME = time(14, 57)  # 卖出检查时间
 
     # --- 加载总缓存文件的方法 ---
@@ -132,7 +133,7 @@ class Backtester:
         hist_df = self.get_daily_data(stock_code, start_fetch_date, end_fetch_date)
 
         if hist_df.empty or len(hist_df) < 4:
-            # print(f"  - [信息] {stock_code} 的历史数据不足，无法计算买入价。")
+            print(f"  - [信息] {stock_code} 的历史数据不足，无法计算买入价。")
             return None
 
         # 取最后4天的数据
@@ -164,7 +165,8 @@ class Backtester:
         }
         self.trade_log.append(log_entry)
         action_cn = "买入" if action == "BUY" else "卖出"
-        print(f"  -> {action_cn}: {stock_code} | {shares} 股 @ {price:.2f} | 金额: {amount:.2f}")
+        trade_time_str = date_time.strftime('%H:%M')  # 提取时间，格式化为 HH:MM
+        print(f"  -> {trade_time_str} {action_cn}: {stock_code} | {shares} 股 @ {price:.2f} | 金额: {amount:.2f}")
 
     def run(self):
         """主回测循环。"""
@@ -304,9 +306,9 @@ if __name__ == '__main__':
     # 注意：你必须提供一个包含有效本地数据的日期范围。
     # 示例日期仅用于演示。
     START_DATE = "20250701"
-    END_DATE = "20250723"
+    END_DATE = "20250710"
     INITIAL_CAPITAL = 200000.0
-    POSITION_SIZE_PER_TRADE = 20000.0
+    POSITION_SIZE_PER_TRADE = 21000.0
 
     # --- 运行回测 ---
     backtester = Backtester(
