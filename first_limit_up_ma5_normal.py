@@ -629,6 +629,12 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             # if sell_data['close'] < sell_data['ma5']:
             if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= config.SELL_ON_MA_BREAKDOWN_THRESHOLD:
                 sell_price = sell_data['close']
+                # shadow_up_ratio = (sell_data['high'] - sell_data['close']) / sell_data['close']
+                # # 长下影线判断（收盘价-最低价）/最低价 > 3%
+                # shadow_down_ratio = (sell_data['close'] - sell_data['low']) / sell_data['low']
+                # if shadow_down_ratio > 0.03 and shadow_up_ratio < 0.02:  # 长下影线超过3%，且上影线小于1.5%
+                #     print(f"[{sell_day.strftime('%Y-%m-%d')}] 长下影线拉回({shadow_down_ratio:.2%})，继续持有")
+                #     continue  # 跳过卖出，继续持有观察
                 profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
                     '股票代码': stock_code,

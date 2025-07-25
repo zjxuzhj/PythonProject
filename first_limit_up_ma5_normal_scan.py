@@ -313,15 +313,15 @@ def get_target_stocks(isNeedLog=True):
         if "sh603109" == code:  # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        # if "sh600939" == code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sh601005"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sz000010"==code:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "sh601992" == code:
+            excluded_stocks.add(code)
+            continue
+        if "sh601005"==code:
+            excluded_stocks.add(code)
+            continue
+        if "sh603151"==code:
+            excluded_stocks.add(code)
+            continue
         # if "sz002809"==code:
         #     excluded_stocks.add(code)
         #     continue
@@ -416,7 +416,7 @@ def backtest_on_date(target_date, isNeedLog=True):
     """根据指定日期进行回测，返回该日期的目标股票列表"""
     # 确保target_date是datetime.date类型
     if isinstance(target_date, str):
-        target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+        target_date = datetime.strptime(target_date, '%Y%m%d').date()
 
     # ========== 初始化变量 ==========
     excluded_stocks = set()
@@ -490,7 +490,7 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "2025-07-21"
+    # target_date = "20250721"
     # fourth_day_stocks = []
     # target_stocks = backtest_on_date(target_date)
 
