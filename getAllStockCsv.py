@@ -74,6 +74,9 @@ class StockQuery:
         self._init_industry_data()  # 新增初始化方法
         self.market_value_cache = None  # 新增流通市值缓存
         self._init_market_value_data()  # 新增初始化方法
+        self.revenue_growth_cache = None  # 营业总收入增速缓存
+        self.profit_growth_cache = None  # 净利润增速缓存
+        self._init_growth_data()  # 新增初始化方法
         self.blacklist = {
             'about_to_st': {'600243', '002496', '600696', '003032', '300561', '000004', '002762', '603813', '001270',
                             '002816', '002848', '002713', '002898', '600421', '000595', '600355',
@@ -166,6 +169,44 @@ class StockQuery:
         except Exception as e:
             print(f"流动市值初始化失败: {str(e)}")
             self.market_value_cache = {}
+
+    def _init_growth_data(self):
+        """预加载营收和净利润增速数据到内存"""
+        try:
+            df = pd.read_csv(
+                self.REPORT_CSV_PATH,
+                dtype={'stock_code': str},
+                usecols=['stock_code', '营业总收入-同比增长', '净利润-同比增长']
+            )
+            # 统一股票代码格式
+            df['stock_code'] = self.get_simple_by_code(df['stock_code'])
+
+            # 数据清洗：转换百分比字符串为浮点数
+            def convert_growth(val):
+                if isinstance(val, str) and '%' in val:
+                    return float(val.rstrip('%'))
+                return float(val) if not pd.isna(val) else 0.0
+
+            df['营业总收入-同比增长'] = df['营业总收入-同比增长'].apply(convert_growth)
+            df['净利润-同比增长'] = df['净利润-同比增长'].apply(convert_growth)
+
+            # 存入缓存字典
+            self.revenue_growth_cache = df.set_index('stock_code')['营业总收入-同比增长'].to_dict()
+            self.profit_growth_cache = df.set_index('stock_code')['净利润-同比增长'].to_dict()
+
+        except Exception as e:
+            print(f"增速数据初始化失败: {str(e)}")
+            self.revenue_growth_cache = {}
+            self.profit_growth_cache = {}
+
+    def get_revenue_growth(self, symbol):
+        """获取营收增速（直接内存读取）"""
+        return self.revenue_growth_cache.get(symbol, 0.0)
+
+    def get_profit_growth(self, symbol):
+        """获取净利润增速（直接内存读取）"""
+        return self.profit_growth_cache.get(symbol, 0.0)
+
 
     @classmethod
     def _refresh_data(cls):

@@ -3,8 +3,8 @@ from datetime import datetime
 import pandas as pd
 import os
 
-stock_code = "600000.SH"  # Stock code
-target_date = "20250722"
+stock_code = "002382.SZ"  # Stock code
+target_date = "20250506"
 target_price = 13.44  # <<< PLEASE PROVIDE THE TARGET PRICE HERE
 
 # -----------------------------------------
@@ -17,8 +17,8 @@ data = xtdata.get_local_data(
     field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],
     stock_list=[stock_code],
     period='1m',
-    start_time="20250715",
-    end_time="20250722",
+    start_time="20250501",
+    end_time="20250506",
 )
 
 # 3. 将返回的字典数据转换为一个统一的DataFrame
