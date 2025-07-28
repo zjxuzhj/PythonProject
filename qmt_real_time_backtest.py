@@ -28,9 +28,11 @@ class Backtester:
         self.SELL_MA_BREAKDOWN_THRESHOLD = -0.003  # 跌破MA5下方千分之三
         self.MAX_HOLD_DAYS = 15  # 最大持有天数
         self.LIMIT_RATE = 0.10  # 涨跌停板比率，可根据需要调整(例如ST股为0.05)
+        self.BENCHMARK_TICKER = '000300.SH'  # 基准指数：沪深300
+        self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
 
         # 单一缓存文件设置
-        self.cache_path = 'all_targets_cache.csv'
+        self.cache_path = 'all_targets_cache_1.csv'
         self.load_scan_cache()
 
         # 投资组合状态
@@ -38,6 +40,7 @@ class Backtester:
         self.positions = {} # value: {'shares': int, 'buy_price': float, 'buy_date': str, 'hold_days': int}
         self.portfolio_value = initial_capital
         self.trade_log = []
+        self.daily_portfolio_values = [] # 记录每日投资组合净值
 
         # 交易时间限制
         self.BUY_CUTOFF_TIME = time(14, 30)  # 买入截止时间
@@ -128,7 +131,10 @@ class Backtester:
             fill_data=True  # 确保对非交易日进行数据填充
         )
         if stock_code in df and not df[stock_code].empty:
-            return df[stock_code].sort_index(ascending=True)
+            stock_df = df[stock_code].sort_index(ascending=True)
+            # 关键：将索引转换为标准的datetime对象
+            stock_df.index = pd.to_datetime(stock_df.index.astype(str), format='%Y%m%d')
+            return stock_df
         return pd.DataFrame()
 
     def get_minute_data(self, stock_code, target_date):
@@ -195,12 +201,17 @@ class Backtester:
             "盈亏": pnl if pnl is not None else ""
         }
         self.trade_log.append(log_entry)
+        if action == "SELL":
+            trade_time_str = date_time.strftime('%Y-%m-%d')
+        else:
+            trade_time_str = date_time.strftime('%H:%M')
         trade_time_str = date_time.strftime('%H:%M')  # 提取时间，格式化为 HH:MM
         action_cn = "买入" if action == "BUY" else "卖出"
         reason_str = f" ({reason})" if reason else ""
 
         pnl_str = f" | 盈亏: {pnl:,.2f}" if pnl is not None else ""
-        print(f"  -> {trade_time_str} {action_cn}: {query_tool.get_name_by_code(stock_code)} | {shares} 股 @ {price:.2f} | 金额: {amount:,.2f}{reason_str}{pnl_str}")
+        print(
+            f"  -> {trade_time_str} {action_cn}: {query_tool.get_name_by_code(stock_code)} | {shares} 股 @ {price:.2f} | 金额: {amount:,.2f}{reason_str}{pnl_str}")
 
     def check_sell_conditions(self, stock_code, position, current_dt):
         """
@@ -256,6 +267,83 @@ class Backtester:
         # 如果无任何卖出条件满足
         return None, None
 
+    def calculate_and_print_statistics(self):
+        """在回测结束后，计算并打印所有关键绩效指标。"""
+        print("\n--- 策略绩效评估 ---")
+        if not self.trade_log:
+            print("回测期间无交易，无法计算绩效指标。")
+            return
+
+        # 1. 交易统计：胜率和盈亏比
+        trades_df = pd.DataFrame(self.trade_log)
+        sell_trades = trades_df[trades_df['操作'] == 'SELL'].copy()
+
+        win_rate, pnl_ratio = 0, 0
+        num_winning_trades, num_losing_trades = 0, 0
+        total_trades = len(sell_trades)
+
+        if total_trades == 0:
+            print("无卖出交易，无法计算交易统计指标。")
+        else:
+            winning_trades = sell_trades[sell_trades['盈亏'] > 0]
+            losing_trades = sell_trades[sell_trades['盈亏'] < 0]
+
+            win_rate = len(winning_trades) / len(sell_trades) if len(sell_trades) > 0 else 0
+
+            avg_profit = winning_trades['盈亏'].mean() if len(winning_trades) > 0 else 0
+            avg_loss = abs(losing_trades['盈亏'].mean()) if len(losing_trades) > 0 else 0
+            pnl_ratio = avg_profit / avg_loss if avg_loss > 0 else float('inf')
+
+        print(f"总交易次数: {total_trades}，胜率: {win_rate:.2%}，盈亏比: {pnl_ratio:.2f}")
+
+        # 2. 收益与风险指标
+        portfolio_values = pd.Series(dict(self.daily_portfolio_values))
+        daily_returns = portfolio_values.pct_change().dropna()
+
+        # 2.1 最大回撤
+        cumulative = (1 + daily_returns).cumprod()
+        peak = cumulative.expanding(min_periods=1).max()
+        drawdown = (cumulative - peak) / peak
+        max_drawdown = drawdown.min()
+        # 2.2 夏普比率
+        if daily_returns.std() > 0:
+            daily_risk_free = self.RISK_FREE_RATE / 252
+            excess_returns = daily_returns - daily_risk_free
+            sharpe_ratio = (excess_returns.mean() / excess_returns.std()) * np.sqrt(252)
+            print(f"最大回撤: {max_drawdown:.2%}，夏普比率: {sharpe_ratio:.2f}")
+        else:
+            print(f"最大回撤: {max_drawdown:.2%}，夏普比率: N/A")
+
+        # 3. Alpha 和 Beta
+        start_str = self.start_dt.strftime('%Y%m%d')
+        end_str = self.end_dt.strftime('%Y%m%d')
+        benchmark_data = self.get_daily_data(self.BENCHMARK_TICKER, start_str, end_str)
+
+        if benchmark_data.empty:
+            print("无法获取基准数据，跳过 Alpha 和 Beta 计算。")
+        else:
+            benchmark_returns = benchmark_data['close'].pct_change().dropna()
+
+            # 合并收益率数据以对齐日期
+            returns_df = pd.DataFrame({'portfolio': daily_returns, 'benchmark': benchmark_returns}).dropna()
+
+            if len(returns_df) > 1:
+                # 计算 Beta
+                covariance = returns_df['portfolio'].cov(returns_df['benchmark'])
+                benchmark_variance = returns_df['benchmark'].var()
+                beta = covariance / benchmark_variance if benchmark_variance > 0 else 0
+
+                # 计算 Alpha
+                avg_portfolio_return = returns_df['portfolio'].mean()
+                avg_benchmark_return = returns_df['benchmark'].mean()
+                alpha = (avg_portfolio_return - beta * avg_benchmark_return) * 252  # 年化
+
+                print(f"市场相关性，阿尔法: {alpha:.2%}，贝塔: {beta:.2f}")
+            else:
+                print("市场相关性: N/A (数据不足)")
+        print("-" * 22)
+
+
     def run(self):
         current_dt = self.start_dt
         while current_dt <= self.end_dt:
@@ -264,6 +352,13 @@ class Backtester:
             print(f"交易前现金: {self.cash:.2f}")
             if current_dt.weekday() >= 5:
                 print("周末，跳过。")
+                current_dt += timedelta(days=1)
+                continue
+
+            # 尝试获取当天沪深300指数的数据，如果为空，则说明是非交易日（节假日）
+            is_trading_day_df = self.get_daily_data(self.BENCHMARK_TICKER, date_str, date_str)
+            if is_trading_day_df.empty:
+                print("节假日或非交易日，跳过。")
                 current_dt += timedelta(days=1)
                 continue
 
@@ -321,7 +416,7 @@ class Backtester:
                     print(f"  - 当日因现金不足错过的买入机会共 {len(skipped_buys)} 个。")
                     print(f"  - 错过股票: {', '.join(skipped_buys)}")
 
-            # 2. 然后处理当天收盘后的卖出决策
+            # 卖出逻辑
             positions_to_check = list(self.positions.keys())
             if not positions_to_check:
                 print("没有需要卖出的持仓。")
@@ -339,10 +434,7 @@ class Backtester:
                     if sell_price is not None:
                         shares_to_sell = position['shares']
                         buy_price = position['buy_price']
-
-                        # --- 这里是关键的修改：计算盈亏并传递 ---
                         profit_loss = (sell_price - buy_price) * shares_to_sell
-
                         self.cash += shares_to_sell * sell_price
                         self.log_trade(
                             date_time=current_dt,
@@ -351,11 +443,11 @@ class Backtester:
                             shares=shares_to_sell,
                             price=sell_price,
                             reason=sell_reason,
-                            pnl=profit_loss  # 传递盈亏额
+                            pnl=profit_loss
                         )
                         del self.positions[stock_code]
 
-            # 3. 最后进行每日总结
+            # 每日总结
             holdings_value = 0
             daily_holdings_details = []  # 用于存储当日持仓详情
 
@@ -375,6 +467,7 @@ class Backtester:
                 holdings_value += market_value
 
             self.portfolio_value = self.cash + holdings_value
+            self.daily_portfolio_values.append((current_dt, self.portfolio_value))
             print(
                 f"交易日 {date_str} 结束: 现金: {self.cash:,.2f}, 持仓市值: {holdings_value:,.2f}, 投资组合总值: {self.portfolio_value:,.2f}")
 
@@ -396,6 +489,9 @@ class Backtester:
         pnl = self.portfolio_value - self.initial_capital
         pnl_percent = (pnl / self.initial_capital) * 100
         print(f"总盈亏: {pnl:,.2f} ({pnl_percent:.2f}%)")
+
+        self.calculate_and_print_statistics()
+
         if self.trade_log:
             pd.DataFrame(self.trade_log).to_excel("trading_log.xlsx", index=False)
             print("\n交易日志已保存到 'trading_log.xlsx'。")
@@ -404,13 +500,10 @@ class Backtester:
 
 
 if __name__ == '__main__':
-    # --- 配置区 ---
-    # 注意：你必须提供一个包含有效本地数据的日期范围。
-    # 示例日期仅用于演示。
-    START_DATE = "20250501"
+    START_DATE = "20250301"
     END_DATE = "20250723"
     INITIAL_CAPITAL = 200000.0
-    POSITION_SIZE_PER_TRADE = 21000.0
+    POSITION_SIZE_PER_TRADE = 20000.0
 
     # --- 运行回测 ---
     backtester = Backtester(

@@ -71,6 +71,14 @@ def find_recent_first_limit_up(code, old_df, days=7):
         if day != limit_days[0]:
             continue
 
+        # 条件-1 排除特定题材
+        theme = query_tool.get_theme_by_code(code)
+        name = query_tool.get_name_by_code(code)
+        if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
+            continue
+        if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
+            continue
+
         # 条件0：排除前一日涨停
         prev_day = None
         try:
@@ -110,12 +118,12 @@ def find_recent_first_limit_up(code, old_df, days=7):
                 continue
 
         # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-        if df.index.get_loc(day) >= 5:
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-            if total_change >= 15:
-                continue
+        # if df.index.get_loc(day) >= 5:
+        #     pre5_start = df.index[df.index.get_loc(day) - 5]
+        #     pre5_close = df.loc[pre5_start, 'close']
+        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+        #     if total_change >= 15:
+        #         continue
 
         # 条件5：前高压制条件
         day_idx = df.index.get_loc(day)
@@ -161,19 +169,12 @@ def find_recent_first_limit_up(code, old_df, days=7):
 
         # 条件8 - 排除10日内涨停次数过多的股票
         lookback_period_9 = 10
+        day_idx = df.index.get_loc(day)
         if day_idx >= lookback_period_9:
             lookback_data_9 = df.iloc[day_idx - lookback_period_9: day_idx]
             limit_up_count = (lookback_data_9['close'] >= lookback_data_9['limit_price']).sum()
             if limit_up_count >= 4:
                 continue
-
-        # 条件9 排除特定题材
-        theme = query_tool.get_theme_by_code(code)
-        name = query_tool.get_name_by_code(code)
-        if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
-            continue
-        if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
-            continue
 
         # 条件10：排除10日内存在跌破一半的涨停
         lookback_period_10 = 4
@@ -430,10 +431,9 @@ def backtest_on_date(target_date, isNeedLog=True):
         df, _ = get_stock_data(code, isNeedLog)
         if df.empty:
             continue
-
-        # 关键修改：过滤掉目标日期之后的数据
         df = df[df.index < pd.Timestamp(target_date)]
-
+        if df.empty:
+            continue
         if pd.isna(df["close"].iloc[-1]):
             if isNeedLog:
                 print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
@@ -488,11 +488,11 @@ def backtest_on_date(target_date, isNeedLog=True):
 
 if __name__ == '__main__':
     # 获取目标股票列表
-    # target_stocks, fourth_day_stocks = get_target_stocks()
+    target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    target_date = "20250603"
-    fourth_day_stocks = []
-    target_stocks = backtest_on_date(target_date)
+    # target_date = "20250721"
+    # fourth_day_stocks = []
+    # target_stocks = backtest_on_date(target_date)
 
 
     # 打印结果

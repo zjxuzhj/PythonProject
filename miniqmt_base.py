@@ -671,16 +671,16 @@ if __name__ == "__main__":
 
     adjust_orders_at_910()
 
-    scheduler.add_job(
-        sell_breached_stocks,
-        trigger=CronTrigger(
-            hour=14,
-            minute=56,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=60
-    )
-    print("定时任务已启动：每日14:54执行MA5止损检测")
+    # scheduler.add_job(
+    #     sell_breached_stocks,
+    #     trigger=CronTrigger(
+    #         hour=14,
+    #         minute=56,
+    #         day_of_week='mon-fri'
+    #     ),
+    #     misfire_grace_time=60
+    # )
+    # print("定时任务已启动：每日14:54执行MA5止损检测")
 
     scheduler.add_job(
         analyze_trigger_performance,
