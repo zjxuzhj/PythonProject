@@ -1,12 +1,13 @@
 import sys
 from datetime import datetime
+
 from xtquant import xtconstant
 from xtquant.xttrader import XtQuantTraderCallback
 
-from position_manage.portfolio import Portfolio
-from position_manage.transaction import Transaction
-from position_manage.portfolio_db import save_portfolio
 import getAllStockCsv as tools
+from position_manage.portfolio import Portfolio
+from position_manage.portfolio_db import save_portfolio
+from position_manage.transaction import Transaction
 
 
 def convert_unix_timestamp(timestamp):
@@ -42,14 +43,12 @@ def save_transaction_to_db(trade, trade_type):
 
 
 class MyXtQuantTraderCallback(XtQuantTraderCallback):
-    def __init__(self, query_tool, trigger_prices_ref, save_func_ref):
+    def __init__(self, query_tool):
         """
         初始化回调类
         :param query_tool: 股票查询工具
         """
         self.query_tool = query_tool
-        self.trigger_prices = trigger_prices_ref  # 保存对全局 trigger_prices 的引用
-        self.save_trigger_prices_to_csv = save_func_ref  # 保存对保存函数的引用
 
     def on_disconnected(self):
         print(datetime.now(), '连接断开回调')
@@ -67,24 +66,9 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
               f"成交价格 {trade.traded_price} 成交数量 {trade.traded_volume}")
 
         if trade_type == "BUY":
-            # 检查这个成交是否对应我们预设的某个触发档位
+            # 检查这个成交是否对应我们预设的某个触发档位（暂时移除）
             stock_code = trade.stock_code
             traded_price = trade.traded_price
-
-            if stock_code in self.trigger_prices:
-                matched_and_updated = False
-                for tier in self.trigger_prices[stock_code]:
-                    if not tier.get('triggered', False) and abs(tier['price'] - traded_price) < 0.01:
-                        print(f"匹配到预设档位！正在更新状态: {stock_code} @ {tier['price']:.2f}")
-                        tier['triggered'] = True
-                        tier['trigger_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        matched_and_updated = True
-                        break
-
-                if matched_and_updated:
-                    # 使用传入的函数引用来保存
-                    self.save_trigger_prices_to_csv(self.trigger_prices)
-                    print(f"√ {stock_code} 的触发状态已更新并保存。")
 
         # 保存交易记录到数据库
         save_transaction_to_db(trade, trade_type)

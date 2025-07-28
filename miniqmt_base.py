@@ -22,7 +22,7 @@ query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
 PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算
 PER_FOURTH_STOCK_TOTAL_BUDGET = 25000  # 涨停后第四天的每只股票的总买入预算
-daily_fourth_day_stocks = set() # 存储当天的第四天股票列表
+daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
@@ -55,7 +55,7 @@ def get_tiers_by_risk_level():
         ]
     elif RISK_LEVEL == 'low':
         return [
-            {'predict_ratio': 1.04, 'ratio': 0.40},
+            {'predict_ratio': 1.04, 'ratio': 1},
             {'predict_ratio': 1.04, 'ratio': 0.35},
             {'predict_ratio': 1.04, 'ratio': 0.25}
         ]
@@ -253,13 +253,18 @@ def precompute_trigger_prices(stock_code):
         total_budget = PER_STOCK_TOTAL_BUDGET
     """预计算各层MA5触发价格"""
     current_tiers = get_tiers_by_risk_level()
+    if not current_tiers:  # 检查层级数据是否为空
+        print(f"⚠ {stock_code} 无可用层级数据")
+        return
     base_ma5 = get_ma5_price(stock_code)
     if not base_ma5:
         print(f"⚠无法计算{stock_code}触发价: MA5数据缺失")
         return
 
-    # 生成触发价格
-    for tier in current_tiers:
+    # 生成触发价格，现在只生成一档
+    for i, tier in enumerate(current_tiers):
+        if i > 0:
+            break
         df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
         modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
         trigger_price = round(modified_df['MA5'].iloc[-1], 2)
@@ -414,6 +419,7 @@ def execute_trigger_order(name_display, stock_code, tier):
 
 def daily_pre_market_orders():
     """
+        暂时移除盘前挂单，因为和935的策略产生冲突
         每日盘前“广度优先”挂单策略。
         为所有目标股票计算分层价格，然后只挂出每个股票的第一档买单。
         """
@@ -507,16 +513,11 @@ def daily_pre_market_orders():
         print("===== 盘前广度优先挂单完成 =====\n")
 
 
-def adjust_orders_at_935():
-    """9:35定时任务：撤单后重新挂单，确保资金充分利用"""
+def adjust_orders_at_910():
     global daily_fourth_day_stocks
     try:
-        print("\n===== 9:35定时任务启动 =====")
-        # 撤掉所有未成交挂单
-        cancel_all_pending_orders()
-        print("等待撤单操作完成及资金释放(10秒)...")
-        time.sleep(10)
-        print("撤单等待结束，继续执行...")
+        now = datetime.now().strftime("%H:%M")
+        print(f"\n===== 开始执行910策略 ({now}) =====")
         # 获取最新账户状态
         refresh_account_status()
 
@@ -560,36 +561,6 @@ def adjust_orders_at_935():
             print("⚠所有目标股票均已持仓，无需新增挂单")
             return
 
-        # 检查并合并三个未触发的档位
-        for stock_code in filtered_stocks:
-            if stock_code in trigger_prices:
-                tiers = trigger_prices[stock_code]
-                # 确保有三个未触发的档位
-                if len(tiers) >= 3:  # 确保至少有三个档位
-                    # 获取所有未触发的档位
-                    untriggered_tiers = [t for t in tiers if not t['triggered']]
-
-                    # 如果有正好三个未触发的档位
-                    if len(untriggered_tiers) == 3:
-                        # 计算平均价格
-                        avg_price = sum(t['price'] for t in untriggered_tiers) / 3
-
-                        # 创建新的合并档位
-                        new_tier = {
-                            'price': round(avg_price, 2),
-                            'ratio': sum(t['ratio'] for t in untriggered_tiers),  # 合并权重
-                            'triggered': False
-                        }
-
-                        # 删除原来的三个未触发档位，保留已触发的档位
-                        # 创建一个新的tiers列表，只保留已触发的档位，并添加新的合并档位
-                        new_tiers = [t for t in tiers if t['triggered']]
-                        new_tiers.append(new_tier)
-
-                        # 替换原来的层级列表
-                        trigger_prices[stock_code] = new_tiers
-                        print(f"已合并三个未触发档位: {stock_code} 新触发价={avg_price:.2f}")
-
         # 保存更新后的触发价格
         save_trigger_prices_to_csv(trigger_prices, True)
 
@@ -608,11 +579,11 @@ def adjust_orders_at_935():
             return
 
     except Exception as e:
-        print(f"‼ 9:35任务执行异常: {str(e)}")
+        print(f"‼ 9:10任务执行异常: {str(e)}")
         import traceback
         traceback.print_exc()
     finally:
-        print("===== 9:35定时任务完成 =====")
+        print("===== 9:10定时任务完成 =====")
 
 
 def analyze_trigger_performance(days=5):
@@ -644,24 +615,6 @@ def analyze_trigger_performance(days=5):
         print("⚠无历史数据可供分析")
 
 
-def cancel_all_pending_orders():
-    """撤掉所有未成交挂单"""
-    orders = xt_trader.query_stock_orders(acc)
-    if not orders:
-        print("无待撤挂单")
-        return
-
-    success_count = 0
-    for order in orders:
-        if can_cancel_order_status(order.order_status):
-            cancel_result = xt_trader.cancel_order_stock_async(acc, order.order_id)
-            if cancel_result >= 0:
-                success_count += 1
-                print(f"撤单成功：{order.stock_code} {order.order_volume}股")
-
-    print(f"撤单完成：成功撤单 {success_count}/{len(orders)} 笔")
-
-
 def refresh_account_status():
     """刷新账户状态"""
     global available_cash, hold_stocks, positions, position_total_dict, position_available_dict
@@ -688,9 +641,7 @@ if __name__ == "__main__":
 
     acc = StockAccount('8886969255', 'STOCK')
     # 创建交易回调类对象，并声明接收回调
-    callback = MyXtQuantTraderCallback(query_tool, trigger_prices_ref=trigger_prices,  # 传入全局字典
-                                       save_func_ref=save_trigger_prices_to_csv  # 传入保存函数
-                                       )
+    callback = MyXtQuantTraderCallback(query_tool)
     xt_trader.register_callback(callback)
     # 启动交易线程
     xt_trader.start()
@@ -718,51 +669,7 @@ if __name__ == "__main__":
     positions = xt_trader.query_stock_positions(acc)
     hold_stocks = {pos.stock_code for pos in positions}
 
-    scheduler.add_job(
-        daily_pre_market_orders,
-        trigger=CronTrigger(
-            hour=9,
-            minute=10,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=300
-    )
-    print("定时任务已添加：每日9:10执行盘前挂单")
-
-    scheduler.add_job(
-        adjust_orders_at_935,
-        trigger=CronTrigger(
-            hour=9,
-            minute=31,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=60
-    )
-    print("定时任务已添加：每日9:31执行订单调整")
-
-
-    def check_execute():
-        now_1 = datetime.now()
-        now_2 = datetime.now()
-        start_time_daily_pre_market_orders = now_1.replace(hour=9, minute=11, second=0, microsecond=0)
-        end_time_daily_pre_market_orders = now_1.replace(hour=9, minute=30, second=0, microsecond=0)
-
-        start_time_adjust_orders_at_935 = now_2.replace(hour=9, minute=31, second=0, microsecond=0)
-        end_time_adjust_orders_at_935 = now_2.replace(hour=14, minute=50, second=0, microsecond=0)
-
-        if datetime.now().weekday() < 5:  # 0-4 表示周一到周五
-            if start_time_daily_pre_market_orders <= datetime.now() <= end_time_daily_pre_market_orders:
-                print("当前时间在 9:11-9:30 之间，立即执行盘前挂单")
-                orders = xt_trader.query_stock_orders(acc)
-                active_orders = [o for o in orders if can_cancel_order_status(o.order_status)]
-                if not active_orders:
-                    daily_pre_market_orders()
-            if start_time_adjust_orders_at_935 <= datetime.now() <= end_time_adjust_orders_at_935:
-                print("当前时间在 9:31-14:50 之间，立即执行动态买入")
-                adjust_orders_at_935()
-
-
-    check_execute()
+    adjust_orders_at_910()
 
     scheduler.add_job(
         sell_breached_stocks,
