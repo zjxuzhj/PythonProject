@@ -118,22 +118,22 @@ def find_recent_first_limit_up(code, old_df, days=7):
                 continue
 
         # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-        # if df.index.get_loc(day) >= 5:
-        #     pre5_start = df.index[df.index.get_loc(day) - 5]
-        #     pre5_close = df.loc[pre5_start, 'close']
-        #     total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-        #     if total_change >= 15:
-        #         continue
+        if df.index.get_loc(day) >= 5:
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:
+                continue
 
         # 条件5：前高压制条件
-        day_idx = df.index.get_loc(day)
-        if day_idx >= 20:  # 确保20日历史数据
-            # 计算前高（20日最高价）
-            historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
-            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
-            recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
-            if historical_high * 0.95 <= recent_4day_high < historical_high:
-                continue  # 触发排除条件
+        # day_idx = df.index.get_loc(day)
+        # if day_idx >= 20:  # 确保20日历史数据
+        #     # 计算前高（20日最高价）
+        #     historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+        #     # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+        #     recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
+        #     if historical_high * 0.95 <= recent_4day_high < historical_high:
+        #         continue  # 触发排除条件
 
         # 条件6：排除首板后第一个交易日放量阳线+第二个交易日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有首板第二个交易日数据
@@ -314,9 +314,9 @@ def get_target_stocks(isNeedLog=True):
         if "sh603109" == code:  # 傻逼协鑫集成
             excluded_stocks.add(code)
             continue
-        # if "sh601992" == code:
-        #     excluded_stocks.add(code)
-        #     continue
+        if "sh605259" == code:
+            excluded_stocks.add(code)
+            continue
         # if "sh601005"==code:
         #     excluded_stocks.add(code)
         #     continue

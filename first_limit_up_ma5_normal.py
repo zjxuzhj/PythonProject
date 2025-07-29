@@ -128,13 +128,13 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
                 continue
 
         # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-        if df.index.get_loc(day) >= 5:
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            if pre5_close != 0:
-                total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-                if total_change >= 15:
-                    continue
+        # if df.index.get_loc(day) >= 5:
+        #     pre5_start = df.index[df.index.get_loc(day) - 5]
+        #     pre5_close = df.loc[pre5_start, 'close']
+        #     if pre5_close != 0:
+        #         total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+        #         if total_change >= 15:
+        #             continue
 
         # 条件5：前高压制条件
         if day_idx >= 20:  # 确保20日历史数据

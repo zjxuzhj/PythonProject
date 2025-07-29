@@ -490,6 +490,22 @@ class Backtester:
         pnl_percent = (pnl / self.initial_capital) * 100
         print(f"总盈亏: {pnl:,.2f} ({pnl_percent:.2f}%)")
 
+        if self.daily_portfolio_values:
+            print("\n--- 每月收益率统计 ---")
+            portfolio_series = pd.Series(dict(self.daily_portfolio_values))
+            monthly_end_values = portfolio_series.resample('ME').last()
+            monthly_start_values = monthly_end_values.shift(1)
+            monthly_start_values.iloc[0] = self.initial_capital
+            monthly_returns = (monthly_end_values - monthly_start_values) / monthly_start_values
+
+            monthly_return_strings = []
+            for month_end_date, monthly_return in monthly_returns.items():
+                if pd.notna(monthly_return):
+                    month_str = f"{month_end_date.month}月"
+                    monthly_return_strings.append(f"{month_str} {monthly_return:.2%}")
+            if monthly_return_strings:
+                print(f"{'，'.join(monthly_return_strings)}")
+
         self.calculate_and_print_statistics()
 
         if self.trade_log:

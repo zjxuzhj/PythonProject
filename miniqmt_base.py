@@ -21,7 +21,7 @@ from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
 PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算
-PER_FOURTH_STOCK_TOTAL_BUDGET = 25000  # 涨停后第四天的每只股票的总买入预算
+PER_FOURTH_STOCK_TOTAL_BUDGET = PER_STOCK_TOTAL_BUDGET  # 涨停后第四天的每只股票的总买入预算(暂时改为统一，因为第四天并没有特别优势)
 daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
@@ -100,6 +100,9 @@ def check_ma5_breach(positions, position_available_dict):
         try:
             tick = xtdata.get_full_tick([stock_code])[stock_code]
             current_price = tick['lastPrice']
+            if current_price is None or current_price <= 0:
+                print(f"无法获取 {stock_code} 的有效实时价格，跳过本次检测。")
+                continue
             current_time = datetime.now()
 
             # 动态计算MA5（传入当前时间和价格）
@@ -315,9 +318,11 @@ def on_quote_update(data):
                 else:
                     continue
 
-                if current_price is not None:
+                if current_price is not None and current_price > 0:
                     processed_stocks.append(stock_code)
                     process_stock_quote(stock_code, current_price, current_time)
+                else:
+                    strategy_logger.debug(f"接收到 {stock_code} 的无效价格: {current_price}")
 
         # 情况2：数据是列表格式（多股订阅）
         elif isinstance(data, list):
@@ -326,9 +331,11 @@ def on_quote_update(data):
                     stock_code = item.get('stock_code', '')
                     current_price = item.get('lastPrice')
 
-                    if stock_code and current_price is not None:
+                    if stock_code and current_price is not None and current_price > 0:
                         processed_stocks.append(stock_code)
                         process_stock_quote(stock_code, current_price, current_time)
+                    else:
+                        strategy_logger.debug(f"接收到 {stock_code} 的无效价格: {current_price}")
 
         if processed_stocks:
             strategy_logger.debug(
@@ -340,6 +347,12 @@ def on_quote_update(data):
 
 def process_stock_quote(stock_code, current_price, current_time):
     """处理单只股票的行情更新"""
+    # ===== 增加价格有效性校验，作为双重保险 =====
+    if current_price is None or current_price <= 0:
+        # 记录一次警告即可，防止日志刷屏
+        if stock_code not in log_throttle or log_throttle[stock_code].get('last_log_price', 0) > 0:
+            strategy_logger.warning(f"跳过对 {stock_code} 的处理，因接收到无效价格: {current_price}")
+        return  # 直接返回，不执行后续逻辑
     stock_name = query_tool.get_name_by_code(stock_code)
     name_display = f"{stock_name}{'  ' if len(stock_name) == 3 else ''}"
     # 1. 首次触发记录
@@ -671,16 +684,16 @@ if __name__ == "__main__":
 
     adjust_orders_at_910()
 
-    # scheduler.add_job(
-    #     sell_breached_stocks,
-    #     trigger=CronTrigger(
-    #         hour=14,
-    #         minute=56,
-    #         day_of_week='mon-fri'
-    #     ),
-    #     misfire_grace_time=60
-    # )
-    # print("定时任务已启动：每日14:54执行MA5止损检测")
+    scheduler.add_job(
+        sell_breached_stocks,
+        trigger=CronTrigger(
+            hour=14,
+            minute=56,
+            day_of_week='mon-fri'
+        ),
+        misfire_grace_time=60
+    )
+    print("定时任务已启动：每日14:54执行MA5止损检测")
 
     scheduler.add_job(
         analyze_trigger_performance,
