@@ -128,22 +128,22 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
                 continue
 
         # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-        # if df.index.get_loc(day) >= 5:
-        #     pre5_start = df.index[df.index.get_loc(day) - 5]
-        #     pre5_close = df.loc[pre5_start, 'close']
-        #     if pre5_close != 0:
-        #         total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-        #         if total_change >= 15:
-        #             continue
+        if df.index.get_loc(day) >= 5:
+            pre5_start = df.index[df.index.get_loc(day) - 5]
+            pre5_close = df.loc[pre5_start, 'close']
+            if pre5_close != 0:
+                total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+                if total_change >= 15:
+                    continue
 
         # 条件5：前高压制条件
-        if day_idx >= 20:  # 确保20日历史数据
-            # 计算前高（20日最高价）
-            historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
-            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
-            recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
-            if historical_high * 0.95 <= recent_4day_high < historical_high:
-                continue  # 触发排除除条件
+        # if day_idx >= 20:  # 确保20日历史数据
+        #     # 计算前高（20日最高价）
+        #     historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+        #     # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+        #     recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
+        #     if historical_high * 0.95 <= recent_4day_high < historical_high:
+        #         continue  # 触发排除除条件
 
         # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有第三日数据
@@ -434,7 +434,17 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             if start_idx + offset + sell_offset >= len(df):
                 break
 
-            # 存在双头形态，跳过买入
+            day_idx=start_idx + offset + sell_offset
+            if day_idx >= 20:  # 确保20日历史数据
+                # 计算前高（20日最高价）
+                historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+                # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+                recent_4day_high = df.iloc[day_idx - 3:day_idx]['close'].max()
+                if recent_4day_high >= historical_high or recent_4day_high<=historical_high * 0.95:
+                    continue
+                # if historical_high * 0.95 < recent_4day_high < historical_high:
+                #     continue  # 触发排除除条件
+            # # 存在双头形态，跳过买入
             # if check_double_top(df, start_idx + offset + sell_offset, config):
             #     continue
 
