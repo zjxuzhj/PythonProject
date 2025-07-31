@@ -32,7 +32,7 @@ class Backtester:
         self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
 
         # 单一缓存文件设置
-        self.cache_path = 'all_targets_cache_1.csv'
+        self.cache_path = 'all_targets_cache_2.csv'
         self.load_scan_cache()
 
         # 投资组合状态
@@ -221,7 +221,7 @@ class Backtester:
         date_str = current_dt.strftime("%Y%m%d")
 
         # 获取包含当天和历史的日线数据以进行判断
-        start_fetch_date = (current_dt - timedelta(days=20)).strftime("%Y%m%d")
+        start_fetch_date = (current_dt - timedelta(days=30)).strftime("%Y%m%d")
         daily_df = self.get_daily_data_with_metrics(stock_code, start_fetch_date, date_str)
 
         # 需要至少两天数据（今天和昨天）
@@ -519,7 +519,7 @@ if __name__ == '__main__':
     START_DATE = "20250301"
     END_DATE = "20250723"
     INITIAL_CAPITAL = 200000.0
-    POSITION_SIZE_PER_TRADE = 20000.0
+    POSITION_SIZE_PER_TRADE = 19000.0
 
     # --- 运行回测 ---
     backtester = Backtester(
