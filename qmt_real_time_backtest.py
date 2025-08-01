@@ -33,7 +33,7 @@ class Backtester:
         self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
 
         # 单一缓存文件设置
-        self.cache_path = 'all_targets_cache_2.csv'
+        self.cache_path = 'all_targets_cache_4.csv'
         self.load_scan_cache()
 
         # 投资组合状态
@@ -96,7 +96,7 @@ class Backtester:
 
         # 2. 如果内存中没有，则执行扫描
         print(f"缓存未找到 {date_str} 的数据，执行实时扫描...")
-        target_stocks, fourth_day_stocks = scan.backtest_on_date(date_str)
+        target_stocks, fourth_day_stocks = scan.get_target_stocks(target_date=date_str)
 
         # 3. 准备新数据以便存入缓存
         if target_stocks:
@@ -187,7 +187,19 @@ class Backtester:
         target_price = round(sum(prices) / 5, 2)
         return target_price
 
-    def log_trade(self, date_time, stock_code, action, shares, price, reason="", pnl=None):
+    def _get_buy_time_category(self, buy_datetime):
+        """根据买入时间返回其所属的分类。"""
+        t = buy_datetime.time()
+        if time(9, 30) <= t < time(10, 0):
+            return "09:30-10:00"
+        elif time(10, 0) <= t < time(11, 30):
+            return "10:00-11:30"
+        elif time(13, 0) <= t < time(14, 50):
+            return "13:00-14:50"
+        else:
+            return "Other"
+
+    def log_trade(self, date_time, stock_code, action, shares, price, reason="", pnl=None, buy_time_category=None):
         """将一笔交易记录到交易日志中。"""
         amount = shares * price
         log_entry = {
@@ -198,7 +210,8 @@ class Backtester:
             "价格": price,
             "金额": amount,
             "原因": reason,
-            "盈亏": pnl if pnl is not None else ""
+            "盈亏": pnl if pnl is not None else "",
+            "买入时段": buy_time_category
         }
         self.trade_log.append(log_entry)
         if action == "SELL":
@@ -278,6 +291,36 @@ class Backtester:
         trades_df = pd.DataFrame(self.trade_log)
         sell_trades = trades_df[trades_df['操作'] == 'SELL'].copy()
 
+        if sell_trades.empty:
+            print("无卖出交易，无法计算交易统计指标。")
+            return
+
+        # --- 分时间段进行统计 ---
+        print("\n--- 按买入时段分析 ---")
+        time_categories = ["09:30-10:00", "10:00-11:30", "13:00-14:50", "Other"]
+
+        for category in time_categories:
+            category_trades = sell_trades[sell_trades['买入时段'] == category]
+            total_trades = len(category_trades)
+
+            if total_trades == 0:
+                print(f"时段 [{category}]: 无交易")
+                continue
+
+            winning_trades = category_trades[category_trades['盈亏'] > 0]
+            losing_trades = category_trades[category_trades['盈亏'] < 0]
+
+            win_rate = len(winning_trades) / total_trades if total_trades > 0 else 0
+            avg_profit = winning_trades['盈亏'].mean() if len(winning_trades) > 0 else 0
+            avg_loss = abs(losing_trades['盈亏'].mean()) if len(losing_trades) > 0 else 0
+            pnl_ratio = avg_profit / avg_loss if avg_loss > 0 else float('inf')
+
+            print(f"时段 [{category}]: 交易次数: {total_trades}，胜率: {win_rate:.2%}，盈亏比: {pnl_ratio:.2f}")
+
+        print("-" * 22)
+
+        # --- 总体统计 ---
+        print("\n--- 总体绩效指标 ---")
         win_rate, pnl_ratio = 0, 0
         num_winning_trades, num_losing_trades = 0, 0
         total_trades = len(sell_trades)
@@ -395,14 +438,15 @@ class Backtester:
                         shares_to_buy = math.floor((self.position_size / buy_price) / 100) * 100
                         if shares_to_buy > 0:
                             cost = shares_to_buy * buy_price
+                            buy_time_cat = self._get_buy_time_category(buy_order['time'])
                             self.cash -= cost
                             self.positions[buy_order['stock']] = {
                                 'shares': shares_to_buy,
                                 'buy_price': buy_price,
                                 'buy_date': date_str,
-                                'hold_days': 0
+                                'hold_days': 0, 'buy_time_category': buy_time_cat
                             }
-                            self.log_trade(buy_order['time'], buy_order['stock'], "BUY", shares_to_buy, buy_price)
+                            self.log_trade(buy_order['time'], buy_order['stock'], "BUY", shares_to_buy, buy_price, buy_time_category=buy_time_cat)
                         else:
                             print(f"  - [跳过] 资金不足以购买至少100股的 {buy_order['stock']} (价格: {buy_price:.2f})。")
                             skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
@@ -442,7 +486,8 @@ class Backtester:
                             shares=shares_to_sell,
                             price=sell_price,
                             reason=sell_reason,
-                            pnl=profit_loss
+                            pnl=profit_loss,
+                            buy_time_category=position['buy_time_category']  # 传递买入时段
                         )
                         del self.positions[stock_code]
 
@@ -515,10 +560,11 @@ class Backtester:
 
 
 if __name__ == '__main__':
-    START_DATE = "20250301"
+    START_DATE = "20241201"
+    # START_DATE = "20250301"
     END_DATE = "20250723"
     INITIAL_CAPITAL = 200000.0
-    POSITION_SIZE_PER_TRADE = 19000.0
+    POSITION_SIZE_PER_TRADE = 20000
 
     # --- 运行回测 ---
     backtester = Backtester(

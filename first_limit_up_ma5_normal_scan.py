@@ -127,14 +127,14 @@ def find_recent_first_limit_up(code, old_df, days=7):
                 continue
 
         # 条件5：前高压制条件
-        # day_idx = df.index.get_loc(day)
-        # if day_idx >= 20:  # 确保20日历史数据
-        #     # 计算前高（20日最高价）
-        #     historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
-        #     # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
-        #     recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
-        #     if historical_high * 0.95 <= recent_4day_high < historical_high:
-        #         continue  # 触发排除条件
+        day_idx = df.index.get_loc(day)
+        if day_idx >= 20:  # 确保20日历史数据
+            # 计算前高（20日最高价）
+            historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
+            # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
+            recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
+            if historical_high * 0.95 <= recent_4day_high < historical_high:
+                continue  # 触发排除条件
 
         # 条件6：排除首板后第一个交易日放量阳线+第二个交易日低开未收复前日实体中点的情况
         if next_day_idx + 1 < len(df):  # 确保有首板第二个交易日数据
@@ -246,6 +246,26 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         if isNeedLog:
             print(f"--- 🚀 进入回测模式，目标日期: {today.strftime('%Y-%m-%d')} ---")
     else:
+        # --- 实时模式下的缓存逻辑 ---
+        today = datetime.now().date()
+        today_str = today.strftime('%Y-%m-%d')
+        base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
+        current_datetime, current_time = datetime.now(), datetime.now().time()
+
+        if os.path.exists(file_path) and time(9, 31) <= current_time <= time(15, 0):
+            existing_df = pd.read_csv(file_path)
+            existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
+            if today_str in existing_dates.values:
+                latest_today_record = existing_df[existing_dates == today_str].iloc[-1]
+                target_stocks = latest_today_record['目标股票'].split(',') if latest_today_record[
+                                                                                  '目标股票'] != '无' else []
+                fourth_day_stocks = latest_today_record['第四天股票'].split(',') if latest_today_record[
+                                                                                        '第四天股票'] != '无' else []
+                print(f"✅ 交易时段内，直接从缓存文件读取当日数据: {len(target_stocks)}只股票")
+                return target_stocks, fourth_day_stocks
+        # --- 缓存逻辑结束 ---
+
+    if not is_backtest:
         print("--- 🔍 执行策略验证安全锁 ---")
         VALIDATION_DATE = "20250728"
         EXPECTED_STOCKS = {
@@ -268,24 +288,6 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         else:
             print(f"✅ 策略验证通过！{VALIDATION_DATE} 的回测结果与预期一致。")
             print("--- ▶️ 安全锁解除，开始执行今日任务 ---\n")
-
-        # --- 实时模式下的缓存逻辑 ---
-        today = datetime.now().date()
-        base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
-        current_datetime, current_time = datetime.now(), datetime.now().time()
-
-        if os.path.exists(file_path) and time(9, 31) <= current_time <= time(15, 0):
-            existing_df = pd.read_csv(file_path)
-            existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
-            if today in existing_dates.values:
-                latest_today_record = existing_df[existing_dates == today].iloc[-1]
-                target_stocks = latest_today_record['目标股票'].split(',') if latest_today_record[
-                                                                                  '目标股票'] != '无' else []
-                fourth_day_stocks = latest_today_record['第四天股票'].split(',') if latest_today_record[
-                                                                                        '第四天股票'] != '无' else []
-                print(f"✅ 交易时段内，直接从缓存文件读取当日数据: {len(target_stocks)}只股票")
-                return target_stocks, fourth_day_stocks
-        # --- 缓存逻辑结束 ---
 
     # --- 数据处理核心逻辑 ---
     excluded_stocks, limit_up_stocks = set(), []
@@ -403,7 +405,7 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "20250728"
+    # target_date = "20250730"
     # target_stocks,fourth_day_stocks = get_target_stocks(target_date=target_date)
 
 
