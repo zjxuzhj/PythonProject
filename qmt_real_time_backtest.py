@@ -11,6 +11,7 @@ import getAllStockCsv
 
 query_tool = getAllStockCsv.StockQuery()
 
+
 class Backtester:
     """
     一个用于运行特定股票交易策略回测的类。
@@ -37,10 +38,10 @@ class Backtester:
 
         # 投资组合状态
         self.cash = initial_capital
-        self.positions = {} # value: {'shares': int, 'buy_price': float, 'buy_date': str, 'hold_days': int}
+        self.positions = {}  # value: {'shares': int, 'buy_price': float, 'buy_date': str, 'hold_days': int}
         self.portfolio_value = initial_capital
         self.trade_log = []
-        self.daily_portfolio_values = [] # 记录每日投资组合净值
+        self.daily_portfolio_values = []  # 记录每日投资组合净值
 
         # 交易时间限制
         self.BUY_CUTOFF_TIME = time(14, 30)  # 买入截止时间
@@ -79,7 +80,6 @@ class Backtester:
         stock_df['down_limit_price'] = (stock_df['pre_close'] * (1 - self.LIMIT_RATE)).round(2)
         return stock_df
 
-
     # --- 从单一缓存文件中获取/更新选股结果 ---
     def get_target_stocks_from_cache(self, date_str):
         """
@@ -96,7 +96,7 @@ class Backtester:
 
         # 2. 如果内存中没有，则执行扫描
         print(f"缓存未找到 {date_str} 的数据，执行实时扫描...")
-        target_stocks = scan.backtest_on_date(date_str)
+        target_stocks, fourth_day_stocks = scan.backtest_on_date(date_str)
 
         # 3. 准备新数据以便存入缓存
         if target_stocks:
@@ -342,7 +342,6 @@ class Backtester:
             else:
                 print("市场相关性: N/A (数据不足)")
         print("-" * 22)
-
 
     def run(self):
         current_dt = self.start_dt

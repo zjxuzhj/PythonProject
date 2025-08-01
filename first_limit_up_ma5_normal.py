@@ -370,9 +370,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         check_resistance_day_idx = start_idx + 1
         if check_resistance_day_idx < len(df):
             is_resisted, neckline = check_double_top_neckline_resistance(df, check_resistance_day_idx, config)
-            if is_resisted:
-                print(
-                    f"[{stock_code}] 在 {df.index[check_resistance_day_idx].date()} 触及双头颈线 {neckline:.2f} 回落，放弃在 {current_day.date()} 的买入机会。")
+            if not is_resisted:
+                # print(
+                #     f"[{stock_code}] 在 {df.index[check_resistance_day_idx].date()} 触及双头颈线 {neckline:.2f} 回落，放弃在 {current_day.date()} 的买入机会。")
                 continue  # 如果受到压制，则跳过本次买入机会
 
         # 计算三个挂单价格

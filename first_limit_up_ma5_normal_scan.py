@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime, time
 
 import pandas as pd
@@ -232,137 +233,122 @@ def generate_signals(df, first_limit_day, stock_code, stock_name):
     return always_above_base
 
 
-def get_target_stocks(isNeedLog=True):
-    """获取目标股票列表，若当日数据已存在则直接读取"""
-    # 检查当日数据是否已存在
-    base_path = "output"
-    file_path = os.path.join(base_path, "target_stocks_daily.csv")
-    # 获取当前完整时间信息
-    current_datetime = datetime.now()
-    current_date_str = current_datetime.strftime('%Y-%m-%d')
-    current_time = current_datetime.time()
+def get_target_stocks(isNeedLog=True, target_date=None):
+    """
+    获取目标股票列表。
+    - 如果 target_date 为 None (默认), 则为当日实时模式，会先进行策略验证，通过后才执行。
+    - 如果提供了 target_date (e.g., "20250728"), 则为回测模式，不使用缓存或保存结果。
+    """
+    is_backtest = target_date is not None
 
-    # 定义交易时段 9:31-15:00 交易时间内
-    trading_start = time(9, 31)
-    trading_end = time(15, 0)
+    if is_backtest:
+        today = datetime.strptime(target_date, '%Y%m%d').date()
+        if isNeedLog:
+            print(f"--- 🚀 进入回测模式，目标日期: {today.strftime('%Y-%m-%d')} ---")
+    else:
+        print("--- 🔍 执行策略验证安全锁 ---")
+        VALIDATION_DATE = "20250728"
+        EXPECTED_STOCKS = {
+            "000970.SZ", "002889.SZ", "600114.SH",
+            "600410.SH", "603109.SH", "603630.SH"
+        }
 
-    # 检查文件是否存在且包含当日数据
-    if os.path.exists(file_path):
-        existing_df = pd.read_csv(file_path)
-        # 提取数据中的日期部分
-        existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
-        # 存在当日数据且处于交易时段
-        if current_date_str in existing_dates.unique():
-            # 判断当前是否在交易时段内
-            if trading_start <= current_time <= trading_end:
-                # 获取当日最新记录（按时间倒序）
-                today_records = existing_df[existing_dates == current_date_str]
-                today_latest = today_records.iloc[-1]
+        # 以静默模式运行验证回测
+        validation_stocks, _ = get_target_stocks(isNeedLog=False, target_date=VALIDATION_DATE)
+        # 比较实际结果与预期结果
+        if set(validation_stocks) != EXPECTED_STOCKS:
+            print("\n❌ 策略验证失败！程序已终止。❌")
+            print("=" * 50)
+            print(f"说明：当前策略在固定回测日 {VALIDATION_DATE} 的选股结果与预期不符。")
+            print("这可能意味着您无意中修改了核心选股逻辑。为保证实盘安全，程序已停止运行。")
+            print(f"预期结果 ({len(EXPECTED_STOCKS)}只): {sorted(list(EXPECTED_STOCKS))}")
+            print(f"实际结果 ({len(validation_stocks)}只): {sorted(validation_stocks)}")
+            print("=" * 50)
+            sys.exit()  # 验证失败，终止程序
+        else:
+            print(f"✅ 策略验证通过！{VALIDATION_DATE} 的回测结果与预期一致。")
+            print("--- ▶️ 安全锁解除，开始执行今日任务 ---\n")
 
-                stocks_str = today_latest['目标股票']
-                fourth_stocks_str = today_latest['第四天股票']
-                target_stocks = stocks_str.split(',')
-                fourth_day_stocks = fourth_stocks_str.split(',')
-                print(f"交易时段直接读取当日数据：{len(target_stocks)}只股票")
+        # --- 实时模式下的缓存逻辑 ---
+        today = datetime.now().date()
+        base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
+        current_datetime, current_time = datetime.now(), datetime.now().time()
+
+        if os.path.exists(file_path) and time(9, 31) <= current_time <= time(15, 0):
+            existing_df = pd.read_csv(file_path)
+            existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
+            if today in existing_dates.values:
+                latest_today_record = existing_df[existing_dates == today].iloc[-1]
+                target_stocks = latest_today_record['目标股票'].split(',') if latest_today_record[
+                                                                                  '目标股票'] != '无' else []
+                fourth_day_stocks = latest_today_record['第四天股票'].split(',') if latest_today_record[
+                                                                                        '第四天股票'] != '无' else []
+                print(f"✅ 交易时段内，直接从缓存文件读取当日数据: {len(target_stocks)}只股票")
                 return target_stocks, fourth_day_stocks
+        # --- 缓存逻辑结束 ---
 
-    # ========== 当无当日数据时执行 ==========
-    excluded_stocks = set()
-    limit_up_stocks = []
-    filtered_stocks = query_tool.get_all_filter_stocks()
-    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
-    today_str = datetime.now().strftime("%Y%m%d")
+    # --- 数据处理核心逻辑 ---
+    excluded_stocks, limit_up_stocks = set(), []
+    stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
 
-    for idx, (code, name) in enumerate(stock_list, 1):
+    for code, name in stock_list:
         df, _ = get_stock_data(code, isNeedLog)
-        if df.empty:
-            continue
+        if df.empty: continue
+
+        if is_backtest:
+            df = df[df.index < pd.Timestamp(today)]
+            if df.empty: continue
 
         if pd.isna(df["close"].iloc[-1]):
             if isNeedLog:
                 print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
             continue
-
         # 排除当前股价>90的股票
-        latest_close = df.iloc[-1]['close']  # 获取最新收盘价
+        latest_close = df.iloc[-1]['close']
         if latest_close > 90:
             continue
 
-        theme = query_tool.get_theme_by_code(code)
-        # 买入距离涨停板3天内的票（越近胜率越高），计划day4，改为1.03提前买入后，day4的胜率更高
-        first_limit_days = find_recent_first_limit_up(code, df, days=4)  # days=3 再也不要变了，晚了就不要了，不要强行上仓位
+        first_limit_days = find_recent_first_limit_up(code, df, days=4)
         for day in first_limit_days:
             if generate_signals(df, day, code, name):
+                theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
 
-    # 分组排序逻辑
-    today = datetime.now().date()
     days_groups = {}
-    print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
+    if isNeedLog: print(f"\n🔍 总计发现 {len(limit_up_stocks)} 只符合初步要求的股票")
 
-    for stock in limit_up_stocks:
-        code, name, limit_date, theme = stock  # 拆包对象
-
-        # 排除板块
-        # if "光伏" in theme:  # 因为其他账户有大仓位光伏
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "半导体" in theme:  # 因为其他账户有大仓位半导体，中芯和三安
-        #     excluded_stocks.add(code)
-        #     continue
-        # 特定股票排除，切记少用
-        if "sh603109" == code:  # 傻逼协鑫集成
-            excluded_stocks.add(code)
+    for code, name, limit_date_str, theme in limit_up_stocks:
+        # 排除特定板块和股票
+        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
+            excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
-        if "sh605259" == code:
-            excluded_stocks.add(code)
+        if code in ["sz002506", "sz002153"]:
+            excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
-        # if "sh601005"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sh603151"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sz002809"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sh600343"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sz002227"==code:
-        #     excluded_stocks.add(code)
-        #     continue
-        # if "sz002324"==code:
-        #     excluded_stocks.add(code)
-        #     continue
 
-        limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
+        limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
         delta_days = (today - limit_day).days
-        if delta_days not in days_groups:
-            days_groups[delta_days] = []
-        days_groups[delta_days].append(stock)
+        days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme))
 
-    target_stocks = set()
-    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
-
-    for delta, stocks in sorted_days:
-        for stock in stocks:
-            code, name, date, theme = stock
-            standard_code = getAllStockCsv.convert_to_standard_format(code)
-            target_stocks.add(standard_code)
-            print("  " + "   ".join(stock) + "  ")
+    target_stocks_set, fourth_day_stocks_set = set(), set()
+    for delta, stocks in sorted(days_groups.items()):
+        for stock_data in stocks:
+            code = getAllStockCsv.convert_to_standard_format(stock_data[0])
+            target_stocks_set.add(code)
+            if isNeedLog: print("  " + "   ".join(stock_data) + "  ")
 
     # ===== 提取涨停后第四天的股票(delta_days=3) =====
-    fourth_day_stocks = set()
     if 6 in days_groups:
-        for stock in days_groups[6]:
-            code, name, date, theme = stock
-            standard_code = getAllStockCsv.convert_to_standard_format(code)
-            fourth_day_stocks.add(standard_code)
+        for stock_data in days_groups[6]:
+            fourth_day_stocks_set.add(getAllStockCsv.convert_to_standard_format(stock_data[0]))
 
-    # 保存并返回新计算的数据
-    save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks)
-    return list(target_stocks), list(fourth_day_stocks)
+    target_stocks_list = sorted(list(target_stocks_set))
+    fourth_day_stocks_list = sorted(list(fourth_day_stocks_set))
+
+    if not is_backtest:
+        save_target_stocks(target_stocks_list, excluded_stocks, fourth_day_stocks_list)
+
+    return target_stocks_list, fourth_day_stocks_list
 
 
 def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, base_path="output"):
@@ -413,86 +399,12 @@ def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, b
     return file_path
 
 
-def backtest_on_date(target_date, isNeedLog=True):
-    """根据指定日期进行回测，返回该日期的目标股票列表"""
-    # 确保target_date是datetime.date类型
-    if isinstance(target_date, str):
-        target_date = datetime.strptime(target_date, '%Y%m%d').date()
-
-    # ========== 初始化变量 ==========
-    excluded_stocks = set()
-    limit_up_stocks = []
-    filtered_stocks = query_tool.get_all_filter_stocks()
-    stock_list = filtered_stocks[['stock_code', 'stock_name']].values
-    today = target_date  # 使用目标日期而非当前日期
-
-    # ========== 处理每只股票 ==========
-    for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code, isNeedLog)
-        if df.empty:
-            continue
-        df = df[df.index < pd.Timestamp(target_date)]
-        if df.empty:
-            continue
-        if pd.isna(df["close"].iloc[-1]):
-            if isNeedLog:
-                print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
-            continue
-
-        # 排除当前股价>90的股票
-        latest_close = df.iloc[-1]['close']
-        if latest_close > 90:
-            continue
-
-        theme = query_tool.get_theme_by_code(code)
-        first_limit_days = find_recent_first_limit_up(code, df, days=4)
-
-        for day in first_limit_days:
-            if generate_signals(df, day, code, name):
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
-
-    # ========== 分组排序逻辑 ==========
-    days_groups = {}
-    print(f"\n总计发现 {len(limit_up_stocks)} 只符合要求的股票")
-
-    for stock in limit_up_stocks:
-        code, name, limit_date, theme = stock
-        # 排除特定板块和股票
-        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
-            excluded_stocks.add(code)
-            continue
-        if code in ["sz002506", "sz002153"]:  # 特定股票排除
-            excluded_stocks.add(code)
-            continue
-
-        limit_day = datetime.strptime(limit_date, "%Y-%m-%d").date()
-        delta_days = (today - limit_day).days
-        if delta_days not in days_groups:
-            days_groups[delta_days] = []
-        days_groups[delta_days].append(stock)
-
-    # ========== 生成目标股票列表 ==========
-    target_stocks = set()
-    sorted_days = sorted(days_groups.items(), key=lambda x: x[0], reverse=False)
-
-    for delta, stocks in sorted_days:
-        for stock in stocks:
-            code, name, date, theme = stock
-            standard_code = getAllStockCsv.convert_to_standard_format(code)
-            target_stocks.add(standard_code)
-            if isNeedLog:
-                print("  " + "   ".join(stock) + "  ")
-
-    return list(target_stocks)
-
-
 if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "20250721"
-    # fourth_day_stocks = []
-    # target_stocks = backtest_on_date(target_date)
+    # target_date = "20250728"
+    # target_stocks,fourth_day_stocks = get_target_stocks(target_date=target_date)
 
 
     # 打印结果
