@@ -33,6 +33,10 @@ class StrategyConfig:
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
 
+    # ---  涨停日成交量校验参数 ---
+    LIMIT_UP_VOLUME_LOOKBACK_DAYS: int = 100  # 寻找前期高点以校验成交量的回看天数
+    LIMIT_UP_VOLUME_THRESHOLD: float = 0.9  # 涨停日成交量不得超过前高成交量的阈值
+
 
 def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_days=5):
     """模拟预测买入日MA5值，然后计算三个挂单价格"""
@@ -74,7 +78,7 @@ def get_stock_data(symbol, config: StrategyConfig):
         return None
 
 
-def _get_market_type(symbol: str) -> str:
+def get_market_type(symbol: str) -> str:
     """根据股票代码判断所属板块。"""
     if symbol.startswith(("688", "689")):
         return "科创板"
@@ -82,16 +86,161 @@ def _get_market_type(symbol: str) -> str:
         return "创业板"
     return "主板"
 
+def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, config: StrategyConfig, query_tool) -> bool:
+    """
+    检查给定的某一天是否是符合所有条件的首板涨停日。
+    :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
+    """
+    day_idx = df.index.get_loc(day)
+
+    # 条件0：排除前一日涨停
+    prev_day = None
+    try:
+        prev_idx = df.index.get_loc(day) - 1
+        if prev_idx >= 0:
+            prev_day = df.index[prev_idx]
+    except (IndexError, KeyError):
+        prev_day = None
+    if prev_day and df.loc[prev_day, 'is_limit']:
+        return False
+
+    # 条件1：排除后一日涨停 (连板)
+    next_day_idx = day_idx + 1
+    if next_day_idx < len(df):
+        next_day = df.index[next_day_idx]
+        if df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
+            return False
+
+    # 条件2：涨停后第一天涨幅>8%的排除
+    if next_day_idx < len(df):
+        next_day = df.index[next_day_idx]
+        base_price = df.loc[day, 'close']
+        if abs(base_price) > 1e-5:
+            next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
+            if next_day_change >= 8:
+                return False
+
+    # 条件3：涨停后第一天量能过滤条件
+    if next_day_idx < len(df):
+        next_day = df.index[next_day_idx]
+        limit_day_volume = df.loc[day, 'volume']
+        next_day_volume = df.loc[next_day, 'volume']
+        next_day_open = df.loc[next_day, 'open']
+        next_day_close = df.loc[next_day, 'close']
+        next_day_high = df.loc[next_day, 'high']
+        next_day_limit_price = df.loc[next_day, 'limit_price']
+        is_zb = (next_day_high >= next_day_limit_price) and (next_day_close < next_day_limit_price)
+        if (next_day_volume >= limit_day_volume * 3.6) and (df.loc[df.index[next_day_idx], 'close'] < df.loc[df.index[next_day_idx], 'open']):
+            return False
+
+    # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
+    if day_idx >= 5:
+        pre5_start = df.index[df.index.get_loc(day) - 5]
+        pre5_close = df.loc[pre5_start, 'close']
+        if pre5_close != 0:
+            total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
+            if total_change >= 15:
+                return False
+
+    # 条件5：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
+    if next_day_idx + 1 < len(df):  # 确保有第三日数据
+        first_day = df.index[next_day_idx]
+        first_day_data = df.loc[first_day]
+        second_day = df.index[next_day_idx + 1]
+        second_day_data = df.loc[second_day]
+        # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
+        volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
+        price_range = first_day_data['high'] - first_day_data['low']
+        if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
+            candle_condition = False
+        else:
+            body_ratio = (first_day_data['close'] - first_day_data['open']) / price_range
+            candle_condition = (body_ratio > 0.5) and (first_day_data['close'] > first_day_data['open'])
+        # 条件6-2：第三日低开且未收复前日实体中点
+        midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
+        low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
+        recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
+
+        if volume_condition and candle_condition and low_open_condition and recover_condition:
+           return False
+
+    # 条件6：排除市值大于250亿的股票
+    market_value = query_tool.get_stock_market_value(code)
+    if market_value > config.MAX_MARKET_CAP_BILLIONS:
+        return False
+
+    # 条件7 - 排除10日内涨停次数过多的股票
+    lookback_period_9 = 10
+    if day_idx >= lookback_period_9:
+        lookback_data_9 = df.iloc[day_idx - lookback_period_9: day_idx]
+        limit_up_count = (lookback_data_9['close'] >= lookback_data_9['limit_price']).sum()
+        if limit_up_count >= 4:
+            return False
+
+    # 条件8 排除特定题材
+    theme = query_tool.get_theme_by_code(code)
+    name = query_tool.get_name_by_code(code)
+    if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
+        return False
+    if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
+        return False
+
+    # 条件9：排除10日内存在跌破一半的涨停
+    lookback_period_10 = 4
+    if day_idx >= lookback_period_10:
+        lookback_data_10 = df.iloc[day_idx - lookback_period_10: day_idx]
+        recent_limit_ups = lookback_data_10[lookback_data_10['close'] >= lookback_data_10['limit_price']]
+        if not recent_limit_ups.empty:
+            last_limit_up_day = recent_limit_ups.index[-1]
+            # 获取最近涨停日的前一日收盘价
+            prev_close_of_last_limit_up = df.loc[last_limit_up_day, 'prev_close']
+            price_floor = prev_close_of_last_limit_up * 1.035
+            intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, day_idx)
+            intermediate_days = df.iloc[intermediate_days_loc]
+
+            if not intermediate_days.empty:
+                min_low_in_between = intermediate_days['low'].min()
+                if min_low_in_between < price_floor:
+                    return False
+
+    # 条件10：排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票
+    if next_day_idx < len(df):
+        lookback_days = 120
+        if day_idx + 2 >= lookback_days:
+            lookback_window = df.iloc[day_idx - lookback_days: day_idx]
+            if not lookback_window.empty:
+                prev_high_volume_day_loc = lookback_window['volume'].idxmax()
+                volume_at_prev_high = df.loc[prev_high_volume_day_loc, 'volume']
+                next_day_data = df.iloc[next_day_idx]
+                volume_on_next_day = next_day_data['volume']
+                volume_on_day_idx = df.iloc[day_idx]['volume']
+                max_volume = volume_on_day_idx
+                if volume_on_next_day > volume_on_day_idx:
+                    max_volume = volume_on_next_day
+                if max_volume > volume_at_prev_high * 4:
+                    print("排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票")
+                    return False
+
+    # 条件11： 检查首板次日是否受到前期双头颈线压制
+    if next_day_idx < len(df):
+        is_resisted, neckline = check_double_top_neckline_resistance(df, next_day_idx, config)
+        if is_resisted:
+              print(f"[{code}] 在 {df.index[next_day_idx].date()} 触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
+              return False
+
+    # 如果所有检查都通过了
+    return True
+
 
 def find_first_limit_up(symbol, df, config: StrategyConfig):
     """识别首板涨停日并排除连板"""
-    market_type = _get_market_type(symbol)
+    market_type = get_market_type(symbol)
     limit_rate = config.MARKET_LIMIT_RATES[market_type]
 
     # 计算涨停价
     df['prev_close'] = df['close'].shift(1)
     df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
-    # 识别涨停日
+    df['is_limit'] = df['close'] >= df['limit_price']
     limit_days = df[df['close'] >= df['limit_price']].index.tolist()
 
     valid_days = []
@@ -100,124 +249,11 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
         if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
 
-        day_idx = df.index.get_loc(day)
+        # --- 将所有筛选逻辑委托给中央函数 ---
+        if is_valid_first_limit_up_day(df, day, symbol, config, query_tool):
+            valid_days.append(day)
 
-        # 条件1：排除后一日涨停
-        next_day = df.index[df.index.get_loc(day) + 1] if (df.index.get_loc(day) + 1) < len(df) else None
-        if next_day and df.loc[next_day, 'close'] >= df.loc[next_day, 'limit_price']:
-            continue
-
-        # 条件2：涨停后第一天涨幅>8%的排除
-        next_day_idx = df.index.get_loc(day) + 1
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            base_price = df.loc[day, 'close']
-            if abs(base_price) < 1e-5:
-                continue
-            next_day_change = (df.loc[next_day, 'close'] - base_price) / base_price * 100
-            if next_day_change >= 8:
-                continue
-
-        #  条件3：涨停后第一天量能过滤条件（放量存在出货可能）
-        if next_day_idx < len(df):
-            next_day = df.index[next_day_idx]
-            limit_day_volume = df.loc[day, 'volume']
-            next_day_volume = df.loc[next_day, 'volume']
-            next_day_open = df.loc[next_day, 'open']
-            next_day_close = df.loc[next_day, 'close']
-            next_day_high = df.loc[next_day, 'high']
-            next_day_limit_price = df.loc[next_day, 'limit_price']
-            is_zb = (next_day_high >= next_day_limit_price) and (next_day_close < next_day_limit_price)
-            # if not is_zb:
-            #     continue
-            if (next_day_volume >= limit_day_volume * 3.6) and (next_day_close < next_day_open):
-                continue
-
-        # 条件4：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-        if df.index.get_loc(day) >= 5:
-            pre5_start = df.index[df.index.get_loc(day) - 5]
-            pre5_close = df.loc[pre5_start, 'close']
-            if pre5_close != 0:
-                total_change = (df.loc[day, 'close'] - pre5_close) / pre5_close * 100
-                if total_change >= 15:
-                    continue
-
-        # 条件5：前高压制条件
-        # if day_idx >= 20:  # 确保20日历史数据
-        #     # 计算前高（20日最高价）
-        #     historical_high = df.iloc[day_idx - 20:day_idx]['high'].max()
-        #     # 检查涨停前3日最高价是否触及前高的95%，获取涨停日前4个交易日（包括涨停日前3天、前2天、前1天，即索引位置day_idx-3到day_idx-1）
-        #     recent_4day_high = df.iloc[day_idx - 4:day_idx]['high'].max()
-        #     if historical_high * 0.95 <= recent_4day_high < historical_high:
-        #         continue  # 触发排除除条件
-
-        # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
-        if next_day_idx + 1 < len(df):  # 确保有第三日数据
-            # 获取首板次日（第一天）和第三日（第二天）数据
-            first_day = df.index[next_day_idx]
-            first_day_data = df.loc[first_day]
-            second_day = df.index[next_day_idx + 1]
-            second_day_data = df.loc[second_day]
-
-            # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
-            volume_condition = (first_day_data['volume'] > df.loc[day, 'volume'] * 1.5)  # 放量1.5倍
-            price_range = first_day_data['high'] - first_day_data['low']
-            if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
-                candle_condition = False
-            else:
-                body_ratio = (first_day_data['close'] - first_day_data['open']) / price_range
-                candle_condition = (body_ratio > 0.5) and (first_day_data['close'] > first_day_data['open'])
-
-            # 条件6-2：第三日低开且未收复前日实体中点
-            midpoint = (first_day_data['open'] + first_day_data['close']) / 2  # 前日阳线实体中点
-            low_open_condition = (second_day_data['open'] < first_day_data['close'])  # 低开
-            recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
-
-            if volume_condition and candle_condition and low_open_condition and recover_condition:
-                continue  # 触发排除
-
-        # 条件7：排除市值大于250亿的股票
-        market_value = query_tool.get_stock_market_value(symbol)
-        if market_value > config.MAX_MARKET_CAP_BILLIONS:
-            continue
-
-        # 条件8 - 排除10日内涨停次数过多的股票
-        lookback_period_9 = 10
-        if day_idx >= lookback_period_9:
-            lookback_data_9 = df.iloc[day_idx - lookback_period_9: day_idx]
-            limit_up_count = (lookback_data_9['close'] >= lookback_data_9['limit_price']).sum()
-            if limit_up_count >= 4:
-                continue
-
-        # 条件9 排除特定题材
-        theme = query_tool.get_theme_by_code(code)
-        name = query_tool.get_name_by_code(code)
-        if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
-            continue
-        if "石油" in name or "油气" in name or "石油" in theme:  # 受海外消息影响过于严重，不参与
-            continue
-
-        # 条件10：排除10日内存在跌破一半的涨停
-        lookback_period_10 = 4
-        if day_idx >= lookback_period_10:
-            lookback_data_10 = df.iloc[day_idx - lookback_period_10: day_idx]
-            recent_limit_ups = lookback_data_10[lookback_data_10['close'] >= lookback_data_10['limit_price']]
-            if not recent_limit_ups.empty:
-                last_limit_up_day = recent_limit_ups.index[-1]
-                # 获取最近涨停日的前一日收盘价
-                prev_close_of_last_limit_up = df.loc[last_limit_up_day, 'prev_close']
-                price_floor = prev_close_of_last_limit_up * 1.035
-                intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, day_idx)
-                intermediate_days = df.iloc[intermediate_days_loc]
-
-                if not intermediate_days.empty:
-                    min_low_in_between = intermediate_days['low'].min()
-                    if min_low_in_between < price_floor:
-                        continue
-
-        valid_days.append(day)
     return valid_days
-
 
 def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
     """模拟预测MA5的核心方法"""
@@ -262,7 +298,7 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
 
     # 3. 使用find_peaks寻找显著高点
     # prominence(振幅)参数是关键，用于过滤小波动，值越大，找到的波峰越显著
-    peaks, properties = find_peaks(hist_data['high'], prominence=hist_data['high'].std() * 0.8)
+    peaks, properties = find_peaks(hist_data['high'], prominence=hist_data['high'].std() * 0.95)
 
     if len(peaks) < 2:
         return False, None  # 未找到足够的显著高点
@@ -282,17 +318,21 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
     # 6. 找到两个高点之间的最低点，作为颈线
     trough_start_idx = df.index.get_loc(p1_date)
     trough_end_idx = df.index.get_loc(p2_date)
-    trough_low_price = df.iloc[trough_start_idx:trough_end_idx]['close'].min()
-    neckline_price = trough_low_price
+    trough_low_price = df.iloc[trough_start_idx:trough_end_idx]['low'].min()
+    trough_close_price = df.iloc[trough_start_idx:trough_end_idx]['close'].min()
+    neckline_low_price = trough_low_price
+    neckline_close_price = trough_close_price
 
     # 8. 判断'check_day'是否触及颈线位并回落
     check_day_data = df.iloc[check_day_idx]
     check_day_high = check_day_data['high']
     check_day_close = check_day_data['close']
 
-    # 核心判断：当日最高价超过颈线，但收盘价低于颈线，视为受阻回落
-    if check_day_high >= neckline_price and check_day_close < neckline_price:
-        return True, neckline_price
+    touch_close = check_day_high >= neckline_close_price and check_day_close < neckline_close_price
+    touch_low = check_day_high >= neckline_low_price and check_day_close < neckline_low_price
+    if touch_close and not (touch_close and touch_low):
+        # 核心判断：当日最高价超过颈线，但收盘价低于颈线，视为受阻回落
+        return True, neckline_close_price
 
     return False, None
 
@@ -337,6 +377,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
+        current_day_idx = start_idx + offset
 
         # 买前条件1 检查中间是否有新的涨停
         has_new_limit = False
@@ -362,18 +403,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         ma5_data = df['ma5'].iloc[start_idx:start_idx + offset + 1]
         if ma5_data.isnull().any():
             continue
-
-        # =================================================================
-        # 买入条件4: 检查首板次日是否受到前期双头颈线压制
-        # =================================================================
-        # 我们要检查的是买入日的前一天，即首板涨停后的第一天
-        check_resistance_day_idx = start_idx + 1
-        if check_resistance_day_idx < len(df):
-            is_resisted, neckline = check_double_top_neckline_resistance(df, check_resistance_day_idx, config)
-            if not is_resisted:
-                # print(
-                #     f"[{stock_code}] 在 {df.index[check_resistance_day_idx].date()} 触及双头颈线 {neckline:.2f} 回落，放弃在 {current_day.date()} 的买入机会。")
-                continue  # 如果受到压制，则跳过本次买入机会
 
         # 计算三个挂单价格
         price1, price2, price3 = simulate_ma5_order_prices(df, current_day, config)
@@ -605,12 +634,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             # if sell_data['close'] < sell_data['ma5']:
             if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= config.SELL_ON_MA_BREAKDOWN_THRESHOLD:
                 sell_price = sell_data['close']
-                # shadow_up_ratio = (sell_data['high'] - sell_data['close']) / sell_data['close']
-                # # 长下影线判断（收盘价-最低价）/最低价 > 3%
-                # shadow_down_ratio = (sell_data['close'] - sell_data['low']) / sell_data['low']
-                # if shadow_down_ratio > 0.03 and shadow_up_ratio < 0.02:  # 长下影线超过3%，且上影线小于1.5%
-                #     print(f"[{sell_day.strftime('%Y-%m-%d')}] 长下影线拉回({shadow_down_ratio:.2%})，继续持有")
-                #     continue  # 跳过卖出，继续持有观察
+
                 sell_reason = '跌破五日线'
                 sell_price = sell_data['close']
                 sell_day = current_sell_day
@@ -930,8 +954,8 @@ if __name__ == '__main__':
         print(f"近三月收益：{monthly_str}")
 
         # 示例输出
-        print("\n\033[1m最近5笔交易记录:\033[0m")
-        print(result_df.tail(5).to_string(index=False))
+        # print("\n\033[1m最近5笔交易记录:\033[0m")
+        # print(result_df.tail(5).to_string(index=False))
     else:
         print("未产生有效交易信号")
 
