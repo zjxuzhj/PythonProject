@@ -98,6 +98,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     prev_day_idx = base_day_idx - 1  # 涨停前一日
     first_day_idx = base_day_idx + 1  # 涨停后一日
     second_day_idx = base_day_idx + 2  # 涨停后第二日
+    third_day_idx = base_day_idx + 3
 
     # 条件0：排除前一日涨停
     prev_day = None
@@ -147,18 +148,11 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                     print("排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票")
                     return False
 
-        # 条件5： 检查首板次日是否受到前期双头颈线压制
-        is_resisted, neckline = check_double_top_neckline_resistance(df, first_day_idx, config)
-        if is_resisted:
-            print(
-                f"[{code}] 在 {first_day} 触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
-            return False
-
-        # 条件6：排除首板次日放量阳线+第三日低开未收复前日实体中点的情况
+        # 条件6：排除涨停后第一天放量阳线+涨停后第二天低开未收复前日实体中点的情况
         if second_day_idx < len(df):
             second_day = df.index[second_day_idx]
             second_day_data = df.loc[second_day]
-            # 条件6-1：首板次日为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
+            # 条件6-1：涨停后第一天为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
             volume_condition = (first_day_volume > base_day_volume * 1.5)  # 放量1.5倍
             price_range = first_day_high - first_day_low
             if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
@@ -166,7 +160,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             else:
                 body_ratio = (first_day_close - first_day_open) / price_range
                 candle_condition = (body_ratio > 0.5) and (first_day_close > first_day_open)
-            # 条件6-2：第三日低开且未收复前日实体中点
+            # 条件6-2：涨停后第二天低开且未收复前日实体中点
             midpoint = (first_day_close + first_day_open) / 2  # 前日阳线实体中点
             low_open_condition = (second_day_data['open'] < first_day_close)  # 低开
             recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
@@ -235,6 +229,14 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
     :return: 如果所有条件都满足，返回 True，否则返回 False
     """
     base_price = df.iloc[base_day_idx]['close']  # 涨停日收盘价，重要支撑位
+    base_day_volume = df.iloc[base_day_idx]['volume']
+    prev_day_idx = base_day_idx - 1  # 涨停前一日
+    first_day_idx = base_day_idx + 1  # 涨停后一日
+    second_day_idx = base_day_idx + 2  # 涨停后第二日
+    third_day_idx = base_day_idx + 3
+    first_day = df.index[first_day_idx]
+
+    potential_buy_day_idx = base_day_idx + offset
 
     # 买前条件1: 检查在首板日和买入日之间，是否出现了新的涨停
     for i in range(1, offset):
@@ -249,23 +251,69 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
             return False
 
     # 买前条件3: 检查到买入日为止，MA5数据是否有效（非空值）
-    ma5_data = df['ma5'].iloc[base_day_idx: offset]
+    ma5_data = df['ma5'].iloc[base_day_idx: potential_buy_day_idx + 1]
     if ma5_data.isnull().any():
         return False
 
     # 买前条件4: 检查在首板日和买入日之间，K线是否始终在MA5之上
-    history_window = df.iloc[base_day_idx + 1: offset]
+    history_window = df.iloc[base_day_idx + 1: potential_buy_day_idx]
     if not history_window.empty:
         # 使用 .all() 确保窗口内所有天的收盘价都高于其当天的ma5
         if not (history_window['close'] > history_window['ma5']).all():
             return False
 
     # 买前条件5: 排除买入前日收盘价>80的股票
-    latest_close = df.iloc[base_day_idx + offset]['close']
+    latest_close = df.iloc[potential_buy_day_idx]['close']
     if latest_close > 80:
         return False
 
-    return True
+    # 买前条件6: 排除涨停后三天的最高价低于40天内最高价且距离小于1%，并且第三天冲高回落超过4%
+    if offset > 3:
+        pressure_test_met = False
+        lookback_days_6b = 40
+        lookback_days_6b_2 = 5
+        if base_day_idx >= lookback_days_6b:
+            hist_window = df.iloc[base_day_idx - lookback_days_6b: base_day_idx-lookback_days_6b_2]
+            prev_40d_high = hist_window['high'].max()
+            high_t1 = df.iloc[first_day_idx]['high']
+            high_t2 = df.iloc[second_day_idx]['high']
+            high_t3 = df.iloc[third_day_idx]['high']
+            peak_T1_T2_T3 = max(high_t1, high_t2,high_t3)
+            if peak_T1_T2_T3 < prev_40d_high and (prev_40d_high - peak_T1_T2_T3) / prev_40d_high < 0.01:
+                pressure_test_met = True
+        weakness_confirmed = False
+        if pressure_test_met:
+            third_day_data = df.iloc[third_day_idx]
+            high_t3 = third_day_data['high']
+            close_t3 = third_day_data['close']
+            if high_t3 > 0:
+                fallback_ratio = (high_t3 - close_t3) / high_t3
+                if fallback_ratio > 0.04:
+                    weakness_confirmed = True
+
+        if pressure_test_met and weakness_confirmed:
+            return False
+
+        # 买前条件7： 检查涨停后第一天，第二天，第三天是否受到前期双头颈线压制
+        is_resisted, neckline = check_double_top_neckline_resistance(df, first_day_idx, config)
+        if is_resisted:
+            print(
+                f"[{code}] 在 {first_day} 触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
+            return False
+
+        is_resisted, neckline = check_double_top_neckline_resistance(df, second_day_idx, config)
+        if is_resisted:
+            print(
+                f"[{code}] 在涨停后第二天，触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
+            return True
+
+        is_resisted, neckline = check_double_top_neckline_resistance(df, third_day_idx, config)
+        if is_resisted:
+            print(
+                f"[{code}] 在涨停后第三天，触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
+            return True
+
+    return False
 
 
 def find_first_limit_up(symbol, df, config: StrategyConfig):
