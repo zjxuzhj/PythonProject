@@ -40,7 +40,6 @@ def find_recent_first_limit_up(code, old_df):
     old_df['prev_close'] = old_df['close'].shift(1)
     old_df['limit_price'] = (old_df['prev_close'] * (1 + limit_rate)).round(2)
     old_df['is_limit'] = old_df['close'] >= old_df['limit_price']
-    old_df['ma5'] = old_df['close'].rolling(5, min_periods=1).mean()
 
     # 筛选有效时间范围
     extended_days = 20
@@ -149,14 +148,12 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             if isNeedLog:
                 print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
             continue
-        # 排除当前股价>90的股票
-        latest_close = df.iloc[-1]['close']
-        if latest_close > 90:
-            continue
+
         first_limit_days = find_recent_first_limit_up(code, df)
         for day in first_limit_days:
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
+            df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
             if normal.is_valid_buy_opportunity(df, base_day_idx, offset):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))

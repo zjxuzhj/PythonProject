@@ -68,7 +68,6 @@ def get_stock_data(symbol, config: StrategyConfig):
     if not os.path.exists(file_path):
         print(f"数据文件未找到: {symbol} at {file_path}")
         return None
-
     try:
         df = pd.read_parquet(file_path, engine='fastparquet')
         print(f"已从缓存加载数据: {symbol}")
@@ -184,7 +183,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if total_change >= 15:
                 return False
 
-    # 条件8 - 排除10日内涨停次数过多的股票
+    # 条件8：排除10日内涨停次数过多的股票
     lookback_period = 10
     if base_day_idx >= lookback_period:
         lookback_data = df.iloc[base_day_idx - lookback_period: base_day_idx]
@@ -215,7 +214,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     if market_value > config.MAX_MARKET_CAP_BILLIONS:
         return False
 
-    # 条件11 排除特定题材
+    # 条件11：排除特定题材
     theme = query_tool.get_theme_by_code(code)
     name = query_tool.get_name_by_code(code)
     if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
@@ -232,8 +231,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
 
     :param df: 包含所有数据的DataFrame
     :param base_day_idx: 首板涨停日的整数索引
-    :param potential_buy_day_idx: 潜在买入日的整数索引
-    :param base_price: 首板日的收盘价，作为关键支撑位
+    :param offset: 潜在买入日的偏移整数索引
     :return: 如果所有条件都满足，返回 True，否则返回 False
     """
     base_price = df.iloc[base_day_idx]['close']  # 涨停日收盘价，重要支撑位
@@ -242,27 +240,31 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
     for i in range(1, offset):
         check_day = df.index[base_day_idx + i]
         if df.loc[check_day, 'is_limit']:
-            return False  # 中间出现新涨停，机会失效
+            return False
 
     # 买前条件2: 检查在首板日和买入日之间，收盘价是否始终高于首板收盘价
     for i in range(1, offset):
         check_day = df.index[base_day_idx + i]
         if df.loc[check_day, 'close'] < base_price:
-            return False  # 跌破关键支撑位，机会失效
+            return False
 
     # 买前条件3: 检查到买入日为止，MA5数据是否有效（非空值）
     ma5_data = df['ma5'].iloc[base_day_idx: offset]
     if ma5_data.isnull().any():
-        return False  # MA5数据不足，无法判断
+        return False
 
     # 买前条件4: 检查在首板日和买入日之间，K线是否始终在MA5之上
     history_window = df.iloc[base_day_idx + 1: offset]
     if not history_window.empty:
         # 使用 .all() 确保窗口内所有天的收盘价都高于其当天的ma5
         if not (history_window['close'] > history_window['ma5']).all():
-            return False  # 中间有跌破MA5的情况，趋势不强
+            return False
 
-    # 所有买前检查都已通过
+    # 买前条件5: 排除买入前日收盘价>80的股票
+    latest_close = df.iloc[base_day_idx + offset]['close']
+    if latest_close > 80:
+        return False
+
     return True
 
 
@@ -282,7 +284,6 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
         if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
 
-        # --- 将所有筛选逻辑委托给中央函数 ---
         if is_valid_first_limit_up_day(df, day, symbol, config, query_tool):
             valid_days.append(day)
 
@@ -358,8 +359,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     first_limit_timestamp = pd.Timestamp(first_limit_day)
     limit_rate = config.MARKET_LIMIT_RATES[get_market_type(stock_code)]
 
-    base_price = df.loc[first_limit_day, 'close']  # 首板收盘价，最重要的位置，表示主力的支撑度
-
     next_day_2_pct = None
     start_idx = df.index.get_loc(first_limit_day)
     if start_idx + 2 < len(df):  # 确保有第二个交易日数据
@@ -378,8 +377,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     df['ma5'] = df['close'].rolling(5).mean()
     # df['ma10'] = df['close'].rolling(10).mean()
     # df['ma20'] = df['close'].rolling(20).mean()
-    # df['ma30'] = df['close'].rolling(30).mean()
-    # df['ma55'] = df['close'].rolling(55).mean()
     df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
 
     # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
