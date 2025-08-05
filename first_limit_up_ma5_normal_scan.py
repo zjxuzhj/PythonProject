@@ -4,9 +4,10 @@ from datetime import datetime, time
 
 import pandas as pd
 
+import first_limit_up_ma5_normal as normal
 import getAllStockCsv
 from first_limit_up_ma5_normal import StrategyConfig
-import first_limit_up_ma5_normal as normal
+
 query_tool = getAllStockCsv.StockQuery()
 
 
@@ -35,16 +36,17 @@ def find_recent_first_limit_up(code, old_df):
     if end_date is None or old_df.empty:
         return []
 
+    # 计算涨停价
+    old_df['prev_close'] = old_df['close'].shift(1)
+    old_df['limit_price'] = (old_df['prev_close'] * (1 + limit_rate)).round(2)
+    old_df['is_limit'] = old_df['close'] >= old_df['limit_price']
+    old_df['ma5'] = old_df['close'].rolling(5, min_periods=1).mean()
+
     # 筛选有效时间范围
     extended_days = 20
     start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
     date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
     df = old_df.loc[date_mask].copy()
-
-    # 计算涨停价
-    df['prev_close'] = df['close'].shift(1)
-    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
-    df['is_limit'] = df['close'] >= df['limit_price']
 
     # 筛选最近days个交易日内的涨停日（核心筛选范围）
     # recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
@@ -70,30 +72,10 @@ def find_recent_first_limit_up(code, old_df):
         if day != limit_days[0]:
             continue
 
-        if normal.is_valid_first_limit_up_day(df, day, code, config,query_tool):
+        if normal.is_valid_first_limit_up_day(df, day, code, config, query_tool):
             valid_days.append(day)
 
     return valid_days
-
-
-def generate_signals(df, first_limit_day, stock_code, stock_name):
-    # 首板收盘价，最重要的位置，表示主力的支撑度
-    base_price = df.loc[first_limit_day, 'close']
-    df['5ma'] = df['close'].rolling(5, min_periods=1).mean()
-    post_limit_df = df[df.index >= first_limit_day].copy()
-
-    # 条件1：涨停后每日收盘价高于首板收盘价（不包含首板日）
-    always_above_base = True
-    for date in post_limit_df.index:
-        if date == first_limit_day:  # 跳过首板日（不需要比较）
-            continue
-        close_price = post_limit_df.loc[date, 'close']
-        if close_price < base_price:
-            always_above_base = False
-            break
-
-    return always_above_base
-
 
 def get_target_stocks(isNeedLog=True, target_date=None):
     """
@@ -171,10 +153,11 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         latest_close = df.iloc[-1]['close']
         if latest_close > 90:
             continue
-
         first_limit_days = find_recent_first_limit_up(code, df)
         for day in first_limit_days:
-            if generate_signals(df, day, code, name):
+            base_day_idx = df.index.get_loc(day)
+            offset = len(df) - base_day_idx
+            if normal.is_valid_buy_opportunity(df, base_day_idx, offset):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
 
@@ -183,9 +166,6 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme in limit_up_stocks:
         # 排除特定板块和股票
-        if any(exclude in theme for exclude in ["证券", "白酒", "石油", "外贸"]):
-            excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
-            continue
         if code in ["sz002506", "sz002153"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
@@ -268,8 +248,7 @@ if __name__ == '__main__':
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
     # target_date = "20250730"
-    # target_stocks,fourth_day_stocks = get_target_stocks(target_date=target_date)
-
+    # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果
     print("\n目标股票列表:")
