@@ -219,7 +219,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     return True
 
 
-def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -> bool:
+def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int, code: str,
+                             config: StrategyConfig) -> bool:
     """
     检查从首板日到潜在买入日之间，是否满足所有的买入前置条件。
 
@@ -263,7 +264,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
             return False
 
     # 买前条件5: 排除买入前日收盘价>80的股票
-    latest_close = df.iloc[potential_buy_day_idx]['close']
+    latest_close = df.iloc[potential_buy_day_idx - 1]['close']
     if latest_close > 80:
         return False
 
@@ -273,12 +274,12 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
         lookback_days_6b = 40
         lookback_days_6b_2 = 5
         if base_day_idx >= lookback_days_6b:
-            hist_window = df.iloc[base_day_idx - lookback_days_6b: base_day_idx-lookback_days_6b_2]
+            hist_window = df.iloc[base_day_idx - lookback_days_6b: base_day_idx - lookback_days_6b_2]
             prev_40d_high = hist_window['high'].max()
             high_t1 = df.iloc[first_day_idx]['high']
             high_t2 = df.iloc[second_day_idx]['high']
             high_t3 = df.iloc[third_day_idx]['high']
-            peak_T1_T2_T3 = max(high_t1, high_t2,high_t3)
+            peak_T1_T2_T3 = max(high_t1, high_t2, high_t3)
             if peak_T1_T2_T3 < prev_40d_high and (prev_40d_high - peak_T1_T2_T3) / prev_40d_high < 0.01:
                 pressure_test_met = True
         weakness_confirmed = False
@@ -295,25 +296,57 @@ def is_valid_buy_opportunity(df: pd.DataFrame, base_day_idx: int, offset: int) -
             return False
 
         # 买前条件7： 检查涨停后第一天，第二天，第三天是否受到前期双头颈线压制
-        is_resisted, neckline = check_double_top_neckline_resistance(df, first_day_idx, config)
-        if is_resisted:
-            print(
-                f"[{code}] 在 {first_day} 触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
-            return False
+        for i in range(1, offset):
+            check_day_idx = base_day_idx + i
 
-        is_resisted, neckline = check_double_top_neckline_resistance(df, second_day_idx, config)
-        if is_resisted:
-            print(
-                f"[{code}] 在涨停后第二天，触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
-            return True
+            # 再次确认索引边界，虽然外层调用已处理，但这里更安全
+            if check_day_idx >= len(df):
+                continue
 
-        is_resisted, neckline = check_double_top_neckline_resistance(df, third_day_idx, config)
-        if is_resisted:
-            print(
-                f"[{code}] 在涨停后第三天，触及双头颈线 {neckline:.2f} 回落，放弃可能的买入机会。")
-            return True
+            is_resisted, neckline = check_double_top_neckline_resistance(df, check_day_idx, config)
 
-    return False
+            if is_resisted:
+                check_day_date = df.index[check_day_idx].date()
+                print(f"[{code}] 在涨停后第{i}天({check_day_date})触及双头颈线 {neckline:.2f} 回落，放弃买入机会。")
+                return False
+
+        # 买前条件8： 排除T+1,T+2连续创40日新高但巨量回落的“双顶出货”形态
+        lookback_days = 40
+        # 必须有足够的回看周期和未来两天的数据
+        if base_day_idx >= lookback_days and second_day_idx < len(df):
+            hist_window = df.iloc[base_day_idx - lookback_days: base_day_idx]
+            first_day_data = df.iloc[first_day_idx]
+            high_t1 = first_day_data['high']
+            close_t1 = first_day_data['close']
+            volume_t1 = first_day_data['volume']
+            second_day_data = df.iloc[second_day_idx]
+            high_t2 = second_day_data['high']
+            close_t2 = second_day_data['close']
+            volume_t2 = second_day_data['volume']
+            # 条件A: T+1和T+2是否双双创出40日新高
+            prev_40d_high = hist_window['high'].max()
+            condition_A_met = (high_t1 > prev_40d_high) and (high_t2 > prev_40d_high)
+            # 条件B: 两个高点是否足够接近 (相差<0.5%)
+            if max(high_t1, high_t2) > 0:
+                proximity = abs(high_t1 - high_t2) / max(high_t1, high_t2)
+                condition_B_met = (proximity <= 0.001)
+            else:
+                condition_B_met = False
+            # 条件C: 两天是否都有大于3%的回撤
+            fallback_t1_ok = ((high_t1 - close_t1) / high_t1 > 0.03) if high_t1 > 0 else False
+            fallback_t2_ok = ((high_t2 - close_t2) / high_t2 > 0.03) if high_t2 > 0 else False
+            condition_C_met = fallback_t1_ok and fallback_t2_ok
+            # 条件D: 两天成交量之和是否属于巨量,计算历史窗口中，任意连续两天的最大成交量之和
+            rolling_vol_sum = hist_window['volume'].rolling(window=2).sum()
+            max_rolling_vol = rolling_vol_sum.max()
+            condition_D_met = False
+            if pd.notna(max_rolling_vol):
+                current_vol_sum = volume_t1 + volume_t2
+                condition_D_met = (current_vol_sum > max_rolling_vol * 0.95)
+            if condition_A_met and condition_B_met and condition_C_met and condition_D_met:
+                print(f"[{code}] 在 {df.index[base_day_idx].date()} 后触发T+1,T+2双顶巨量回落形态，排除。")
+                return False
+    return True
 
 
 def find_first_limit_up(symbol, df, config: StrategyConfig):
@@ -436,8 +469,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
 
-        # 使用一个函数调用替换掉所有分散的买前检查
-        if not is_valid_buy_opportunity(df, start_idx, offset):
+        if not is_valid_buy_opportunity(df, start_idx, offset, code, config):
             continue
 
         # 计算三个挂单价格
@@ -500,24 +532,51 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         # 持有期卖出逻辑
         hold_days = 0
         for sell_offset in range(1, 20):
-            if start_idx + offset + sell_offset >= len(df):
-                break
-            day_idx = start_idx + offset + sell_offset
             sell_day_idx = start_idx + offset + sell_offset
-            # 如果索引超出数据范围，则跳出循环
             if sell_day_idx >= len(df):
+                last_day_idx = len(df) - 1
+                sell_day = df.index[last_day_idx]
+                sell_price = df.iloc[last_day_idx]['close']
+                # 重新计算持有天数
+                hold_days = (pd.Timestamp(sell_day) - buy_day_timestamp).days
+                sell_reason = '持有中'
+                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
+                signals.append({
+                    '股票代码': stock_code,
+                    '股票名称': stock_name,
+                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
+                    '买入日': current_day.strftime('%Y-%m-%d'),
+                    '卖出日': sell_day.strftime('%Y-%m-%d'),  # <--- 修改: 使用上面逻辑确定的卖出日
+                    '涨停后天数': days_after_limit,
+                    '持有天数': hold_days,  # <--- 修改: 使用计算出的持有天数
+                    '实际均价': round(weighted_avg_price, 2),
+                    '卖出价': round(sell_price, 2),  # <--- 修改: 使用确定的卖出价
+                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
+                    '收益率(%)': round(profit_pct, 2),
+                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
+                    '卖出原因': sell_reason,
+                    '挂单价1': round(price1, 2) if price1 else None,
+                    '挂单价2': round(price2, 2) if price2 else None,
+                    '挂单价3': round(price3, 2) if price3 else None,
+                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+                    '是否成交1': '是' if actual_price1 else '否',
+                    '是否成交2': '是' if actual_price2 else '否',
+                    '是否成交3': '是' if actual_price3 else '否',
+                    '买入比例': round(total_percentage * 100, 2)
+                })
                 break
+
             sell_day = df.index[start_idx + offset + sell_offset]
-            current_sell_day = df.index[sell_day_idx]
-            sell_data = df.loc[current_sell_day]
+            sell_data = df.loc[sell_day]
+            sell_price = sell_data['close']
+            profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
             hold_days += 1
 
             # 4. 最大持有天数限制（15天）
             if hold_days >= 15:
                 sell_reason = '持有超限'
-                sell_price = sell_data['close']
-                sell_day = current_sell_day
-                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
                     '股票代码': stock_code,
                     '股票名称': stock_name,
@@ -532,7 +591,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                     '收益率(%)': round(profit_pct, 2),
                     # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': '持有超限',
+                    '卖出原因': sell_reason,
                     '挂单价1': round(price1, 2) if price1 else None,
                     '挂单价2': round(price2, 2) if price2 else None,
                     '挂单价3': round(price3, 2) if price3 else None,
@@ -554,10 +613,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 if prev_day_data['close'] <= prev_day_data['down_limit_price']:
                     # 第二天收盘价卖出
                     sell_reason = '跌停止损'
-                    sell_price = sell_data['close']
-                    sell_day = current_sell_day
-
-                    profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                     signals.append({
                         '股票代码': stock_code,
                         '股票名称': stock_name,
@@ -572,7 +627,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                         '收益率(%)': round(profit_pct, 2),
                         # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                         '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '跌停止损',
+                        '卖出原因': sell_reason,
                         '挂单价1': round(price1, 2) if price1 else None,
                         '挂单价2': round(price2, 2) if price2 else None,
                         '挂单价3': round(price3, 2) if price3 else None,
@@ -593,9 +648,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
                     sell_reason = '断板止盈'
-                    sell_price = sell_data['close']
-                    sell_day = current_sell_day
-                    profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                     signals.append({
                         '股票代码': stock_code,
                         '股票名称': stock_name,
@@ -610,7 +662,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                         '收益率(%)': round(profit_pct, 2),
                         # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                         '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': '断板止盈',
+                        '卖出原因': sell_reason,
                         '挂单价1': round(price1, 2) if price1 else None,
                         '挂单价2': round(price2, 2) if price2 else None,
                         '挂单价3': round(price3, 2) if price3 else None,
@@ -635,9 +687,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
             if is_limit_touched and is_limit_closed and not is_prev_limit:
                 sell_reason = '炸板卖出'
-                sell_price = sell_data['close']
-                sell_day = current_sell_day
-                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
                     '股票代码': stock_code,
                     '股票名称': stock_name,
@@ -652,7 +701,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                     '收益率(%)': round(profit_pct, 2),
                     # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': '炸板卖出',
+                    '卖出原因': sell_reason,
                     '挂单价1': round(price1, 2) if price1 else None,
                     '挂单价2': round(price2, 2) if price2 else None,
                     '挂单价3': round(price3, 2) if price3 else None,
@@ -672,9 +721,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 sell_price = sell_data['close']
 
                 sell_reason = '跌破五日线'
-                sell_price = sell_data['close']
-                sell_day = current_sell_day
-                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
                 signals.append({
                     '股票代码': stock_code,
                     '股票名称': stock_name,
@@ -689,7 +735,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                     '收益率(%)': round(profit_pct, 2),
                     # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
                     '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': '跌破五日线',
+                    '卖出原因': sell_reason,
                     '挂单价1': round(price1, 2) if price1 else None,
                     '挂单价2': round(price2, 2) if price2 else None,
                     '挂单价3': round(price3, 2) if price3 else None,
@@ -702,42 +748,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                     '买入比例': round(total_percentage * 100, 2)
                 })
                 break
-
-        if sell_day is None:
-            # 将卖出日设置为数据的最后一天，用于计算浮动盈亏
-            last_day_idx = len(df) - 1
-            sell_day = df.index[last_day_idx]
-            sell_price = df.iloc[last_day_idx]['close']
-            # 重新计算持有天数
-            hold_days = (pd.Timestamp(sell_day) - buy_day_timestamp).days
-            sell_reason = '持有中'
-            profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
-            signals.append({
-                '股票代码': stock_code,
-                '股票名称': stock_name,
-                '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                '买入日': current_day.strftime('%Y-%m-%d'),
-                '卖出日': sell_day.strftime('%Y-%m-%d'),  # <--- 修改: 使用上面逻辑确定的卖出日
-                '涨停后天数': days_after_limit,
-                '持有天数': hold_days,  # <--- 修改: 使用计算出的持有天数
-                '实际均价': round(weighted_avg_price, 2),
-                '卖出价': round(sell_price, 2),  # <--- 修改: 使用确定的卖出价
-                '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                '收益率(%)': round(profit_pct, 2),
-                '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                '卖出原因': sell_reason,  # <--- 修改: 使用确定的卖出原因
-                '挂单价1': round(price1, 2) if price1 else None,
-                '挂单价2': round(price2, 2) if price2 else None,
-                '挂单价3': round(price3, 2) if price3 else None,
-                '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                '是否成交1': '是' if actual_price1 else '否',
-                '是否成交2': '是' if actual_price2 else '否',
-                '是否成交3': '是' if actual_price3 else '否',
-                '买入比例': round(total_percentage * 100, 2)
-            })
-        break  # 只处理第一个符合条件的买入点
+        if signals:  # 只要已经生成了信号，就终止，不然会重复统计一个涨停信号的不同时间段买入
+            break
     return signals
 
 
