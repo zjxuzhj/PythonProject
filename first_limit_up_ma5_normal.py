@@ -439,26 +439,52 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
     limit_rate = config.MARKET_LIMIT_RATES[get_market_type(stock_code)]
+    start_idx = df.index.get_loc(first_limit_day)
+
+    # --- 数据准备 ---
+    df['ma5'] = df['close'].rolling(5).mean()
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
 
     next_day_2_pct = None
-    start_idx = df.index.get_loc(first_limit_day)
-    if start_idx + 2 < len(df):  # 确保有第二个交易日数据
+    if start_idx + 2 < len(df):
         next_day_1 = df.index[start_idx + 1]
         next_day_2 = df.index[start_idx + 2]
         next_day_1_close = df.loc[next_day_1, 'close']
         next_day_2_close = df.loc[next_day_2, 'low']
-        if abs(next_day_1_close) > 1e-5:  # 防止除零错误
+        if abs(next_day_1_close) > 1e-5:
             next_day_2_pct = (next_day_2_close - next_day_1_close) / next_day_1_close * 100
 
     start_idx = df.index.get_loc(first_limit_day)
-    if (start_idx + 1) >= len(df):  # 边界检查，跳过无数据的情况
+    if (start_idx + 1) >= len(df):
         return signals
 
-    # --- 数据准备 ---
-    df['ma5'] = df['close'].rolling(5).mean()
-    # df['ma10'] = df['close'].rolling(10).mean()
-    # df['ma20'] = df['close'].rolling(20).mean()
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
+    #  辅助函数：统一创建交易信号字典，避免重复代码
+    def _create_signal_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, avg_price):
+        return {
+            '股票代码': stock_code,
+            '股票名称': stock_name,
+            '首板日': first_limit_day.strftime('%Y-%m-%d'),
+            '买入日': buy_data.name.strftime('%Y-%m-%d'),
+            '卖出日': sell_day.strftime('%Y-%m-%d'),
+            '涨停后天数': (buy_data.name - first_limit_timestamp).days,
+            '持有天数': hold_days_val,
+            '实际均价': round(avg_price, 2),
+            '卖出价': round(sell_price, 2),
+            '触碰类型': 'MA5支撑反弹' if buy_data['close'] > buy_data['ma5'] else 'MA5破位回升',
+            '收益率(%)': round((sell_price - avg_price) / avg_price * 100, 2),
+            '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
+            '卖出原因': sell_reason_str,
+            # '挂单价1': round(price1, 2) if price1 else None,
+            # '挂单价2': round(price2, 2) if price2 else None,
+            # '挂单价3': round(price3, 2) if price3 else None,
+            # '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
+            # '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
+            # '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
+            # '是否成交1': '是' if actual_price1 else '否',
+            # '是否成交2': '是' if actual_price2 else '否',
+            # '是否成交3': '是' if actual_price3 else '否',
+            # '买入比例': round(total_percentage * 100, 2)
+        }
 
     # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
     for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
@@ -536,73 +562,27 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             if sell_day_idx >= len(df):
                 last_day_idx = len(df) - 1
                 sell_day = df.index[last_day_idx]
+                sell_data = df.loc[sell_day]
                 sell_price = df.iloc[last_day_idx]['close']
                 # 重新计算持有天数
                 hold_days = (pd.Timestamp(sell_day) - buy_day_timestamp).days
                 sell_reason = '持有中'
-                profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
-                signals.append({
-                    '股票代码': stock_code,
-                    '股票名称': stock_name,
-                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                    '买入日': current_day.strftime('%Y-%m-%d'),
-                    '卖出日': sell_day.strftime('%Y-%m-%d'),  # <--- 修改: 使用上面逻辑确定的卖出日
-                    '涨停后天数': days_after_limit,
-                    '持有天数': hold_days,  # <--- 修改: 使用计算出的持有天数
-                    '实际均价': round(weighted_avg_price, 2),
-                    '卖出价': round(sell_price, 2),  # <--- 修改: 使用确定的卖出价
-                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                    '收益率(%)': round(profit_pct, 2),
-                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': sell_reason,
-                    '挂单价1': round(price1, 2) if price1 else None,
-                    '挂单价2': round(price2, 2) if price2 else None,
-                    '挂单价3': round(price3, 2) if price3 else None,
-                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                    '是否成交1': '是' if actual_price1 else '否',
-                    '是否成交2': '是' if actual_price2 else '否',
-                    '是否成交3': '是' if actual_price3 else '否',
-                    '买入比例': round(total_percentage * 100, 2)
-                })
+                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                             weighted_avg_price)
+                signals.append(signal)
                 break
 
             sell_day = df.index[start_idx + offset + sell_offset]
             sell_data = df.loc[sell_day]
             sell_price = sell_data['close']
-            profit_pct = (sell_price - weighted_avg_price) / weighted_avg_price * 100
             hold_days += 1
 
             # 4. 最大持有天数限制（15天）
             if hold_days >= 15:
                 sell_reason = '持有超限'
-                signals.append({
-                    '股票代码': stock_code,
-                    '股票名称': stock_name,
-                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                    '买入日': current_day.strftime('%Y-%m-%d'),
-                    '卖出日': sell_day.strftime('%Y-%m-%d'),
-                    '涨停后天数': days_after_limit,
-                    '持有天数': hold_days,
-                    '实际均价': round(weighted_avg_price, 2),
-                    '卖出价': round(sell_price, 2),
-                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                    '收益率(%)': round(profit_pct, 2),
-                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
-                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': sell_reason,
-                    '挂单价1': round(price1, 2) if price1 else None,
-                    '挂单价2': round(price2, 2) if price2 else None,
-                    '挂单价3': round(price3, 2) if price3 else None,
-                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                    '是否成交1': '是' if actual_price1 else '否',
-                    '是否成交2': '是' if actual_price2 else '否',
-                    '是否成交3': '是' if actual_price3 else '否',
-                    '买入比例': round(total_percentage * 100, 2)
-                })
+                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                             weighted_avg_price)
+                signals.append(signal)
                 break
 
             # 1. 跌停第二天卖出
@@ -613,32 +593,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 if prev_day_data['close'] <= prev_day_data['down_limit_price']:
                     # 第二天收盘价卖出
                     sell_reason = '跌停止损'
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '涨停后天数': days_after_limit,
-                        '持有天数': hold_days,
-                        '实际均价': round(weighted_avg_price, 2),
-                        '卖出价': round(sell_price, 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
-                        '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': sell_reason,
-                        '挂单价1': round(price1, 2) if price1 else None,
-                        '挂单价2': round(price2, 2) if price2 else None,
-                        '挂单价3': round(price3, 2) if price3 else None,
-                        '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                        '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                        '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                        '是否成交1': '是' if actual_price1 else '否',
-                        '是否成交2': '是' if actual_price2 else '否',
-                        '是否成交3': '是' if actual_price3 else '否',
-                        '买入比例': round(total_percentage * 100, 2)
-                    })
+                    signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                                 weighted_avg_price)
+                    signals.append(signal)
                     break
 
                 if sell_data['close'] >= sell_data['limit_price']:
@@ -648,32 +605,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 prev_day = df.index[df.index.get_loc(sell_day) - 1]
                 if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
                     sell_reason = '断板止盈'
-                    signals.append({
-                        '股票代码': stock_code,
-                        '股票名称': stock_name,
-                        '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                        '买入日': current_day.strftime('%Y-%m-%d'),
-                        '卖出日': sell_day.strftime('%Y-%m-%d'),
-                        '涨停后天数': days_after_limit,
-                        '持有天数': hold_days,
-                        '实际均价': round(weighted_avg_price, 2),
-                        '卖出价': round(sell_price, 2),
-                        '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                        '收益率(%)': round(profit_pct, 2),
-                        # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
-                        '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                        '卖出原因': sell_reason,
-                        '挂单价1': round(price1, 2) if price1 else None,
-                        '挂单价2': round(price2, 2) if price2 else None,
-                        '挂单价3': round(price3, 2) if price3 else None,
-                        '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                        '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                        '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                        '是否成交1': '是' if actual_price1 else '否',
-                        '是否成交2': '是' if actual_price2 else '否',
-                        '是否成交3': '是' if actual_price3 else '否',
-                        '买入比例': round(total_percentage * 100, 2)
-                    })
+                    signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                                 weighted_avg_price)
+                    signals.append(signal)
                     break
 
             # 3. 首板炸板卖出条件
@@ -687,66 +621,17 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
             if is_limit_touched and is_limit_closed and not is_prev_limit:
                 sell_reason = '炸板卖出'
-                signals.append({
-                    '股票代码': stock_code,
-                    '股票名称': stock_name,
-                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                    '买入日': current_day.strftime('%Y-%m-%d'),
-                    '卖出日': sell_day.strftime('%Y-%m-%d'),
-                    '涨停后天数': days_after_limit,
-                    '持有天数': hold_days,
-                    '实际均价': round(weighted_avg_price, 2),
-                    '卖出价': round(sell_price, 2),
-                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                    '收益率(%)': round(profit_pct, 2),
-                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
-                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': sell_reason,
-                    '挂单价1': round(price1, 2) if price1 else None,
-                    '挂单价2': round(price2, 2) if price2 else None,
-                    '挂单价3': round(price3, 2) if price3 else None,
-                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                    '是否成交1': '是' if actual_price1 else '否',
-                    '是否成交2': '是' if actual_price2 else '否',
-                    '是否成交3': '是' if actual_price3 else '否',
-                    '买入比例': round(total_percentage * 100, 2)
-                })
+                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                             weighted_avg_price)
+                signals.append(signal)
                 break
 
             # 3. 跌破五日线卖出(改为跌破五日线千分之三卖出)
-            # if sell_data['close'] < sell_data['ma5']:
             if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= config.SELL_ON_MA_BREAKDOWN_THRESHOLD:
-                sell_price = sell_data['close']
-
                 sell_reason = '跌破五日线'
-                signals.append({
-                    '股票代码': stock_code,
-                    '股票名称': stock_name,
-                    '首板日': first_limit_day.strftime('%Y-%m-%d'),
-                    '买入日': current_day.strftime('%Y-%m-%d'),
-                    '卖出日': sell_day.strftime('%Y-%m-%d'),
-                    '涨停后天数': days_after_limit,
-                    '持有天数': hold_days,
-                    '实际均价': round(weighted_avg_price, 2),
-                    '卖出价': round(sell_price, 2),
-                    '触碰类型': 'MA5支撑反弹' if current_data['close'] > current_data['ma5'] else 'MA5破位回升',
-                    '收益率(%)': round(profit_pct, 2),
-                    # '收益率(%)': round(profit_pct, 2)*round(total_percentage, 2),
-                    '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
-                    '卖出原因': sell_reason,
-                    '挂单价1': round(price1, 2) if price1 else None,
-                    '挂单价2': round(price2, 2) if price2 else None,
-                    '挂单价3': round(price3, 2) if price3 else None,
-                    '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-                    '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-                    '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-                    '是否成交1': '是' if actual_price1 else '否',
-                    '是否成交2': '是' if actual_price2 else '否',
-                    '是否成交3': '是' if actual_price3 else '否',
-                    '买入比例': round(total_percentage * 100, 2)
-                })
+                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
+                                             weighted_avg_price)
+                signals.append(signal)
                 break
         if signals:  # 只要已经生成了信号，就终止，不然会重复统计一个涨停信号的不同时间段买入
             break
@@ -784,9 +669,11 @@ def create_daily_holdings(result_df):
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
-                    '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因',
-                    '挂单价1', '挂单价2', '挂单价3', '实际成交价1', '实际成交价2', '实际成交价3',
-                    '是否成交1', '是否成交2', '是否成交3', '买入比例']
+                    '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
+    # column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
+    #                 '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因',
+    #                 '挂单价1', '挂单价2', '挂单价3', '实际成交价1', '实际成交价2', '实际成交价3',
+    #                 '是否成交1', '是否成交2', '是否成交3', '买入比例']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]
