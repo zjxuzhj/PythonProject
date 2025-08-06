@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 import getAllStockCsv
+from common_sell_logic import get_sell_decision, MarketDataContext, SellStrategyConfig
 
 
 @dataclass
@@ -23,7 +24,6 @@ class StrategyConfig:
 
     # --- 买入参数 ---
     PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
-    POSITION_ALLOCATION: Tuple[float, float, float] = (0.4, 0.35, 0.25)  # 三个挂单的仓位分配
 
     # --- 卖出参数 ---
     SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
@@ -39,7 +39,7 @@ class StrategyConfig:
 
 
 def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_days=5):
-    """模拟预测买入日MA5值，然后计算三个挂单价格"""
+    """模拟预测买入日MA5值，然后计算挂单价格"""
     current_idx = df.index.get_loc(current_day)
 
     if current_idx < lookback_days:
@@ -49,11 +49,8 @@ def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_
     predict_ratio = config.PREDICT_PRICE_INCREASE_RATIO
 
     try:
-        price1 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
-        price2 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
-        price3 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
-
-        return price1, price2, price3
+        price_ma5 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
+        return price_ma5
     except Exception as e:
         print(f"预测MA5失败: {e}")
         return None, None, None, None
@@ -459,7 +456,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         return signals
 
     #  辅助函数：统一创建交易信号字典，避免重复代码
-    def _create_signal_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, avg_price):
+    def _create_signal_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price):
         return {
             '股票代码': stock_code,
             '股票名称': stock_name,
@@ -468,22 +465,12 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '卖出日': sell_day.strftime('%Y-%m-%d'),
             '涨停后天数': (buy_data.name - first_limit_timestamp).days,
             '持有天数': hold_days_val,
-            '实际均价': round(avg_price, 2),
+            '买入价': round(actual_price, 2),
             '卖出价': round(sell_price, 2),
             '触碰类型': 'MA5支撑反弹' if buy_data['close'] > buy_data['ma5'] else 'MA5破位回升',
-            '收益率(%)': round((sell_price - avg_price) / avg_price * 100, 2),
+            '收益率(%)': round((sell_price - actual_price) / actual_price * 100, 2),
             '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
             '卖出原因': sell_reason_str,
-            # '挂单价1': round(price1, 2) if price1 else None,
-            # '挂单价2': round(price2, 2) if price2 else None,
-            # '挂单价3': round(price3, 2) if price3 else None,
-            # '实际成交价1': round(actual_price1, 2) if actual_price1 else None,
-            # '实际成交价2': round(actual_price2, 2) if actual_price2 else None,
-            # '实际成交价3': round(actual_price3, 2) if actual_price3 else None,
-            # '是否成交1': '是' if actual_price1 else '否',
-            # '是否成交2': '是' if actual_price2 else '否',
-            # '是否成交3': '是' if actual_price3 else '否',
-            # '买入比例': round(total_percentage * 100, 2)
         }
 
     # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
@@ -499,8 +486,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             continue
 
         # 计算三个挂单价格
-        price1, price2, price3 = simulate_ma5_order_prices(df, current_day, config)
-        if price1 is None:
+        price_ma5 = simulate_ma5_order_prices(df, current_day, config)
+        if price_ma5 is None:
             continue
 
         # 获取当日价格数据
@@ -509,130 +496,53 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         day_high = current_data['high']
 
         # 检查挂单价是否在当日价格范围内
-        order1_valid = day_low <= price1 <= day_high
-        order2_valid = day_low <= price2 <= day_high
-        order3_valid = day_low <= price3 <= day_high
-
-        # 如果没有一个价格有效，则跳过
-        if not (order1_valid or order2_valid or order3_valid):
+        order_valid = day_low <= price_ma5 <= day_high
+        if not order_valid:
             continue
-
-        if price1 >= day_open:
-            order1_valid = True
-
-        # 计算实际成交价（考虑开盘价）
-        actual_price1 = calculate_actual_fill_price(day_open, price1) if order1_valid else None
-        actual_price2 = calculate_actual_fill_price(day_open, price2) if order2_valid else None
-        actual_price3 = calculate_actual_fill_price(day_open, price3) if order3_valid else None
-
-        # 仓位分配比例（修正为正确的比例）
-        position_percentage1 = config.POSITION_ALLOCATION[0] if actual_price1 else 0.0
-        position_percentage2 = config.POSITION_ALLOCATION[1] if actual_price2 else 0.0
-        position_percentage3 = config.POSITION_ALLOCATION[2] if actual_price3 else 0.0
-
-        # 确保总仓位不超过100%
-        total_percentage = position_percentage1 + position_percentage2 + position_percentage3
-        if abs(total_percentage) < 1e-5:
-            continue
-
-        # 计算加权平均买入价
-        weighted_avg_price = (
-                                     (position_percentage1 * actual_price1 if actual_price1 else 0) +
-                                     (position_percentage2 * actual_price2 if actual_price2 else 0) +
-                                     (position_percentage3 * actual_price3 if actual_price3 else 0)
-                             ) / total_percentage
-
-        buy_day_timestamp = pd.Timestamp(current_day)
-        days_after_limit = (buy_day_timestamp - first_limit_timestamp).days
-        history_window = df.iloc[start_idx + 1: start_idx + offset]
-        history_condition = (history_window['close'] > history_window['ma5']).all()
-
-        if not history_condition:
-            continue
-
-        sell_reason = '持有中'  # 默认的卖出原因为“持有中”
-        sell_day = None  # 初始化卖出日期
-        sell_price = None  # 初始化卖出价格
-        hold_days = 0  # 初始化持有天数
+        if price_ma5 >= day_open:
+            order_valid = True
+        actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
         # 持有期卖出逻辑
         hold_days = 0
         for sell_offset in range(1, 20):
             sell_day_idx = start_idx + offset + sell_offset
-            if sell_day_idx >= len(df):
+
+            if sell_day_idx < len(df):
+                sell_day = df.index[start_idx + offset + sell_offset]
+                current_sell_data = df.loc[sell_day]
+                prev_sell_data = df.iloc[sell_day_idx - 1]
+                hold_days += 1
+
+                position_info = {'hold_days': hold_days}
+                market_data = MarketDataContext(
+                    high=current_sell_data['high'],
+                    close=current_sell_data['close'],
+                    ma5=current_sell_data['ma5'],
+                    limit_price=current_sell_data['limit_price'],
+                    down_limit_price=current_sell_data['down_limit_price'],
+                    prev_close=prev_sell_data['close'],
+                    prev_limit_price=prev_sell_data['limit_price'],
+                    prev_down_limit_price=prev_sell_data['down_limit_price']
+                )
+                should_sell, reason = get_sell_decision(position_info, market_data)
+                if should_sell:
+                    sell_price = current_sell_data['close']
+                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_info['hold_days'],
+                                                 actual_price)
+                    signals.append(signal)
+                    break
+            else:
                 last_day_idx = len(df) - 1
                 sell_day = df.index[last_day_idx]
                 sell_data = df.loc[sell_day]
                 sell_price = df.iloc[last_day_idx]['close']
-                # 重新计算持有天数
-                hold_days = (pd.Timestamp(sell_day) - buy_day_timestamp).days
                 sell_reason = '持有中'
-                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                             weighted_avg_price)
+                signal = _create_signal_dict(current_data, sell_day, sell_price, sell_reason, hold_days,
+                                             actual_price)
                 signals.append(signal)
                 break
 
-            sell_day = df.index[start_idx + offset + sell_offset]
-            sell_data = df.loc[sell_day]
-            sell_price = sell_data['close']
-            hold_days += 1
-
-            # 4. 最大持有天数限制（15天）
-            if hold_days >= 15:
-                sell_reason = '持有超限'
-                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                             weighted_avg_price)
-                signals.append(signal)
-                break
-
-            # 1. 跌停第二天卖出
-            if df.index.get_loc(sell_day) >= 1:
-                prev_day = df.index[df.index.get_loc(sell_day) - 1]
-                prev_day_data = df.loc[prev_day]
-                # 判断前一天是否跌停
-                if prev_day_data['close'] <= prev_day_data['down_limit_price']:
-                    # 第二天收盘价卖出
-                    sell_reason = '跌停止损'
-                    signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                                 weighted_avg_price)
-                    signals.append(signal)
-                    break
-
-                if sell_data['close'] >= sell_data['limit_price']:
-                    continue  # 涨停日继续持有
-
-                # 2. 涨停后断板日卖出
-                prev_day = df.index[df.index.get_loc(sell_day) - 1]
-                if df.loc[prev_day, 'close'] >= df.loc[prev_day, 'limit_price']:
-                    sell_reason = '断板止盈'
-                    signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                                 weighted_avg_price)
-                    signals.append(signal)
-                    break
-
-            # 3. 首板炸板卖出条件
-            # 条件3-1：当日最高价达到涨停价但未封板（收盘价<涨停价
-            is_limit_touched = (sell_data['high'] >= sell_data['limit_price'])
-            is_limit_closed = (sell_data['close'] < sell_data['limit_price'])
-            # 条件3-2：前一日未涨停，也就是首板
-            prev_day = df.index[df.index.get_loc(sell_day) - 1]
-            prev_limit_price = (df.loc[prev_day, 'prev_close'] * (1 + limit_rate)).round(2)
-            is_prev_limit = (df.loc[prev_day, 'close'] >= prev_limit_price)
-
-            if is_limit_touched and is_limit_closed and not is_prev_limit:
-                sell_reason = '炸板卖出'
-                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                             weighted_avg_price)
-                signals.append(signal)
-                break
-
-            # 3. 跌破五日线卖出(改为跌破五日线千分之三卖出)
-            if (sell_data['close'] - sell_data['ma5']) / sell_data['ma5'] <= config.SELL_ON_MA_BREAKDOWN_THRESHOLD:
-                sell_reason = '跌破五日线'
-                signal = _create_signal_dict(current_data, sell_day, sell_data['close'], sell_reason, hold_days,
-                                             weighted_avg_price)
-                signals.append(signal)
-                break
         if signals:  # 只要已经生成了信号，就终止，不然会重复统计一个涨停信号的不同时间段买入
             break
     return signals
@@ -669,11 +579,7 @@ def create_daily_holdings(result_df):
 
 def save_trades_excel(result_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
-                    '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
-    # column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
-    #                 '持有天数', '实际均价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因',
-    #                 '挂单价1', '挂单价2', '挂单价3', '实际成交价1', '实际成交价2', '实际成交价3',
-    #                 '是否成交1', '是否成交2', '是否成交3', '买入比例']
+                    '持有天数', '买入价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
     # 按买入日降序排序
     result_df = result_df.sort_values(by='买入日', ascending=False)
     result_df = result_df[column_order]

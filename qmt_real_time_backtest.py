@@ -8,6 +8,7 @@ import xtquant.xtdata as xtdata
 
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv
+from common_sell_logic import get_sell_decision, MarketDataContext
 
 query_tool = getAllStockCsv.StockQuery()
 
@@ -26,8 +27,6 @@ class Backtester:
         self.position_size = position_size
 
         # ---卖出策略参数 ---
-        self.SELL_MA_BREAKDOWN_THRESHOLD = -0.003  # 跌破MA5下方千分之三
-        self.MAX_HOLD_DAYS = 15  # 最大持有天数
         self.LIMIT_RATE = 0.10  # 涨跌停板比率，可根据需要调整(例如ST股为0.05)
         self.BENCHMARK_TICKER = '000300.SH'  # 基准指数：沪深300
         self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
@@ -228,8 +227,7 @@ class Backtester:
 
     def check_sell_conditions(self, stock_code, position, current_dt):
         """
-        根据当前日期和持仓信息，检查所有卖出条件。
-        返回 (卖出价格, 卖出原因) 或 (None, None)。
+        使用通用决策函数检查卖出条件。
         """
         date_str = current_dt.strftime("%Y%m%d")
 
@@ -244,41 +242,22 @@ class Backtester:
         today_data = daily_df.iloc[-1]
         prev_day_data = daily_df.iloc[-2]
 
-        # --- 按优先级检查卖出条件 ---
-
-        # if not np.isnan(today_data['ma5']) and today_data['ma5'] > 0:
-        #     if today_data['close'] < today_data['ma5']:
-        #          return today_data['close'], '跌破五日线'
-        # # 条件1: 跌停止损 (前一天跌停)
-        if prev_day_data['close'] <= prev_day_data['down_limit_price']:
-            return today_data['close'], '跌停止损'
-
-        # 条件2: 断板止盈 (前一天涨停，今天没涨停)
-        if prev_day_data['close'] >= prev_day_data['limit_price']:
-            if today_data['close'] < today_data['limit_price']:
-                return today_data['close'], '断板止盈'
-            else:
-                return None, None  # 今天继续涨停，持有
-
-        # 条件3: 炸板卖出 (当天触及涨停但未封板，且昨天未涨停)
-        is_limit_touched = (today_data['high'] >= today_data['limit_price'])
-        is_not_closed_at_limit = (today_data['close'] < today_data['limit_price'])
-        is_prev_not_limit = (prev_day_data['close'] < prev_day_data['limit_price'])
-
-        if is_limit_touched and is_not_closed_at_limit and is_prev_not_limit:
-            return today_data['close'], '炸板卖出'
-
-        # 条件4: 跌破五日线千分之三
-        if not np.isnan(today_data['ma5']) and today_data['ma5'] > 0:
-            if (today_data['close'] - today_data['ma5']) / today_data['ma5'] <= self.SELL_MA_BREAKDOWN_THRESHOLD:
-                return today_data['close'], '跌破五日线'
-
-        # 条件5: 最大持有天数限制
-        if position['hold_days'] >= self.MAX_HOLD_DAYS:
-            return today_data['close'], '持有超限'
-
-        # 如果无任何卖出条件满足
-        return None, None
+        position_info = {'hold_days': position['hold_days']}
+        market_data = MarketDataContext(
+            high=today_data['high'],
+            close=today_data['close'],
+            ma5=today_data['ma5'],
+            limit_price=today_data['limit_price'],
+            down_limit_price=today_data['down_limit_price'],
+            prev_close=prev_day_data['close'],
+            prev_limit_price=prev_day_data['limit_price'],
+            prev_down_limit_price=prev_day_data['down_limit_price']
+        )
+        should_sell, reason = get_sell_decision(position_info, market_data)
+        if should_sell:
+            return today_data['close'], reason
+        else:
+            return None, None
 
     def calculate_and_print_statistics(self):
         """在回测结束后，计算并打印所有关键绩效指标。"""
@@ -446,7 +425,8 @@ class Backtester:
                                 'buy_date': date_str,
                                 'hold_days': 0, 'buy_time_category': buy_time_cat
                             }
-                            self.log_trade(buy_order['time'], buy_order['stock'], "BUY", shares_to_buy, buy_price, buy_time_category=buy_time_cat)
+                            self.log_trade(buy_order['time'], buy_order['stock'], "BUY", shares_to_buy, buy_price,
+                                           buy_time_category=buy_time_cat)
                         else:
                             print(f"  - [跳过] 资金不足以购买至少100股的 {buy_order['stock']} (价格: {buy_price:.2f})。")
                             skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
@@ -560,8 +540,8 @@ class Backtester:
 
 
 if __name__ == '__main__':
-    START_DATE = "20241201"
-    # START_DATE = "20250301"
+    # START_DATE = "20241201"
+    START_DATE = "20250601"
     END_DATE = "20250723"
     INITIAL_CAPITAL = 200000.0
     POSITION_SIZE_PER_TRADE = 20000

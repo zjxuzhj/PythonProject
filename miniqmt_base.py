@@ -11,8 +11,11 @@ from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
 
+import first_limit_up_ma5_normal as normal
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
+from common_sell_logic import get_sell_decision, MarketDataContext
+from first_limit_up_ma5_normal import StrategyConfig
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
 from miniqmt_logging_utils import setup_logger
@@ -131,81 +134,93 @@ def check_ma5_breach(positions, position_available_dict):
 
 
 def sell_breached_stocks():
-    """定时卖出所有跌破五日线的持仓及上一交易日涨停的股票"""
+    """定时卖出所有符合卖出条件的持仓股票"""
     try:
-        now = datetime.now().strftime("%H:%M")
-        print(f"\n=== 开始执行定时检测 ({now}) ===")
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%H:%M")
+        print(f"\n=== 开始执行通用定时卖出检测 ({now_str}) ===")
 
         positions = xt_trader.query_stock_positions(acc)
+        if not positions:
+            print("当前无持仓。")
+            return
+        sell_list = []
+
         # 检测跌破五日线的股票
         breach_stocks = check_ma5_breach(positions, position_available_dict)
         # # 检测上一交易日涨停且今日未涨停的股票
-        yesterday_limit_up_stocks = []
+        # yesterday_limit_up_stocks = []
+
+        # 统一遍历所有持仓
         for pos in positions:
             if pos.m_nCanUseVolume <= 0:
                 continue
 
             stock_code = pos.stock_code
             try:
-                df_yesterday, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-                if df_yesterday.empty or len(df_yesterday) < 2:
+                # 1. 准备数据
+                # 获取实时和历史数据
+                tick = xtdata.get_full_tick([stock_code])[stock_code]
+                hist_df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
+                if tick is None or hist_df.empty or len(hist_df) < 2:
+                    print(f"数据不足，跳过 {stock_code} 的卖出检测。")
                     continue
+                position_info = {'hold_days': 2}
+
+                # 计算MA5
+                ma5_price = get_ma5_price(stock_code, current_date=now_dt, current_price=tick['lastPrice'])
+                if ma5_price is None: continue
+
+                config = StrategyConfig()
+                limit_rate = config.MARKET_LIMIT_RATES[normal.get_market_type(stock_code)]
+
+                high_price = tick.get('high')  # 今天的最高价
+                last_close = tick.get('lastClose')  # 昨天的收盘价
+                current_price = tick.get('lastPrice')  # 最新成交价
+                today_up_limit_price = round(last_close * (1 + limit_rate), 2)
+                today_down_limit_price = round(last_close * (1 - limit_rate), 2)
+
                 # iloc[-1]：获取 DataFrame最后一行（最新交易日，记为T-1 日）
-                t2_close = df_yesterday['close'].iloc[-2]
-                t1_close = df_yesterday['close'].iloc[-1]
-                t1_limit_up = round(t2_close * 1.1, 2)  # 主板10%涨停
-                if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
-                    t1_limit_up = round(t2_close * 1.2, 2)
+                t1_close = hist_df['close'].iloc[-1]
+                t2_close = hist_df['close'].iloc[-2]
+                t1_limit_price = round(t2_close * (1 + limit_rate), 2)
+                t1_down_limit_price = round(t2_close * (1 - limit_rate), 2)
+                market_data = MarketDataContext(
+                    high=high_price,
+                    close=current_price,
+                    ma5=ma5_price,
+                    limit_price=today_up_limit_price,
+                    down_limit_price=today_down_limit_price,
+                    prev_close=t1_close,
+                    prev_limit_price=t1_limit_price,
+                    prev_down_limit_price=t1_down_limit_price
+                )
+                should_sell, reason = get_sell_decision(position_info, market_data)
 
-                # 判断T-1日是否涨停
-                is_yesterday_limit_up = t1_close >= t1_limit_up - 0.01  # 考虑浮点误差
-
-                # 获取实时 Tick 数据（关键补充）
-                try:
-                    # 获取实时全推数据（包含涨停价字段）
-                    realtime_data = xtdata.get_full_tick([stock_code])
-
-                    if stock_code in realtime_data:
-                        tick = realtime_data[stock_code]
-                        last_close = tick.get('lastClose')  # 昨天的收盘价
-                        current_price = tick.get('lastPrice')  # 最新成交价
-                        today_limit_up = round(last_close * 1.1, 2)  # 主板10%涨停
-                        if stock_code.startswith('3') or stock_code.startswith('688'):  # 创业板/科创板20%
-                            today_limit_up = round(last_close * 1.2, 2)
-                        # 判断实时是否涨停（考虑浮点误差）
-                        is_today_not_limit = current_price < (today_limit_up - 0.01) if today_limit_up else False
-                    else:
-                        is_today_not_limit = False
-                except Exception as e:
-                    print(f"股票 {stock_code} 实时数据获取失败: {str(e)}")
-                    is_today_not_limit = False
-
-                # 合并判断条件
-                if is_yesterday_limit_up and is_today_not_limit:
+                # 3. 如果需要卖出，则加入待卖出列表
+                if should_sell:
                     stock_name = query_tool.get_name_by_code(stock_code)
-                    yesterday_limit_up_stocks.append({
+                    sell_list.append({
                         '代码': stock_code,
                         '名称': stock_name,
                         '持有数量': pos.m_nCanUseVolume,
-                        '类型': '涨停断板'
+                        '原因': reason
                     })
             except Exception as e:
-                print(f"检测涨停股异常 {stock_code}: {str(e)}")
-                continue
+             print(f"检测 {stock_code} 异常: {e}")
+             continue
 
-        # 合并卖出列表
-        all_sell_stocks = breach_stocks + yesterday_limit_up_stocks
-        if not all_sell_stocks:
-            print("当前无符合卖出条件的持仓")
+        # 统一执行卖出
+        if not sell_list:
+            print("当前无符合卖出条件的持仓。")
             return
 
-        print("--- 待卖出列表 ---")
-        for stock in all_sell_stocks:
-            reason = "涨停断板" if '类型' in stock and stock['类型'] == '涨停断板' else "跌破五日线"
-            print(f"  - 代码: {stock['代码']}, 名称: {stock['名称']}, 数量: {stock['持有数量']}, 原因: {reason}")
-        print("--------------------")
+        print("--- 统一决策后待卖出列表 ---")
+        for stock in sell_list:
+            print(f"  - 代码: {stock['代码']}, 名称: {stock['名称']}, 数量: {stock['持有数量']}, 原因: {stock['原因']}")
+        print("--------------------------")
 
-        for stock in all_sell_stocks:
+        for stock in sell_list:
             stock_code = stock['代码']
             stock_name = stock['名称']
             hold_vol = stock['持有数量']
