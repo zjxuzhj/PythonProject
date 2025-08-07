@@ -155,6 +155,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
             df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
+            df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
             if normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig()):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
