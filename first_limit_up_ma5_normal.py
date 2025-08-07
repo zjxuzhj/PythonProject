@@ -165,6 +165,54 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if volume_condition and candle_condition and low_open_condition and recover_condition:
                 return False
 
+        # 条件12: 排除前期高位连板炸板后，出现的缩量反抽形态
+        # lookback_period_12 = 10
+        # # 确保有足够的回看数据和T+1日的数据
+        # if base_day_idx > lookback_period_12 and first_day_idx < len(df):
+        #     lookback_df = df.iloc[base_day_idx - lookback_period_12: base_day_idx]
+        #     limit_up_days = lookback_df[lookback_df['is_limit']]
+        #
+        #     if not limit_up_days.empty:
+        #         # 使用np.diff()和cumsum()来分组连续的涨停天数
+        #         limit_up_indices = [df.index.get_loc(d) for d in limit_up_days.index]
+        #         groups = (np.diff(limit_up_indices, prepend=np.nan) != 1).cumsum()
+        #
+        #         # 遍历所有连板分组
+        #         for group_id in np.unique(groups):
+        #             streak_indices = [idx for i, idx in enumerate(limit_up_indices) if groups[i] == group_id]
+        #
+        #             # 子条件1: 必须是大于3天的连板
+        #             if len(streak_indices) > 2:
+        #                 streak_df = df.iloc[streak_indices]
+        #                 peak_day_timestamp = streak_df['high'].idxmax()
+        #                 peak_day_data = df.loc[peak_day_timestamp]
+        #
+        #                 # 子条件2: 连板的最高点当天必须是“炸板”形态
+        #                 is_peak_day_zb = (peak_day_data['high'] >= peak_day_data['limit_price'] and
+        #                                   peak_day_data['close'] < peak_day_data['limit_price'])
+        #
+        #                 if True:
+        #                     # 如果找到了符合条件的峰值日，则检查当前涨停是否是其“反抽”
+        #                     t_day_data = df.loc[day]
+        #                     t1_day_data = df.iloc[first_day_idx]
+        #
+        #                     # 子条件3: 涨停日和次日成交量均小于峰值日成交量
+        #                     vol_condition = (t_day_data['volume'] < peak_day_data['volume'] and
+        #                                      t1_day_data['volume'] < peak_day_data['volume'])
+        #
+        #                     # 子条件4: 次日最高价低于峰值日最高价
+        #                     price_condition = t1_day_data['high'] < peak_day_data['high']
+        #
+        #                     # 子条件5: 次日开盘价高于收盘价2%以上（确认是有效阴线）
+        #                     candle_condition = (t1_day_data['open'] > t1_day_data['close'] * 1.02)
+        #
+        #                     if vol_condition and price_condition:
+        #                     # if vol_condition and price_condition and candle_condition:
+        #                         # 所有条件均满足，此为需要排除的形态
+        #                         print(
+        #                             f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
+        #                         return True
+
     # 条件7：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
     if base_day_idx >= 5:
         pre5_start = df.index[df.index.get_loc(day) - 5]
@@ -455,7 +503,6 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     if (start_idx + 1) >= len(df):
         return signals
 
-    #  辅助函数：统一创建交易信号字典，避免重复代码
     def _create_signal_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price):
         return {
             '股票代码': stock_code,
@@ -485,7 +532,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         if not is_valid_buy_opportunity(df, start_idx, offset, code, config):
             continue
 
-        # 计算三个挂单价格
+        # 计算挂单价格
         price_ma5 = simulate_ma5_order_prices(df, current_day, config)
         if price_ma5 is None:
             continue
@@ -519,10 +566,10 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                     high=current_sell_data['high'],
                     close=current_sell_data['close'],
                     ma5=current_sell_data['ma5'],
-                    limit_price=current_sell_data['limit_price'],
+                    up_limit_price=current_sell_data['limit_price'],
                     down_limit_price=current_sell_data['down_limit_price'],
                     prev_close=prev_sell_data['close'],
-                    prev_limit_price=prev_sell_data['limit_price'],
+                    prev_up_limit_price=prev_sell_data['limit_price'],
                     prev_down_limit_price=prev_sell_data['down_limit_price']
                 )
                 should_sell, reason = get_sell_decision(position_info, market_data)

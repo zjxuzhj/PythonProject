@@ -32,7 +32,7 @@ class Backtester:
         self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
 
         # 单一缓存文件设置
-        self.cache_path = 'all_targets_cache_4.csv'
+        self.cache_path = 'all_targets_cache_5.csv'
         self.load_scan_cache()
 
         # 投资组合状态
@@ -247,10 +247,10 @@ class Backtester:
             high=today_data['high'],
             close=today_data['close'],
             ma5=today_data['ma5'],
-            limit_price=today_data['limit_price'],
+            up_limit_price=today_data['limit_price'],
             down_limit_price=today_data['down_limit_price'],
             prev_close=prev_day_data['close'],
-            prev_limit_price=prev_day_data['limit_price'],
+            prev_up_limit_price=prev_day_data['limit_price'],
             prev_down_limit_price=prev_day_data['down_limit_price']
         )
         should_sell, reason = get_sell_decision(position_info, market_data)

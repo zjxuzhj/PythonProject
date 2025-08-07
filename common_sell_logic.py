@@ -9,20 +9,16 @@ class SellStrategyConfig:
 
 @dataclass
 class MarketDataContext:
-    """
-    封装了进行卖出决策所需的市场数据。
-    这个结构体中的所有数据都应该在回测、实盘、仿真中可以获取。
-    """
     # --- 当日或实时数据 ---
     high: float
     close: float
     ma5: float
-    limit_price: float
+    up_limit_price: float
     down_limit_price: float
 
     # --- 前一交易日数据 ---
     prev_close: float
-    prev_limit_price: float
+    prev_up_limit_price: float
     prev_down_limit_price: float
 
 
@@ -44,34 +40,34 @@ def get_sell_decision(
     """
     # 按优先级顺序检查卖出条件
 
-    # --- 规则1: 最大持有天数限制 ---
+    # 卖出条件1: 最大持有天数限制 ---
     if position_info['hold_days'] >= config.max_hold_days:
         return True, '持有超限'
 
-    # --- 规则2: 跌停止损 (基于前一日状态) ---
+    # 卖出条件2: 跌停止损 (基于前一日状态) ---
     # 如果前一天收盘价已经低于或等于前一天的跌停价
     if market_data.prev_close <= market_data.prev_down_limit_price:
         return True, '跌停止损'
 
-    # --- 规则3: 断板止盈 (基于前一日状态) ---
+    # 卖出条件3: 断板止盈 (基于前一日状态) ---
     # 如果前一天是涨停的
-    if market_data.prev_close >= market_data.prev_limit_price:
+    if market_data.prev_close >= market_data.prev_up_limit_price:
         # 但今天收盘价没有涨停，则卖出
-        if market_data.close < market_data.limit_price:
+        if market_data.close < market_data.up_limit_price:
             return True, '断板止盈'
         else:
             # 如果今天继续涨停，则继续持有
             return False, ''
 
-    # --- 规则4: 首板炸板卖出 (基于当日状态) ---
-    is_limit_touched = market_data.high >= market_data.limit_price
-    is_not_closed_at_limit = market_data.close < market_data.limit_price
-    is_prev_not_limit = market_data.prev_close < market_data.prev_limit_price
+    # 卖出条件4: 首板炸板卖出 (基于当日状态) ---
+    is_limit_touched = market_data.high >= market_data.up_limit_price
+    is_not_closed_at_limit = market_data.close < market_data.up_limit_price
+    is_prev_not_limit = market_data.prev_close < market_data.prev_up_limit_price
 
     if is_limit_touched and is_not_closed_at_limit and is_prev_not_limit:
         return True, '炸板卖出'
 
-    # --- 规则5: 跌破五日线卖出 ---
+    # 卖出条件5:: 跌破五日线卖出 ---
     # 确保 MA5 是有效值
     if market_data.ma5 and market_data.ma5 > 0:
         deviation = (market_data.close - market_data.ma5) / market_data.ma5

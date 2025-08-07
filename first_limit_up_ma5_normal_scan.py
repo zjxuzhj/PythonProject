@@ -245,7 +245,7 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "20250731"
+    # target_date = "20250620"
     # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果

@@ -145,21 +145,13 @@ def sell_breached_stocks():
             print("当前无持仓。")
             return
         sell_list = []
-
-        # 检测跌破五日线的股票
-        breach_stocks = check_ma5_breach(positions, position_available_dict)
-        # # 检测上一交易日涨停且今日未涨停的股票
-        # yesterday_limit_up_stocks = []
-
+        config = StrategyConfig()
         # 统一遍历所有持仓
         for pos in positions:
             if pos.m_nCanUseVolume <= 0:
                 continue
-
             stock_code = pos.stock_code
             try:
-                # 1. 准备数据
-                # 获取实时和历史数据
                 tick = xtdata.get_full_tick([stock_code])[stock_code]
                 hist_df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
                 if tick is None or hist_df.empty or len(hist_df) < 2:
@@ -167,11 +159,9 @@ def sell_breached_stocks():
                     continue
                 position_info = {'hold_days': 2}
 
-                # 计算MA5
                 ma5_price = get_ma5_price(stock_code, current_date=now_dt, current_price=tick['lastPrice'])
                 if ma5_price is None: continue
 
-                config = StrategyConfig()
                 limit_rate = config.MARKET_LIMIT_RATES[normal.get_market_type(stock_code)]
 
                 high_price = tick.get('high')  # 今天的最高价
@@ -189,15 +179,14 @@ def sell_breached_stocks():
                     high=high_price,
                     close=current_price,
                     ma5=ma5_price,
-                    limit_price=today_up_limit_price,
+                    up_limit_price=today_up_limit_price,
                     down_limit_price=today_down_limit_price,
                     prev_close=t1_close,
-                    prev_limit_price=t1_limit_price,
+                    prev_up_limit_price=t1_limit_price,
                     prev_down_limit_price=t1_down_limit_price
                 )
                 should_sell, reason = get_sell_decision(position_info, market_data)
 
-                # 3. 如果需要卖出，则加入待卖出列表
                 if should_sell:
                     stock_name = query_tool.get_name_by_code(stock_code)
                     sell_list.append({
