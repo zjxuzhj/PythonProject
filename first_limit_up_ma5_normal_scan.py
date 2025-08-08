@@ -3,7 +3,7 @@ import sys
 from datetime import datetime, time
 
 import pandas as pd
-
+import numpy as np
 import first_limit_up_ma5_normal as normal
 import getAllStockCsv
 from first_limit_up_ma5_normal import StrategyConfig
@@ -170,7 +170,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             continue
 
         limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
-        delta_days = (today - limit_day).days
+        delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
         days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme))
 
     target_stocks_set, fourth_day_stocks_set = set(), set()
@@ -181,8 +181,8 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             if isNeedLog: print("  " + "   ".join(stock_data) + "  ")
 
     # ===== 提取涨停后第四天的股票(delta_days=3) =====
-    if 6 in days_groups:
-        for stock_data in days_groups[6]:
+    if 4 in days_groups:
+        for stock_data in days_groups[4]:
             fourth_day_stocks_set.add(getAllStockCsv.convert_to_standard_format(stock_data[0]))
 
     target_stocks_list = sorted(list(target_stocks_set))
@@ -249,8 +249,7 @@ if __name__ == '__main__':
     # target_date = "20250620"
     # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
-    # 打印结果
-    print("\n目标股票列表:")
+    # 打印结果    print("\n目标股票列表:")
     for stock in target_stocks:
         print(stock)
     print(f"\n总数: {len(target_stocks)}只股票")
