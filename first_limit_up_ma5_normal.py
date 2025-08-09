@@ -751,6 +751,8 @@ def save_trades_excel(result_df):
         # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):
             max_len = max(result_df[col].astype(str).map(len).max(), len(col)) + 2
+            if col == '股票名称':
+                max_len += 3
             worksheet.set_column(idx, idx, max_len)
 
         # 2. 条件格式(收益率红涨绿跌)

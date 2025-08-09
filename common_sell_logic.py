@@ -59,8 +59,10 @@ def get_sell_decision(
             # 如果今天继续涨停，则继续持有
             return False, ''
 
-    # 卖出条件4: 首板炸板卖出 (基于当日状态) ---
-    is_limit_touched = market_data.high >= market_data.up_limit_price
+    # 卖出条件4: 首板炸板卖出，只要股票冲高到达8.7%，收盘没有涨停就卖出 ---
+    price_at_9_percent_gain = market_data.prev_close * 1.087
+    is_limit_touched = market_data.high >= price_at_9_percent_gain
+    # is_limit_touched = market_data.high >= market_data.up_limit_price
     is_not_closed_at_limit = market_data.close < market_data.up_limit_price
     is_prev_not_limit = market_data.prev_close < market_data.prev_up_limit_price
 
