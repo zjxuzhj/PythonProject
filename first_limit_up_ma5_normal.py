@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 import getAllStockCsv
-from common_sell_logic import MarketDataContext, PositionContext, get_sell_decision_refined
+from common_sell_logic import get_sell_decision, MarketDataContext
 
 
 @dataclass
@@ -602,12 +602,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
     # --- 数据准备 ---
     df['ma5'] = df['close'].rolling(5).mean()
-    df['ma10'] = df['close'].rolling(10).mean()
     df['ma20'] = df['close'].rolling(20).mean()
-    df['ma30'] = df['close'].rolling(30).mean()
-    df['ma55'] = df['close'].rolling(55).mean()
-    # 获取首板日数据，用于计算支撑位
-    limit_up_day_data_dict = df.loc[first_limit_day, ['close', 'prev_close']].to_dict()
 
     next_day_2_pct = None
     if start_idx + 2 < len(df):
@@ -639,8 +634,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '卖出原因': sell_reason_str,
         }
 
-    for offset in range(4,5):  # 检查涨停后第2、3、4、5天
-    # for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
+    # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
+    for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
@@ -662,14 +657,15 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         day_high = current_data['high']
 
         # 检查挂单价是否在当日价格范围内
-        order_can_be_filled = (price_ma5 >= day_low)
-        if not order_can_be_filled:
+        order_valid = day_low <= price_ma5
+        if not order_valid:
             continue
-        actual_price = calculate_actual_fill_price(day_open, price_ma5)
+        if price_ma5 >= day_open:
+            order_valid = True
+        actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
         # 持有期卖出逻辑
         hold_days = 0
-        is_ma10_hold_mode = False  # 在每笔交易开始时，初始化持股模式为“普通模式”
         for sell_offset in range(1, 20):
             sell_day_idx = start_idx + offset + sell_offset
 
@@ -678,33 +674,22 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 current_sell_data = df.loc[sell_day]
                 prev_sell_data = df.iloc[sell_day_idx - 1]
                 hold_days += 1
-                # 获取最近5天的成交量（包含当天）
-                volume_window = df.iloc[sell_day_idx - 4: sell_day_idx + 1]['volume'].tolist()
-                position_ctx = PositionContext(
-                    hold_days=hold_days,
-                    limit_up_day_data=limit_up_day_data_dict,
-                    recent_volumes=volume_window
-                )
-                market_ctx = MarketDataContext(
+
+                position_info = {'hold_days': hold_days}
+                market_data = MarketDataContext(
                     high=current_sell_data['high'],
                     close=current_sell_data['close'],
-                    volume=current_sell_data['volume'],
                     ma5=current_sell_data['ma5'],
-                    ma10=current_sell_data['ma10'],
-                    ma20=current_sell_data['ma20'],
-                    ma30=current_sell_data['ma30'],
-                    ma55=current_sell_data['ma55'],
                     up_limit_price=current_sell_data['limit_price'],
                     down_limit_price=current_sell_data['down_limit_price'],
                     prev_close=prev_sell_data['close'],
                     prev_up_limit_price=prev_sell_data['limit_price'],
                     prev_down_limit_price=prev_sell_data['down_limit_price']
                 )
-                should_sell, reason, new_ma10_mode = get_sell_decision_refined(position_ctx, market_ctx,  is_ma10_hold_mode)
-                is_ma10_hold_mode = new_ma10_mode  # 用函数的返回值更新下一天的状态
+                should_sell, reason = get_sell_decision(position_info, market_data)
                 if should_sell:
                     sell_price = current_sell_data['close']
-                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_ctx.hold_days,
+                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_info['hold_days'],
                                                  actual_price)
                     signals.append(signal)
                     break
