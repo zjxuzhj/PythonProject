@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 import getAllStockCsv
-from common_sell_logic import get_sell_decision, MarketDataContext
+from common_sell_logic import MarketDataContext, PositionContext, get_sell_decision_refined
 
 
 @dataclass
@@ -23,9 +23,6 @@ class StrategyConfig:
 
     # --- 买入参数 ---
     PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
-
-    # --- 卖出参数 ---
-    SELL_ON_MA_BREAKDOWN_THRESHOLD = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
 
     # --- 双头形态检测参数 ---
     DOUBLE_TOP_CHECK_DAYS = 40  # 检测最近40日的双头形态
@@ -263,6 +260,25 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     if "外贸" in theme:
         return False
 
+    # 条件13: 排除涨停前10日内，先出现至少2连板后又出现至少2连跌停的极端走势
+    lookback_period_13 = 10
+    if limit_up_day_idx >= lookback_period_13:
+        window = df.iloc[limit_up_day_idx - lookback_period_13: limit_up_day_idx]
+        # 检查窗口内是否存在2连板,找出所有2连板结束的位置
+        up_streaks = window['is_limit'].rolling(window=2).sum()
+        up_streak_end_indices = up_streaks[up_streaks >= 2].index
+
+        if not up_streak_end_indices.empty:
+            for up_streak_end_date in up_streak_end_indices:
+                up_streak_end_pos = window.index.get_loc(up_streak_end_date)
+                search_for_down_streak_window = window.iloc[up_streak_end_pos + 1:]
+                if len(search_for_down_streak_window) >= 2:
+                    down_streaks = search_for_down_streak_window['is_limit_down'].rolling(window=2).sum()
+                    if (down_streaks >= 2).any():
+                        # 如果在2连板之后，确实找到了2连跌停，则排除
+                        print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
+                        return False
+
     # 条件12：排除涨停日前20天内的M头形态
     # if check_m_top_pattern(df, limit_up_day_idx):
     #     print(f"[{code}] 在 {day.date()} 涨停前出现M头形态，排除。")
@@ -390,20 +406,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     if ma5_data.isnull().any():
         return False
 
-    # 买前条件4: 检查在首板日和买入日之间，K线是否始终在MA5之上
-    history_window = df.iloc[limit_up_day_idx + 1: potential_buy_day_idx]
-    if not history_window.empty:
-        # 使用 .all() 确保窗口内所有天的收盘价都高于其当天的ma5
-        if not (history_window['close'] > history_window['ma5']).all():
-            return False
-
-    # 买前条件5: 排除买入前日收盘价>80的股票
+    # 买前条件4: 排除买入前日收盘价>80的股票
     latest_close = df.iloc[potential_buy_day_idx - 1]['close']
     if latest_close > 80:
         return False
 
     if offset > 1:
-        # 买前条件9：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票
+        # 买前条件5：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票
         lookback_days = 20
         if limit_up_day_idx < lookback_days:  # 数据不足，无法判断，直接排除
             return False
@@ -505,6 +514,8 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
     df['prev_close'] = df['close'].shift(1)
     df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
     df['is_limit'] = df['close'] >= df['limit_price']
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
+    df['is_limit_down'] = df['close'] <= df['down_limit_price']
     limit_days = df[df['close'] >= df['limit_price']].index.tolist()
 
     valid_days = []
@@ -591,8 +602,12 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
     # --- 数据准备 ---
     df['ma5'] = df['close'].rolling(5).mean()
+    df['ma10'] = df['close'].rolling(10).mean()
     df['ma20'] = df['close'].rolling(20).mean()
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
+    df['ma30'] = df['close'].rolling(30).mean()
+    df['ma55'] = df['close'].rolling(55).mean()
+    # 获取首板日数据，用于计算支撑位
+    limit_up_day_data_dict = df.loc[first_limit_day, ['close', 'prev_close']].to_dict()
 
     next_day_2_pct = None
     if start_idx + 2 < len(df):
@@ -647,15 +662,14 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         day_high = current_data['high']
 
         # 检查挂单价是否在当日价格范围内
-        order_valid = day_low <= price_ma5 <= day_high
-        if not order_valid:
+        order_can_be_filled = (price_ma5 >= day_low)
+        if not order_can_be_filled:
             continue
-        if price_ma5 >= day_open:
-            order_valid = True
-        actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
+        actual_price = calculate_actual_fill_price(day_open, price_ma5)
 
         # 持有期卖出逻辑
         hold_days = 0
+        is_ma10_hold_mode = False  # 在每笔交易开始时，初始化持股模式为“普通模式”
         for sell_offset in range(1, 20):
             sell_day_idx = start_idx + offset + sell_offset
 
@@ -664,22 +678,33 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 current_sell_data = df.loc[sell_day]
                 prev_sell_data = df.iloc[sell_day_idx - 1]
                 hold_days += 1
-
-                position_info = {'hold_days': hold_days}
-                market_data = MarketDataContext(
+                # 获取最近5天的成交量（包含当天）
+                volume_window = df.iloc[sell_day_idx - 4: sell_day_idx + 1]['volume'].tolist()
+                position_ctx = PositionContext(
+                    hold_days=hold_days,
+                    limit_up_day_data=limit_up_day_data_dict,
+                    recent_volumes=volume_window
+                )
+                market_ctx = MarketDataContext(
                     high=current_sell_data['high'],
                     close=current_sell_data['close'],
+                    volume=current_sell_data['volume'],
                     ma5=current_sell_data['ma5'],
+                    ma10=current_sell_data['ma10'],
+                    ma20=current_sell_data['ma20'],
+                    ma30=current_sell_data['ma30'],
+                    ma55=current_sell_data['ma55'],
                     up_limit_price=current_sell_data['limit_price'],
                     down_limit_price=current_sell_data['down_limit_price'],
                     prev_close=prev_sell_data['close'],
                     prev_up_limit_price=prev_sell_data['limit_price'],
                     prev_down_limit_price=prev_sell_data['down_limit_price']
                 )
-                should_sell, reason = get_sell_decision(position_info, market_data)
+                should_sell, reason, new_ma10_mode = get_sell_decision_refined(position_ctx, market_ctx,  is_ma10_hold_mode)
+                is_ma10_hold_mode = new_ma10_mode  # 用函数的返回值更新下一天的状态
                 if should_sell:
                     sell_price = current_sell_data['close']
-                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_info['hold_days'],
+                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_ctx.hold_days,
                                                  actual_price)
                     signals.append(signal)
                     break
