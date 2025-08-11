@@ -74,6 +74,7 @@ def get_sell_decision_refined(
     if is_limit_touched and is_not_closed_at_limit and is_prev_not_limit:
         return True, '炸板卖出', is_ma10_hold_mode
 
+    is_ma10_hold_mode=False
     # --- 2. 检查跌破MA5的条件 ---
     if is_ma10_hold_mode:
         # --- 已经是10日线持股模式 ---
@@ -93,6 +94,7 @@ def get_sell_decision_refined(
                 # 触发了“跌破五日线”，进入“豁免审查”
                 is_healthy, reason = check_healthy_pullback_exception(position_ctx, market_ctx)
 
+                is_healthy=False
                 if is_healthy:
                     # **模式切换点！**
                     # 是健康回调，不卖出，并且从今天起，切换到10日线持股模式
@@ -140,7 +142,7 @@ def check_healthy_pullback_exception(position_ctx: PositionContext, market_ctx: 
     # MA55要么参与粘合，要么在更下方提供远期支撑
     ma55 = market_ctx.ma55
     is_ma55_in_cluster = abs(ma55 - market_ctx.ma30) / market_ctx.ma30 < 0.02  # 55线和30线差距2%内算粘合
-    is_ma55_far_below = ma55 < min(short_term_mas) * 0.98  # 55线比均线簇最低点还低3%
+    is_ma55_far_below = ma55 < min(short_term_mas) * 0.98  # 55线比均线簇最低点还低2%
     if not (is_ma55_in_cluster or is_ma55_far_below):
         return False, "55日线趋势不佳"
 

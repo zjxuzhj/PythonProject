@@ -40,6 +40,8 @@ def find_recent_first_limit_up(code, old_df):
     old_df['prev_close'] = old_df['close'].shift(1)
     old_df['limit_price'] = (old_df['prev_close'] * (1 + limit_rate)).round(2)
     old_df['is_limit'] = old_df['close'] >= old_df['limit_price']
+    old_df['down_limit_price'] = (old_df['prev_close'] * (1 - limit_rate)).round(2)
+    old_df['is_limit_down'] = old_df['close'] <= old_df['down_limit_price']
 
     # 筛选有效时间范围
     extended_days = 20

@@ -639,8 +639,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '卖出原因': sell_reason_str,
         }
 
-    # for offset in range(2,5):  # 检查涨停后第2、3、4、5天
-    for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
+    for offset in range(4,5):  # 检查涨停后第2、3、4、5天
+    # for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
