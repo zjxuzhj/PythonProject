@@ -39,7 +39,7 @@ def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_
     current_idx = df.index.get_loc(current_day)
 
     if current_idx < lookback_days:
-        return None, None, None, None
+        return None
 
     prev_data = df.iloc[current_idx - lookback_days: current_idx]
     predict_ratio = config.PREDICT_PRICE_INCREASE_RATIO
@@ -49,7 +49,7 @@ def simulate_ma5_order_prices(df, current_day, config: StrategyConfig, lookback_
         return price_ma5
     except Exception as e:
         print(f"预测MA5失败: {e}")
-        return None, None, None, None
+        return None
 
 
 def get_stock_data(symbol, config: StrategyConfig):
@@ -385,9 +385,21 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     day_plus_1_idx = limit_up_day_idx + 1  # 涨停后一日
     day_plus_2_idx = limit_up_day_idx + 2  # 涨停后第二日
     day_plus_3_idx = limit_up_day_idx + 3
+    day_plus_4_idx = limit_up_day_idx + 4
     day_plus_1_day_date = df.index[day_plus_1_idx]
 
     potential_buy_day_idx = limit_up_day_idx + offset
+
+    # 新增买前条件: 排除T+2日相对T+1日收盘价大幅低开(>3%)的情况
+    # if offset >= 2:
+    #     # 必须确保T+2和T+1的数据都存在，防止索引越界
+    #     if day_plus_2_idx < len(df) and day_plus_1_idx < len(df):
+    #         day_plus_1_close = df.iloc[day_plus_1_idx]['close']
+    #         day_plus_2_open = df.iloc[day_plus_2_idx]['open']
+    #
+    #         # 如果T+2开盘价 < T+1收盘价的97%，则认为低开幅度过大，排除
+    #         if day_plus_2_open > (day_plus_1_close * 1.05):
+    #             return True
 
     # 买前条件1: 检查在首板日和买入日之间，是否出现了新的涨停
     for i in range(1, offset):
@@ -503,6 +515,30 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if condition_A_met and condition_B_met and condition_C_met and condition_D_met:
                 print(f"[{code}] 在 {df.index[limit_up_day_idx].date()} 后触发T+1,T+2双顶巨量回落形态，排除。")
                 return False
+
+        if day_plus_3_idx < len(df):
+            # 买前条件9：如果涨停后第一天最高价大于第三天大于第二天，并且都有长上影线，则排除
+            data_t1 = df.iloc[day_plus_1_idx]
+            data_t2 = df.iloc[day_plus_2_idx]
+            data_t3 = df.iloc[day_plus_3_idx]
+            is_t1_peak = data_t1['high'] > data_t3['high'] > data_t2['high']
+            s_t1 = (data_t1['high'] - data_t1['close']) / data_t1['close'] > 0.04 if data_t1['close'] > 0 else False
+            s_t2 = (data_t2['high'] - data_t2['close']) / data_t2['close'] > 0.03 if data_t2['close'] > 0 else False
+            s_t3 = (data_t3['high'] - data_t3['close']) / data_t3['close'] > 0.03 if data_t3['close'] > 0 else False
+            both_have_long_shadows = s_t2 and s_t3 and s_t1
+            if is_t1_peak and both_have_long_shadows:
+                return False
+
+            # 买前条件10：如果涨停后第二天和第三天均出现高开大于2%的情况，排除
+            day_plus_1_close = df.iloc[day_plus_1_idx]['close']
+            day_plus_2_close = df.iloc[day_plus_2_idx]['close']
+            day_plus_2_open = df.iloc[day_plus_2_idx]['open']
+            day_plus_3_open = df.iloc[day_plus_3_idx]['open']
+
+            if day_plus_2_open > (day_plus_1_close * 1.02) and \
+                    day_plus_3_open > (day_plus_2_close * 1.02):
+                return False
+
     return True
 
 

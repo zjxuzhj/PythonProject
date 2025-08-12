@@ -98,7 +98,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
         current_datetime, current_time = datetime.now(), datetime.now().time()
 
-        if os.path.exists(file_path) and time(9, 31) <= current_time <= time(15, 0):
+        if os.path.exists(file_path) and time(9, 21) <= current_time <= time(15, 0):
             existing_df = pd.read_csv(file_path)
             existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
             if today_str in existing_dates.values:
