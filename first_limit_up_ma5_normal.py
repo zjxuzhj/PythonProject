@@ -112,17 +112,9 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     if day_plus_1_data['is_limit']:
         return False
 
-
-
     # 条件3：涨停后第一天量能过滤条件
-    first_day_volume = df.loc[day_plus_1_day_date, 'volume']
-    first_day_open = df.loc[day_plus_1_day_date, 'open']
-    first_day_close = df.loc[day_plus_1_day_date, 'close']
-    first_day_high = df.loc[day_plus_1_day_date, 'high']
-    first_day_low = df.loc[day_plus_1_day_date, 'low']
-    first_day_limit_price = df.loc[day_plus_1_day_date, 'limit_price']
-    if (day_plus_1_data['volume'] >= limit_up_day_volume * 3.6) and \
-            (day_plus_1_data['close'] < day_plus_1_data['open']):
+    if (day_plus_1_data['volume'] >= limit_up_day_volume * 3.6) and (
+            day_plus_1_data['close'] < day_plus_1_data['open']):
         return False
 
     # 条件4：排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票
@@ -133,8 +125,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             prev_high_volume_day_loc = lookback_window['volume'].idxmax()
             prev_high_volume = df.loc[prev_high_volume_day_loc, 'volume']
             max_volume = limit_up_day_volume
-            if first_day_volume > limit_up_day_volume:
-                max_volume = first_day_volume
+            if day_plus_1_data['volume'] > limit_up_day_volume:
+                max_volume = day_plus_1_data['volume']
             if max_volume > prev_high_volume * 4:
                 # print("排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票")
                 return False
@@ -144,16 +136,16 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
         second_day = df.index[day_plus_2_idx]
         second_day_data = df.loc[second_day]
         # 条件6-1：涨停后第一天为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
-        volume_condition = (first_day_volume > limit_up_day_volume * 1.5)  # 放量1.5倍
-        price_range = first_day_high - first_day_low
+        volume_condition = (day_plus_1_data['volume'] > limit_up_day_volume * 1.5)  # 放量1.5倍
+        price_range = day_plus_1_data['high'] - day_plus_1_data['low']
         if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
             candle_condition = False
         else:
-            body_ratio = (first_day_close - first_day_open) / price_range
-            candle_condition = (body_ratio > 0.5) and (first_day_close > first_day_open)
+            body_ratio = (day_plus_1_data['close'] - day_plus_1_data['open']) / price_range
+            candle_condition = (body_ratio > 0.5) and (day_plus_1_data['close'] > day_plus_1_data['open'])
         # 条件6-2：涨停后第二天低开且未收复前日实体中点
-        midpoint = (first_day_close + first_day_open) / 2  # 前日阳线实体中点
-        low_open_condition = (second_day_data['open'] < first_day_close)  # 低开
+        midpoint = (day_plus_1_data['close'] + day_plus_1_data['open']) / 2  # 前日阳线实体中点
+        low_open_condition = (second_day_data['open'] < day_plus_1_data['close'])  # 低开
         recover_condition = (second_day_data['close'] < midpoint)  # 盘中最高点未达中点
 
         if volume_condition and candle_condition and low_open_condition and recover_condition:
@@ -212,7 +204,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                         return False
 
     # 条件7：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-    if limit_up_day_idx >= 5:
+    lookback_period_5 = 5
+    if limit_up_day_idx >= lookback_period_5:
         pre5_start = df.index[df.index.get_loc(day) - 5]
         pre5_close = df.loc[pre5_start, 'close']
         if pre5_close != 0:
@@ -321,6 +314,17 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     day_plus_1_day_date = df.index[day_plus_1_idx]
 
     potential_buy_day_idx = limit_up_day_idx + offset
+
+    # 在第四天时，排除已经在第二天买入的股票
+    if offset == 4:
+        day_2_idx = limit_up_day_idx + 2
+        if day_2_idx < len(df):
+            day_2_timestamp = df.index[day_2_idx]
+            day_2_data = df.iloc[day_2_idx]
+            hypothetical_price_on_day_2 = simulate_ma5_order_prices(df, day_2_timestamp, config)
+            if hypothetical_price_on_day_2 is not None:
+                if day_2_data['low'] <= hypothetical_price_on_day_2:
+                    return False
 
     # 新增买前条件: 排除T+2日相对T+1日收盘价大幅低开(>3%)的情况
     # if offset >= 2:

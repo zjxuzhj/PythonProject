@@ -173,7 +173,12 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         if code in ["sz002506", "sz002153"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
-
+        if "白酒" in theme or "光伏" in theme:
+            continue
+        if "地产" in theme or "地产" in name:
+            continue
+        if "酒店" in theme or "酒店" in name:
+            continue
         limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
         delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
         days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme))
@@ -251,7 +256,7 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "20250620"
+    # target_date = "20250813"
     # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
