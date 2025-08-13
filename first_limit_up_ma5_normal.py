@@ -284,6 +284,22 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     #     print(f"[{code}] 在 {day.date()} 涨停前出现M头形态，排除。")
     #     return True
 
+    # 条件14: 排除涨停前长期横盘，波动极小的股票
+    low_volatility_lookback = 40
+    if day_plus_1_idx < len(df):
+        day_plus_1_day_date = df.index[day_plus_1_idx]
+        if limit_up_day_idx >= low_volatility_lookback:
+            lookback_window = df.iloc[limit_up_day_idx - low_volatility_lookback: limit_up_day_idx]
+            valid_prev_close = lookback_window['prev_close'].replace(0, np.nan).dropna()
+            if not valid_prev_close.empty:
+                daily_amplitude = (lookback_window['high'].loc[valid_prev_close.index] - lookback_window['low'].loc[
+                    valid_prev_close.index]) / valid_prev_close
+                volatile_days_count = (daily_amplitude < 0.035).sum()
+                # 如果在过去40天里，振幅超过3.5%的天数少于3天，则认为波动过小，排除,同时要求第一天的量小于涨停日的二点五倍
+                first_day_volume = df.loc[day_plus_1_day_date, 'volume']
+                if volatile_days_count > 37 and first_day_volume < limit_up_day_volume * 2.5:
+                    # print(f"[{code}] 在 {day.date()} 的涨停被排除：前{low_volatility_lookback}日波动过小({volatile_days_count}天振幅 > 3.5%)。")
+                    return False
     return True
 
 
@@ -637,8 +653,11 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     start_idx = df.index.get_loc(first_limit_day)
 
     # --- 数据准备 ---
-    df['ma5'] = df['close'].rolling(5).mean()
-    df['ma20'] = df['close'].rolling(20).mean()
+    df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
+    df['ma10'] = df['close'].rolling(10, min_periods=1).mean()
+    df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
+    df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
+    df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
 
     next_day_2_pct = None
     if start_idx + 2 < len(df):

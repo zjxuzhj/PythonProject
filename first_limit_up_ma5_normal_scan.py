@@ -98,7 +98,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
         current_datetime, current_time = datetime.now(), datetime.now().time()
 
-        if os.path.exists(file_path) and time(9, 21) <= current_time <= time(15, 0):
+        if os.path.exists(file_path) and time(9, 20) <= current_time <= time(15, 0):
             existing_df = pd.read_csv(file_path)
             existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
             if today_str in existing_dates.values:
@@ -157,7 +157,10 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
             df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
+            df['ma10'] = df['close'].rolling(10, min_periods=1).mean()
             df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
+            df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
+            df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
             if normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig()):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
