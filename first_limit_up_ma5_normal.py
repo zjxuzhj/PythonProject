@@ -91,6 +91,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     limit_up_day_price = limit_up_day_data['close']  # 涨停日收盘价，重要支撑位
     limit_up_day_volume = limit_up_day_data['volume']
     day_minus_1_idx = limit_up_day_idx - 1  # 涨停前一日
+    day_minus_1_data = df.iloc[day_minus_1_idx]
     day_minus_2_idx = limit_up_day_idx - 2  # 涨停前二日
     day_plus_1_idx = limit_up_day_idx + 1  # 涨停后一日
     day_plus_2_idx = limit_up_day_idx + 2  # 涨停后第二日
@@ -121,10 +122,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
         return False
 
     # 条件2：排除前一日涨停
-    if day_minus_1_idx >= 0:
-        prev_day_data = df.iloc[day_minus_1_idx]
-        if prev_day_data['is_limit']:
-            return False
+    if day_minus_1_data['is_limit']:
+        return False
 
     # 条件3：排除后一日涨停 (连板)
     if day_plus_1_data['is_limit']:
@@ -198,7 +197,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                         f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
                     return False
 
-
     # 条件7：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
     pre5_start = df.index[df.index.get_loc(day) - 5]
     pre5_close = df.loc[pre5_start, 'close']
@@ -244,7 +242,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                     # 如果在2连板之后，确实找到了2连跌停，则排除
                     print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
                     return False
-
 
     # 条件14: 排除涨停前长期横盘，波动极小的股票
     lookback_days_40 = 40
@@ -299,17 +296,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if hypothetical_price_on_day_2 is not None:
                 if day_2_data['low'] <= hypothetical_price_on_day_2:
                     return False
-
-    # 新增买前条件: 排除T+2日相对T+1日收盘价大幅低开(>3%)的情况
-    # if offset >= 2:
-    #     # 必须确保T+2和T+1的数据都存在，防止索引越界
-    #     if day_plus_2_idx < len(df) and day_plus_1_idx < len(df):
-    #         day_plus_1_close = df.iloc[day_plus_1_idx]['close']
-    #         day_plus_2_open = df.iloc[day_plus_2_idx]['open']
-    #
-    #         # 如果T+2开盘价 < T+1收盘价的97%，则认为低开幅度过大，排除
-    #         if day_plus_2_open > (day_plus_1_close * 1.05):
-    #             return True
 
     # 买前条件3: 检查到买入日为止，MA5数据是否有效（非空值）
     ma5_data = df['ma5'].iloc[limit_up_day_idx: potential_buy_day_idx + 1]
@@ -450,12 +436,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
 
         # 买前条件10：如果涨停后第二天和第三天均出现高开大于2%的情况，排除
         day_plus_1_close = df.iloc[day_plus_1_idx]['close']
-        day_plus_2_close = df.iloc[day_plus_2_idx]['close']
         day_plus_2_open = df.iloc[day_plus_2_idx]['open']
+        day_plus_2_close = df.iloc[day_plus_2_idx]['close']
         day_plus_3_open = df.iloc[day_plus_3_idx]['open']
-
-        if day_plus_2_open > (day_plus_1_close * 1.02) and \
-                day_plus_3_open > (day_plus_2_close * 1.02):
+        day_plus_3_close = df.iloc[day_plus_3_idx]['close']
+        if day_plus_2_open > (day_plus_1_close * 1.02) and day_plus_3_open > (day_plus_2_close * 1.02):
+            return False
+        if day_plus_2_open > (day_plus_1_close * 1.03):
             return False
 
     return True
