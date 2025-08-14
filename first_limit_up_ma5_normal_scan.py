@@ -170,7 +170,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153"]:
+        if code in ["sz002506", "sz002153","sh600184"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:
