@@ -30,44 +30,8 @@ daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
 log_throttle = defaultdict(lambda: {'last_log_time': 0, 'last_log_price': 0})
-# ====== 全局风险偏好配置 ======
-RISK_LEVEL = 'low'  # 可选项：'high', 'medium', 'low'
 
-
-# ====== 风险偏好设置函数 ======
-def set_risk_level(level):
-    """设置全局风险偏好"""
-    global RISK_LEVEL
-    valid_levels = ['high', 'medium', 'low']
-
-    if level.lower() in valid_levels:
-        RISK_LEVEL = level.lower()
-        print(f"✅ 风险偏好已更新为: {RISK_LEVEL.upper()}")
-    else:
-        print(f"⚠ 无效风险等级: {level}。有效选项: {', '.join(valid_levels)}")
-
-
-# ====== 分层策略配置 ======
-def get_tiers_by_risk_level():
-    """根据风险偏好返回对应的分层配置"""
-    if RISK_LEVEL == 'high':
-        return [
-            {'predict_ratio': 1.06, 'ratio': 0.50},
-            {'predict_ratio': 1.04, 'ratio': 0.25},
-            {'predict_ratio': 1.02, 'ratio': 0.25}
-        ]
-    elif RISK_LEVEL == 'low':
-        return [
-            {'predict_ratio': 1.04, 'ratio': 1},
-            {'predict_ratio': 1.04, 'ratio': 0.35},
-            {'predict_ratio': 1.04, 'ratio': 0.25}
-        ]
-    else:  # 默认中风险
-        return [
-            {'predict_ratio': 1.04, 'ratio': 0.50},
-            {'predict_ratio': 1.025, 'ratio': 0.25},
-            {'predict_ratio': 1.01, 'ratio': 0.25}
-        ]
+config = StrategyConfig()
 
 
 # 创建状态监控函数，每30分钟记录程序状态
@@ -105,7 +69,6 @@ def sell_breached_stocks():
             print("当前无持仓。")
             return
         sell_list = []
-        config = StrategyConfig()
         # 统一遍历所有持仓
         for pos in positions:
             if pos.m_nCanUseVolume <= 0:
@@ -131,6 +94,7 @@ def sell_breached_stocks():
                 today_down_limit_price = round(last_close * (1 - limit_rate), 2)
 
                 # iloc[-1]：获取 DataFrame最后一行（最新交易日，记为T-1 日）
+                # 注意这里是硬编码，导致如果在收盘前更新今日数据，会出现错误，不要提前更新
                 t1_close = hist_df['close'].iloc[-1]
                 t2_close = hist_df['close'].iloc[-2]
                 t1_limit_price = round(t2_close * (1 + limit_rate), 2)
@@ -156,8 +120,8 @@ def sell_breached_stocks():
                         '原因': reason
                     })
             except Exception as e:
-             print(f"检测 {stock_code} 异常: {e}")
-             continue
+                print(f"检测 {stock_code} 异常: {e}")
+                continue
 
         # 统一执行卖出
         if not sell_list:
@@ -218,41 +182,26 @@ def precompute_trigger_prices(stock_code):
         print(f"⭐ {stock_code} 是第四天股票，使用专用预算")
     else:
         total_budget = PER_STOCK_TOTAL_BUDGET
-    """预计算各层MA5触发价格"""
-    current_tiers = get_tiers_by_risk_level()
-    if not current_tiers:  # 检查层级数据是否为空
-        print(f"⚠ {stock_code} 无可用层级数据")
+
+    df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
+    if df is None or df.empty:
+        print(f"⚠ 无法计算{stock_code}触发价: 历史数据缺失")
         return
-    base_ma5 = get_ma5_price(stock_code)
-    if not base_ma5:
-        print(f"⚠无法计算{stock_code}触发价: MA5数据缺失")
-        return
-
-    # 生成触发价格，现在只生成一档
-    for i, tier in enumerate(current_tiers):
-        if i > 0:
-            break
-        df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-        modified_df = modify_last_days_and_calc_ma5(df, tier['predict_ratio'])
-        trigger_price = round(modified_df['MA5'].iloc[-1], 2)
-
-        # 计算预估挂单数量（100股整数倍）
-        tier_budget = total_budget * tier['ratio']  # 层级预算
-        estimated_shares = int(tier_budget // trigger_price) // 100 * 100  # 取整为100的倍数
-
-        # 打印触发价格和预估挂单数量
-        print(f"股票: {stock_code} | "
-              f"层级触发价: {trigger_price:.2f} | "
-              f"权重: {tier['ratio'] * 100}% | "
-              f"预估挂单: {estimated_shares}股")
-
-        # 去重后存入全局变量
-        if trigger_price not in trigger_prices[stock_code]:
-            trigger_prices[stock_code].append({
-                'price': trigger_price,
-                'ratio': tier['ratio'],
-                'triggered': False  # 触发标记
-            })
+    modified_df = modify_last_days_and_calc_ma5(df, config.PREDICT_PRICE_INCREASE_RATIO)
+    trigger_price = round(modified_df['MA5'].iloc[-1], 2)
+    # 计算预估挂单数量（100股整数倍）
+    estimated_shares = int(total_budget // trigger_price) // 100 * 100
+    # 打印触发价格和预估挂单数量
+    print(f"股票: {stock_code} | "
+          f"层级触发价: {trigger_price:.2f} | "
+          f"预估挂单: {estimated_shares}股")
+    # 去重后存入全局变量
+    if trigger_price not in trigger_prices[stock_code]:
+        trigger_prices[stock_code].append({
+            'price': trigger_price,
+            'ratio': 1.0,
+            'triggered': False  # 触发标记
+        })
 
 
 def subscribe_target_stocks(filtered_stocks):
@@ -610,7 +559,6 @@ def refresh_account_status():
 
 
 if __name__ == "__main__":
-    set_risk_level('low')
     xtdata.enable_hello = False
     path = r'D:\备份\国金证券QMT交易端\userdata_mini'
     session_id = int(time.time())
