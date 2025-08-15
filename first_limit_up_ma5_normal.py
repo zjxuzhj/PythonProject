@@ -330,9 +330,12 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         return False
 
     if offset > 3:
-        # 买前条件6：排除涨停后第一天放量阳线+涨停后第二天低开未收复前日实体中点的情况
         day_plus_2_day_date = df.index[day_plus_2_idx]
         day_plus_2_data = df.loc[day_plus_2_day_date]
+        day_plus_3_day_date = df.index[day_plus_3_idx]
+        day_plus_3_data = df.loc[day_plus_3_day_date]
+
+        # 买前条件6：排除涨停后第一天放量阳线+涨停后第二天低开未收复前日实体中点的情况
         # 买前条件6-1：涨停后第一天为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
         volume_condition = (day_plus_1_data['volume'] > limit_up_day_volume * 1.5)  # 放量1.5倍
         price_range = day_plus_1_data['high'] - day_plus_1_data['low']
@@ -363,7 +366,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 pressure_test_met = True
         weakness_confirmed = False
         if pressure_test_met:
-            day_plus_3_data = df.iloc[day_plus_3_idx]
             high_t3 = day_plus_3_data['high']
             close_t3 = day_plus_3_data['close']
             if high_t3 > 0:
@@ -390,14 +392,12 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         # 必须有足够的回看周期和未来两天的数据
         if limit_up_day_idx >= lookback_days and day_plus_2_idx < len(df):
             hist_window = df.iloc[limit_up_day_idx - lookback_days: limit_up_day_idx]
-            first_day_data = df.iloc[day_plus_1_idx]
-            high_t1 = first_day_data['high']
-            close_t1 = first_day_data['close']
-            volume_t1 = first_day_data['volume']
-            second_day_data = df.iloc[day_plus_2_idx]
-            high_t2 = second_day_data['high']
-            close_t2 = second_day_data['close']
-            volume_t2 = second_day_data['volume']
+            high_t1 = day_plus_1_data['high']
+            close_t1 = day_plus_1_data['close']
+            volume_t1 = day_plus_1_data['volume']
+            high_t2 = day_plus_2_data['high']
+            close_t2 = day_plus_2_data['close']
+            volume_t2 = day_plus_2_data['volume']
             # 条件A: T+1和T+2是否双双创出40日新高
             prev_40d_high = hist_window['high'].max()
             condition_A_met = (high_t1 > prev_40d_high) and (high_t2 > prev_40d_high)
@@ -423,13 +423,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 return False
 
         # 买前条件9：如果涨停后第一天最高价大于第三天大于第二天，并且都有长上影线，则排除
-        data_t1 = df.iloc[day_plus_1_idx]
-        data_t2 = df.iloc[day_plus_2_idx]
-        data_t3 = df.iloc[day_plus_3_idx]
-        is_t1_peak = data_t1['high'] > data_t3['high'] > data_t2['high']
-        s_t1 = (data_t1['high'] - data_t1['close']) / data_t1['close'] > 0.04 if data_t1['close'] > 0 else False
-        s_t2 = (data_t2['high'] - data_t2['close']) / data_t2['close'] > 0.03 if data_t2['close'] > 0 else False
-        s_t3 = (data_t3['high'] - data_t3['close']) / data_t3['close'] > 0.03 if data_t3['close'] > 0 else False
+        is_t1_peak = day_plus_1_data['high'] > day_plus_3_data['high'] > day_plus_2_data['high']
+        s_t1 = (day_plus_1_data['high'] - day_plus_1_data['close']) / day_plus_1_data['close'] > 0.04 if \
+        day_plus_1_data['close'] > 0 else False
+        s_t2 = (day_plus_2_data['high'] - day_plus_2_data['close']) / day_plus_2_data['close'] > 0.03 if \
+        day_plus_2_data['close'] > 0 else False
+        s_t3 = (day_plus_3_data['high'] - day_plus_3_data['close']) / day_plus_3_data['close'] > 0.03 if \
+        day_plus_3_data['close'] > 0 else False
         both_have_long_shadows = s_t2 and s_t3 and s_t1
         if is_t1_peak and both_have_long_shadows:
             return False
@@ -445,6 +445,31 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if day_plus_2_open > (day_plus_1_close * 1.03):
             return False
 
+        # 买前条件11：如果涨停后第二天第三天都收阴线，并且第一天大幅回落小于2.5%大于1%就排除
+        if (day_plus_2_data['close'] < day_plus_2_data['open']) and \
+                (day_plus_3_data['close'] < day_plus_3_data['open']) and (
+                day_plus_1_data['high'] - day_plus_1_data['close']) / day_plus_1_data['close'] < 0.025 and (
+                day_plus_1_data['high'] - day_plus_1_data['close']) / day_plus_1_data['close'] > 0.01:
+            return False
+
+    # long_term_mas = ['ma55', 'ma60', 'ma120', 'ma250']
+    long_term_mas = ['ma250']
+    t1_high = day_plus_1_data['high']
+    t1_close = day_plus_1_data['close']
+
+    # for ma_col in long_term_mas:
+    #     ma_value = day_plus_1_data[ma_col]
+    #     # 确保均线值有效
+    #     if pd.notna(ma_value) and ma_value > 0:
+    #         # 条件1: T+1的最高价 > 均线值 (触碰或上穿)
+    #         tested_ma = t1_high > ma_value
+    #         # 条件2: T+1的收盘价与均线值差距在千分之五以内
+    #         is_rejected = (abs(t1_close - ma_value) / ma_value) <= 0.0015
+    #
+    #         # if tested_ma and is_rejected :
+    #         if tested_ma and is_rejected and( day_plus_1_data['high'] - day_plus_1_data['close']) / day_plus_1_data['close']>0.04:
+    #             # print(f"[{code}] 在 {day_plus_1_data.name.date()} 触及 {ma_col} ({ma_value:.2f}) 后被压制，排除。")
+    #             return True
     return True
 
 
@@ -548,6 +573,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
     df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
     df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
+    df['ma60'] = df['close'].rolling(60, min_periods=1).mean()
+    df['ma120'] = df['close'].rolling(120, min_periods=1).mean()
+    df['ma250'] = df['close'].rolling(250, min_periods=1).mean()
 
     next_day_2_pct = None
     if start_idx + 2 < len(df):

@@ -44,7 +44,7 @@ def find_recent_first_limit_up(code, old_df):
     old_df['is_limit_down'] = old_df['close'] <= old_df['down_limit_price']
 
     # 筛选有效时间范围
-    extended_days = 20
+    extended_days = 130
     start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
     date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
     df = old_df.loc[date_mask].copy()
@@ -170,7 +170,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153","sh600184"]:
+        if code in ["sz002506", "sz002153","sh600184","sz002975"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:
@@ -256,7 +256,7 @@ if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
     #
-    # target_date = "20250813"
+    # target_date = "20250728"
     # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")

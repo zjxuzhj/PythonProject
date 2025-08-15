@@ -93,46 +93,6 @@ def monitor_strategy_status(logger):
         time.sleep(30 * 60)
 
 
-def check_ma5_breach(positions, position_available_dict):
-    """检测持仓中跌破五日线的股票"""
-    breach_list = []
-    for stock_code, hold_vol in position_available_dict.items():
-        if hold_vol <= 0:
-            continue
-
-        try:
-            tick = xtdata.get_full_tick([stock_code])[stock_code]
-            current_price = tick['lastPrice']
-            if current_price is None or current_price <= 0:
-                print(f"无法获取 {stock_code} 的有效实时价格，跳过本次检测。")
-                continue
-            current_time = datetime.now()
-
-            # 动态计算MA5（传入当前时间和价格）
-            ma5_price = get_ma5_price(
-                stock_code,
-                current_date=current_time,
-                current_price=current_price
-            )
-            if ma5_price is None or ma5_price == 0:
-                continue
-
-            deviation = (current_price - ma5_price) / ma5_price
-            if deviation <= -0.004:  # 跌幅超过五日线的0.4%卖出
-                stock_name = query_tool.get_name_by_code(stock_code)
-                breach_list.append({
-                    '代码': stock_code,
-                    '名称': stock_name,
-                    '持有数量': hold_vol,
-                    '当前价格': current_price,
-                    'MA5价格': ma5_price,
-                })
-        except Exception as e:
-            print(f"检测异常 {stock_code}: {str(e)}")
-            continue
-    return breach_list
-
-
 def sell_breached_stocks():
     """定时卖出所有符合卖出条件的持仓股票"""
     try:
