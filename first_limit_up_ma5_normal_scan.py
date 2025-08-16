@@ -26,28 +26,20 @@ def get_stock_data(symbol, isNeedLog):
     return pd.DataFrame()
 
 
-def find_recent_first_limit_up(code, old_df):
+def find_recent_first_limit_up(code, name, df, market_value, theme):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     config = StrategyConfig()
-    limit_rate = config.MARKET_LIMIT_RATES[normal.get_market_type(code)]
 
     # 获取当前数据的最新日期
-    end_date = old_df.index.max()
-    if end_date is None or old_df.empty:
+    end_date = df.index.max()
+    if end_date is None or df.empty:
         return []
 
-    # 计算涨停价
-    old_df['prev_close'] = old_df['close'].shift(1)
-    old_df['limit_price'] = (old_df['prev_close'] * (1 + limit_rate)).round(2)
-    old_df['is_limit'] = old_df['close'] >= old_df['limit_price']
-    old_df['down_limit_price'] = (old_df['prev_close'] * (1 - limit_rate)).round(2)
-    old_df['is_limit_down'] = old_df['close'] <= old_df['down_limit_price']
-
     # 筛选有效时间范围
-    extended_days = 130
-    start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
-    date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
-    df = old_df.loc[date_mask].copy()
+    # extended_days = 130
+    # start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
+    # date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
+    # df = old_df.loc[date_mask].copy()
 
     # 筛选最近days个交易日内的涨停日（核心筛选范围）
     # recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
@@ -73,7 +65,7 @@ def find_recent_first_limit_up(code, old_df):
         if day != limit_days[0]:
             continue
 
-        if normal.is_valid_first_limit_up_day(df, day, code, config, query_tool):
+        if normal.is_valid_first_limit_up_day(df, day, code, config, market_value, theme, name):
             valid_days.append(day)
 
     return valid_days
@@ -86,6 +78,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
     - 如果提供了 target_date (e.g., "20250728"), 则为回测模式，不使用缓存或保存结果。
     """
     is_backtest = target_date is not None
+    config = StrategyConfig()  # 获取策略配置
 
     if is_backtest:
         today = datetime.strptime(target_date, '%Y%m%d').date()
@@ -152,16 +145,19 @@ def get_target_stocks(isNeedLog=True, target_date=None):
                 print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
             continue
 
-        first_limit_days = find_recent_first_limit_up(code, df)
+        # --- 核心修改：采用优化后的处理流程 ---
+        # 1. 一次性准备好所有数据（计算指标）
+        df = normal.prepare_data(df, code, config)
+
+        # 2. 一次性查询静态数据
+        market_value = query_tool.get_stock_market_value(code)
+        theme = query_tool.get_theme_by_code(code)
+        first_limit_days = find_recent_first_limit_up(code, name, df, market_value, theme)
+
         for day in first_limit_days:
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
-            df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
-            df['ma10'] = df['close'].rolling(10, min_periods=1).mean()
-            df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
-            df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
-            df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
-            df['ma60'] = df['close'].rolling(60, min_periods=1).mean()
+
             if normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig()):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
@@ -255,10 +251,10 @@ def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, b
 
 if __name__ == '__main__':
     # 获取目标股票列表
-    target_stocks, fourth_day_stocks = get_target_stocks()
-    #
-    # target_date = "20250728"
-    # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
+    # target_stocks, fourth_day_stocks = get_target_stocks()
+
+    target_date = "20250806"
+    target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
     for stock in target_stocks:

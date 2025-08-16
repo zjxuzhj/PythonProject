@@ -8,13 +8,13 @@ query_tool = getAllStockCsv.StockQuery()
 
 # 设置股票代码和时间范围
 stock_code = "000300.SH"
-start_date = "20240201"
-end_date = "20250723"
+start_date = "20250724"
+end_date = "20250815"
 
 # 下载历史行情数据
 xtdata.download_history_data2(
     stock_list=[stock_code],
-    period="1d",           # 1分钟周期
+    period="1m",           # 1分钟周期
     start_time=start_date,
     end_time=end_date,
     callback=lambda data: print(f"进度: {data['finished']}/{data['total']} {data['stockcode']}"),  # 进度回调
@@ -24,8 +24,9 @@ xtdata.download_history_data2(
 print(f"下载完成: {stock_code} {start_date} 至 {end_date} 的1分钟数据")
 
 # 1. 设置时间范围
-# start_date = "20240201"
-# end_date = "20250723"
+# # start_date = "20240201"
+# start_date = "20250724"
+# end_date = "20250815"
 #
 # # 2. 设置数据周期
 # # 注意：迅投支持的周期包括 1d, 1m, 5m, 15m, 30m, 60m 等
@@ -42,8 +43,8 @@ print(f"下载完成: {stock_code} {start_date} 至 {end_date} 的1分钟数据"
 #     start_index = 900
 #     total_stocks = len(stock_list)
 #
-#     for idx, (stock_code, stock_name) in enumerate(stock_list[start_index:], start_index + 1):
-#     # for idx, (stock_code, stock_name) in enumerate(stock_list, 1):
+#     # for idx, (stock_code, stock_name) in enumerate(stock_list[start_index:], start_index + 1):
+#     for idx, (stock_code, stock_name) in enumerate(stock_list, 1):
 #         standard_code = getAllStockCsv.convert_to_standard_format(stock_code)
 #         print(f"[{idx}/{total_stocks}] 开始处理: {standard_code} ({stock_name})")
 #         # 使用增量下载模式 (incrementally=True)，SDK 会自动检查本地数据，只下载需要补充的部分，这就是最推荐的“断点续传”方式
@@ -65,7 +66,7 @@ print(f"下载完成: {stock_code} {start_date} 至 {end_date} 的1分钟数据"
 #             continue
 #
 #         # 建议在每次请求之间加入短暂延时，避免请求过于频繁
-#         time.sleep(1.5)  # 延时0.5秒
+#         time.sleep(1)  # 延时0.5秒
 #
 #     print("-" * 30)
 #     print("所有股票数据处理完毕！")
