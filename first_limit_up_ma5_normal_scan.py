@@ -161,6 +161,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
             df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
             df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
+            df['ma60'] = df['close'].rolling(60, min_periods=1).mean()
             if normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig()):
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
@@ -170,7 +171,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153","sh600184","sz002975"]:
+        if code in ["sz002506", "sz002153","sh600184"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:

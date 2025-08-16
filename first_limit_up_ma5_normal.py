@@ -2,6 +2,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
+import concurrent.futures
 
 import numpy as np
 import pandas as pd
@@ -78,9 +79,34 @@ def get_market_type(symbol: str) -> str:
         return "创业板"
     return "主板"
 
+def prepare_data(df: pd.DataFrame, symbol: str,config:StrategyConfig) -> pd.DataFrame:
+    """
+    一次性计算所有需要的指标，避免在循环中重复计算。
+    """
+    if df.empty:
+        return df
+
+    # 1. 计算所有均线
+    df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
+    df['ma10'] = df['close'].rolling(10, min_periods=1).mean()
+    df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
+    df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
+    df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
+    df['ma60'] = df['close'].rolling(60, min_periods=1).mean()
+    df['ma120'] = df['close'].rolling(120, min_periods=1).mean()
+
+    # 2. 计算涨跌停价和是否触及
+    limit_rate = config.MARKET_LIMIT_RATES[get_market_type(symbol)]
+    df['prev_close'] = df['close'].shift(1)
+    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
+    df['is_limit'] = df['close'] >= df['limit_price']
+    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
+    df['is_limit_down'] = df['close'] <= df['down_limit_price']
+
+    return df
 
 def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, config: StrategyConfig,
-                                query_tool) -> bool:
+                                market_value: float, theme: str, name: str) -> bool:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
@@ -107,13 +133,10 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     day_plus_1_data = df.iloc[day_plus_1_idx]
 
     # 条件0：排除市值大于250亿的股票
-    market_value = query_tool.get_stock_market_value(code)
     if market_value > config.MAX_MARKET_CAP_BILLIONS:
         return False
 
     # 条件1：排除特定题材
-    theme = query_tool.get_theme_by_code(code)
-    name = query_tool.get_name_by_code(code)
     if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
         return False
     if "外贸" in theme:
@@ -491,17 +514,9 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     return True
 
 
-def find_first_limit_up(symbol, df, config: StrategyConfig):
+def find_first_limit_up(symbol, df, config: StrategyConfig,query_tool, market_value, theme, name):
     """识别首板涨停日并排除连板"""
-    limit_rate = config.MARKET_LIMIT_RATES[get_market_type(symbol)]
-
-    # 计算涨停价
-    df['prev_close'] = df['close'].shift(1)
-    df['limit_price'] = (df['prev_close'] * (1 + limit_rate)).round(2)
-    df['is_limit'] = df['close'] >= df['limit_price']
-    df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
-    df['is_limit_down'] = df['close'] <= df['down_limit_price']
-    limit_days = df[df['close'] >= df['limit_price']].index.tolist()
+    limit_days = df[df['is_limit']].index.tolist()
 
     valid_days = []
     for day in limit_days:
@@ -509,7 +524,7 @@ def find_first_limit_up(symbol, df, config: StrategyConfig):
         if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
 
-        if is_valid_first_limit_up_day(df, day, symbol, config, query_tool):
+        if is_valid_first_limit_up_day(df, day, symbol, config, market_value, theme, name):  # 修改点
             valid_days.append(day)
 
     return valid_days
@@ -582,17 +597,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
-    limit_rate = config.MARKET_LIMIT_RATES[get_market_type(stock_code)]
     start_idx = df.index.get_loc(first_limit_day)
-
-    # --- 数据准备 ---
-    df['ma5'] = df['close'].rolling(5, min_periods=1).mean()
-    df['ma10'] = df['close'].rolling(10, min_periods=1).mean()
-    df['ma20'] = df['close'].rolling(20, min_periods=1).mean()
-    df['ma30'] = df['close'].rolling(30, min_periods=1).mean()
-    df['ma55'] = df['close'].rolling(55, min_periods=1).mean()
-    df['ma60'] = df['close'].rolling(60, min_periods=1).mean()
-    df['ma120'] = df['close'].rolling(120, min_periods=1).mean()
 
     next_day_2_pct = None
     if start_idx + 2 < len(df):
@@ -633,7 +638,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
 
-        if not is_valid_buy_opportunity(df, start_idx, offset, code, config):
+        if not is_valid_buy_opportunity(df, start_idx, offset, stock_code, config):
             continue
 
         # 计算挂单价格
@@ -892,6 +897,34 @@ def save_trades_excel(result_df):
     print(f"\033[32m交易记录已保存至 {excel_name}\033[0m")
 
 
+def process_single_stock(stock_info):
+    """
+    处理单只股票的回测逻辑，用于并行计算。
+    """
+    code, name, query_tool, config = stock_info  # 接收包含所有必需信息的元组
+
+    # 1. 加载数据
+    df, _ = get_stock_data(code, config)
+    if df is None or df.empty:
+        return []  # 如果没有数据，返回空列表
+
+    # 2. 准备数据（计算指标）
+    df = prepare_data(df, code,config)
+
+    # 3. 查询静态数据
+    market_value = query_tool.get_stock_market_value(code)
+    theme = query_tool.get_theme_by_code(code)
+
+    # 4. 寻找信号并生成交易记录
+    first_limit_days = find_first_limit_up(code, df, config, query_tool, market_value, theme, name)
+
+    all_signals = []
+    for day in first_limit_days:
+        signals = generate_signals(df, day, code, name, config)
+        all_signals.extend(signals)
+
+    return all_signals
+
 if __name__ == '__main__':
     total_start = time.perf_counter()  # 记录程序开始时间
 
@@ -902,16 +935,14 @@ if __name__ == '__main__':
 
     all_signals = []
     stock_process_start = time.perf_counter()
+    tasks = [(code, name, query_tool, config) for code, name in stock_list]
 
-    for idx, (code, name) in enumerate(stock_list, 1):
-        df, _ = get_stock_data(code, config)
-        if df.empty:
-            continue
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # executor.map 会自动将tasks列表中的每一项分配给一个进程，并收集结果
+        results = list(executor.map(process_single_stock, tasks))
 
-        first_limit_days = find_first_limit_up(code, df, config)
-        for day in first_limit_days:
-            signals = generate_signals(df, day, code, name, config)
-            all_signals.extend(signals)
+    for result in results:
+        all_signals.extend(result)
 
     stock_process_duration = time.perf_counter() - stock_process_start
 
