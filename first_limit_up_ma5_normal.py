@@ -161,6 +161,20 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     if (volume_p1 >= limit_up_day_volume * 3.6) and not is_red_candle_p1:
         return False
 
+    # 条件8：排除10日内涨停次数过多的股票
+    lookback_data = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
+    limit_up_count = (lookback_data['close'] >= lookback_data['limit_price']).sum()
+    if limit_up_count >= 4:
+        return False
+
+    # 条件7：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
+    pre5_start = df.index[df.index.get_loc(day) - 5]
+    pre5_close = df.loc[pre5_start, 'close']
+    if pre5_close != 0:
+        total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
+        if total_change >= 15:
+            return False
+
     # 条件5：排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票
     lookback_days_120 = 120
     if day_plus_1_idx >= lookback_days_120:
@@ -179,7 +193,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     lookback_df = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
     limit_up_days = lookback_df[lookback_df['is_limit']]
     if not limit_up_days.empty:
-        # 使用np.diff()和cumsum()来分组连续的涨停天数
         limit_up_indices = [df.index.get_loc(d) for d in limit_up_days.index]
         groups = (np.diff(limit_up_indices, prepend=np.nan) != 1).cumsum()
         for group_id in np.unique(groups):
@@ -190,10 +203,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                 peak_day_timestamp = streak_df['high'].idxmax()
                 peak_day_data = df.loc[peak_day_timestamp]
                 peak_day_idx = df.index.get_loc(peak_day_timestamp)
-                limit_up_day_data = df.iloc[limit_up_day_idx]
-                day_plus_1_data = df.iloc[day_plus_1_idx]
                 # 子条件3: 涨停日和次日成交量均小于峰值日成交量
-                vol_condition = (limit_up_day_data['volume'] < peak_day_data['volume'] and
+                vol_condition = (limit_up_day_volume < peak_day_data['volume'] and
                                  volume_p1 < peak_day_data['volume'])
                 # 子条件4: 次日最高价低于峰值日或后一日的最高价
                 price_condition = high_p1 < peak_day_data['high']
@@ -221,14 +232,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                         f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
                     return False
 
-    # 条件7：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-    pre5_start = df.index[df.index.get_loc(day) - 5]
-    pre5_close = df.loc[pre5_start, 'close']
-    if pre5_close != 0:
-        total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
-        if total_change >= 15:
-            return False
-
     # 条件9：排除4日内存在跌破一半的涨停
     lookback_data = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]
     recent_limit_ups = lookback_data[lookback_data['close'] >= lookback_data['limit_price']]
@@ -245,11 +248,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if min_low_in_between < price_floor:
                 return False
 
-    # 条件8：排除10日内涨停次数过多的股票
-    lookback_data = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
-    limit_up_count = (lookback_data['close'] >= lookback_data['limit_price']).sum()
-    if limit_up_count >= 4:
-        return False
 
     # 条件13: 排除涨停前10日内，先出现至少2连板后又出现至少2连跌停的极端走势
     window = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
@@ -280,6 +278,36 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if volatile_days_count > 37 and volume_p1 < limit_up_day_volume * 2.5:
                 # print(f"[{code}] 在 {day.date()} 的涨停被排除：前{lookback_days_40}日波动过小({volatile_days_count}天振幅 > 3.5%)。")
                 return False
+
+    # 条件15:如果涨停前6天的最高点也是涨停前40天里面的最高点。p1最高价高于最高点，p1上影线超过4%，并且收盘价低于最高点。并且最高点的量大于涨停后第一天量能的1.2倍，就排除掉
+    lookback_period = 40
+    if limit_up_day_idx >= lookback_period:
+        pre_40d_window = df.iloc[limit_up_day_idx - lookback_period: limit_up_day_idx]
+        pre_6d_window = df.iloc[limit_up_day_idx - 6: limit_up_day_idx]
+
+        if not pre_40d_window.empty and not pre_6d_window.empty:
+            peak_40d_price = pre_40d_window['high'].max()
+            peak_6d_price = pre_6d_window['high'].max()
+            # 条件A: 涨停前6天的最高点也是前40天的最高点
+            if abs(peak_6d_price - peak_40d_price) < 1e-5:
+                peak_day_loc = pre_40d_window['high'].idxmax()
+                peak_day_data = df.loc[peak_day_loc]
+                peak_price = peak_day_data['high']
+                peak_volume = peak_day_data['volume']
+                # 条件C: T+1最高价高于关键高点 (盘中尝试突破)
+                cond_c_p1_breaks_peak = high_p1 > peak_price
+                # 条件D: T+1日从最高点回撤超过4% (形成长上影线)
+                cond_d_p1_long_wick = (high_p1 - close_p1) / high_p1 > 0.04 if high_p1 > 0 else False
+                # 条件E: T+1收盘价低于关键高点 (收盘时突破失败)
+                cond_e_p1_close_fails = close_p1 < peak_price
+                # 条件F: 关键高点日的成交量 > T+1成交量的1.2倍 (缩量假突破)
+                cond_f_volume_confirms = peak_volume > (volume_p1 * 1.2)
+                # 如果所有条件都满足，则构成一个经典的假突破形态，应予以排除
+                if (cond_c_p1_breaks_peak and
+                        cond_d_p1_long_wick and
+                        cond_e_p1_close_fails and
+                        cond_f_volume_confirms):
+                    return False
 
     return True
 
@@ -337,13 +365,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     if latest_close > 80:
         return False
 
-    # 买前条件2: 排除，在首板日和买入日之间，是出现了新的涨停的和收盘价低于首板收盘价
+    # 买前条件2: 排除在首板日和买入日之间，有新的涨停的和收盘价低于首板收盘价
     for i in range(1, offset):
         check_day = df.index[limit_up_day_idx + i]
         if df.loc[check_day, 'is_limit'] or df.loc[check_day, 'close'] < limit_up_day_price:
             return False
 
-    # 买前条件3：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票
+    # 买前条件3：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票。副条件：排除涨停前第二天低于五日线的票
     lookback_window = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
     breakdown_count = (lookback_window['close'] < lookback_window['ma20']).sum()
     is_m2_day_below_ma5 = close_m2 < day_minus_2_data['ma5']
@@ -374,16 +402,14 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         day_plus_4_idx = limit_up_day_idx + 4
         upper_shadow_ratio_p1 = (high_p1 - close_p1) / close_p1 if close_p1 > 0 else 0  # P1 (T+1) 的上影线比例
 
-        # 买前条件6：排除涨停后第一天放量阳线+涨停后第二天低开未收复前日实体中点的情况
-        # 买前条件6-1：涨停后第一天为放量实体阳线（成交量>首板日且实体占比在总的价格范围的>50%）
-        volume_condition = (volume_p1 > limit_up_day_volume * 1.5)  # 放量1.5倍
+        # 买前条件6：排除p1放量阳线+p2低开未收复前日实体中点
+        volume_condition = (volume_p1 > limit_up_day_volume * 1.5)
         price_range = high_p1 - low_p1
         if abs(price_range) < 1e-5:  # 若最高价=最低价（一字线），实体占比无法计算，直接排除
             candle_condition = False
         else:
             body_ratio = (day_plus_1_data['close'] - day_plus_1_data['open']) / price_range
             candle_condition = (body_ratio > 0.5) and (day_plus_1_data['close'] > day_plus_1_data['open'])
-        # 买前条件6-2：涨停后第二天低开且未收复前日实体中点
         midpoint = (close_p1 + open_p1) / 2  # 前日阳线实体中点
         low_open_condition = (open_p2 < close_p1)  # 低开
         recover_condition = (close_p2 < midpoint)  # 盘中最高点未达中点
@@ -410,7 +436,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if pressure_test_met and weakness_confirmed:
             return False
 
-        # 买前条件8： 检查涨停后第一天，第二天，第三天是否受到前期双头颈线压制
+        # 买前条件8： 排除p1,p2,p3受到前期双头颈线压制
         for i in range(1, offset):
             check_day_idx = limit_up_day_idx + i
             if check_day_idx >= len(df):
@@ -421,7 +447,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 print(f"[{code}] 在涨停后第{i}天({check_day_date})触及双头颈线 {neckline:.2f} 回落，放弃买入机会。")
                 return False
 
-        # 买前条件9： 排除T+1,T+2连续创40日新高但巨量回落的“双顶出货”形态
+        # 买前条件9： 排除p1,p2连续创40日新高但巨量回落的“双顶出货”形态
         lookback_days = 40
         # 必须有足够的回看周期和未来两天的数据
         if limit_up_day_idx >= lookback_days and day_plus_2_idx < len(df):
@@ -463,13 +489,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if is_t1_peak and both_have_long_shadows:
             return False
 
-        # 买前条件10：如果涨停后第二天和第三天均出现高开大于2%的情况，排除
+        # 买前条件10：如果p2和p3均出现高开大于2%的情况，排除
         if open_p2 > (close_p1 * 1.02) and open_p3 > (close_p2 * 1.02):
             return False
         if open_p2 > (close_p1 * 1.03):
             return False
 
-        # 买前条件11：如果涨停后第二天第三天都收阴线，并且第一天大幅回落小于2.5%大于1%就排除
+        # 买前条件11：如果涨停后p2和p3都收阴线，并且p1大幅回落小于2.5%大于1%就排除
         if not is_red_candle_p2 and \
                 not is_red_candle_p3 and (
                 day_plus_1_data['high'] - day_plus_1_data['close']) / day_plus_1_data['close'] < 0.025 and (
@@ -534,6 +560,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if is_strong_gap_and_hold and not t2_holds_support and not t3_holds_support and not is_nian_he:
             return False
 
+        # 买前条件10：p1最高价大于55日线，p2和p3收盘价低于55日线。副条件：三天都不被20日线和30日线支撑
         ma55_t0 = limit_up_day_data['ma55']
         ma55_t1 = day_plus_1_data['ma55']
         ma55_t2 = day_plus_2_data['ma55']
@@ -549,8 +576,8 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             # 条件4: T+3日收盘价 < T+3日ma55
             t3_below_ma55 = day_plus_3_data['close'] < ma55_t3
 
-            is_persistently_30_supported = True  # 先假设被该均线持续支撑
-            is_persistently_20_supported = True  # 先假设被该均线持续支撑
+            is_persistently_30_supported = True
+            is_persistently_20_supported = True
             days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
             for day_idx in days_to_check_indices:
                 day_data = df.iloc[day_idx]
@@ -571,6 +598,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 # print(f"[{code}] 触发MA55假突破回落形态，排除。")
                 return False
 
+        # 买前条件11：p1阴线，p2红柱，p3十字星并且p3收盘价小于p2实体的一半，并且三天都不被十日线支撑，并且五日十日二十日不粘和
         if not is_red_candle_p1:
             midpoint_p1_body = (open_p1 + close_p1) / 2
             if close_p2 <= midpoint_p1_body:
@@ -783,7 +811,7 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '卖出原因': sell_reason_str,
         }
 
-    # for offset in range(4, 5):  # 检查涨停后第2、3、4、5天
+    # for offset in range(2, 3):  # 检查涨停后第2、3、4、5天
     for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
