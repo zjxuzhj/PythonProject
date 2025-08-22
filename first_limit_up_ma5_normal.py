@@ -16,7 +16,7 @@ from common_sell_logic import get_sell_decision, MarketDataContext
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -961,8 +961,82 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                         is_close_abc = True
                 # 检查T+1是否形成背离
                 obv_p1 = day_plus_1_data['obv']
-                if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc:
+                ma10_m1 = day_minus_1_data['ma10']
+                is_m10_support = False
+                if low_m1 < ma10_m1 * 1.05 <= close_m1:
+                    is_m10_support = True
+                if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc and not is_m10_support:
                     return False
+
+        # --- 条件13：价升量缩的“量价背离”压力 ---
+        if limit_up_day_volume * 1.2 < volume_p1 <= limit_up_day_volume * 1.3:
+            days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
+            is_persistently_testing_ma60 = True
+            for day_data in days_to_check:
+                day_low = day_data['low']
+                day_close = day_data['close']
+                ma60_value = day_data['ma60']
+                if not (pd.notna(ma60_value) and ma60_value > 0):
+                    is_persistently_testing_ma60 = False
+                    break
+                touched_ma60 = day_low <= ma60_value*1.02
+                bounced_strongly = (day_close - ma60_value) / ma60_value > 0.01
+                if not (touched_ma60 and bounced_strongly):
+                    is_persistently_testing_ma60 = False
+                    break
+            ma5_m1 = day_minus_1_data['ma5']
+            ma10_m1 = day_minus_1_data['ma10']
+            ma20_m1 = day_minus_1_data['ma20']
+            ma55_m1 = day_minus_1_data['ma55']
+            ma120_m1 = day_minus_1_data['ma120']
+            ma250_m1 = day_minus_1_data['ma250']
+            is_long_nian_he = False
+            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
+                ma_list = [ma55_m1, ma120_m1, ma250_m1]
+                max_ma = max(ma_list)
+                min_ma = min(ma_list)
+                avg_ma = sum(ma_list) / 3
+                if avg_ma > 0:
+                    spread_ratio = (max_ma - min_ma) / avg_ma
+                    if spread_ratio < 0.02:
+                        is_long_nian_he = True
+            is_nian_he = False
+            if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
+                ma_list = [ma5_m1, ma10_m1, ma20_m1]
+                max_ma = max(ma_list)
+                min_ma = min(ma_list)
+                avg_ma = sum(ma_list) / 3
+                if avg_ma > 0:
+                    spread_ratio = (max_ma - min_ma) / avg_ma
+                    if spread_ratio < 0.02:
+                        is_nian_he = True
+
+            is_new_low=False
+            platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
+            bottom_prices = []
+            for _, day in platform_window.iterrows():
+                if day['close'] >= day['open']:  # 阳线或平盘
+                    bottom_prices.append(day['open'])
+                else:  # 阴线
+                    bottom_prices.append(day['close'])
+            if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
+                max_price = max(bottom_prices)
+                min_price = min(bottom_prices)
+                avg_price = sum(bottom_prices) / 4
+                if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
+                    support_line_level = avg_price
+                    if day_minus_1_data['close'] < support_line_level:
+                        entire_5d_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]  # T-5 到 T-1
+                        if day_minus_1_data['low'] == entire_5d_window['low'].min():
+                            is_new_low=True
+            if not is_persistently_testing_ma60 and not is_nian_he and not is_long_nian_he and not is_new_low:
+                return True
+
+        # lookback_days_90 = 90
+        # if limit_up_day_idx > lookback_days_90:
+        #     hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
+        #     hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
+
         # --- 条件83：“大缺口”后“修复平台”的“逃生墙” ---
         # gaps_down = hist_window_60d[hist_window_60d['open'] < hist_window_60d['prev_close'] * 0.96]
         # if not gaps_down.empty:
@@ -987,127 +1061,106 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         #             if not is_nian_he:
         #                 return True
 
-    if offset == 2:
+    # if offset == 2:
 
-        # lookback_days_90 = 90
-        # if limit_up_day_idx > lookback_days_90:
-        #     hist_window_90d = df.iloc[limit_up_day_idx - lookback_days_90: limit_up_day_idx]
-        #
-        #     # --- 条件11：涨停“撞线”前期关键高点 ---
-        #     prev_major_high = hist_window_90d['high'].max()
-        #     if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98:
-        #         return True
+    # lookback_days_90 = 90
+    # if limit_up_day_idx > lookback_days_90:
+    #     hist_window_90d = df.iloc[limit_up_day_idx - lookback_days_90: limit_up_day_idx]
+    #
+    #     # --- 条件11：涨停“撞线”前期关键高点 ---
+    #     prev_major_high = hist_window_90d['high'].max()
+    #     if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98:
+    #         return True
 
-        # --- 条件13：价升量缩的“量价背离”压力 ---
-        # if high_p1 > limit_up_day_high and volume_p1 < limit_up_day_volume:
-        #     return True
+    # # --- 条件16：突破K线的“虚假繁荣”压力 ---
+    # peak_volume_day_idx = hist_window_60d['volume'].idxmax()
+    # high_at_peak_volume = df.loc[peak_volume_day_idx, 'high']
+    # avg_price_p1 = (open_p1 + high_p1 + low_p1 + close_p1) / 4
+    # if high_p1 > high_at_peak_volume and avg_price_p1 < high_at_peak_volume:
+    #     return True
 
-        lookback_days_90 = 90
-        if limit_up_day_idx > lookback_days_90:
-            hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
-            hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
-            # # --- 条件16：突破K线的“虚假繁荣”压力 ---
-            # peak_volume_day_idx = hist_window_60d['volume'].idxmax()
-            # high_at_peak_volume = df.loc[peak_volume_day_idx, 'high']
-            # avg_price_p1 = (open_p1 + high_p1 + low_p1 + close_p1) / 4
-            # if high_p1 > high_at_peak_volume and avg_price_p1 < high_at_peak_volume:
-            #     return True
+    # --- 条件20：高位巨幅“避雷针”反转压力 ---
+    # range_p1 = high_p1 - low_p1
+    # if range_p1 > 0:
+    #     body_p1_size = abs(open_p1 - close_p1)
+    #     upper_wick_p1 = high_p1 - max(open_p1, close_p1)
+    #
+    #     # 上影线长度是实体的3倍以上，且实体被压缩在总振幅的下三分之一
+    #     if body_p1_size > 0 and (upper_wick_p1 / body_p1_size > 3.0) and \
+    #             (max(open_p1, close_p1) < low_p1 + range_p1 * 0.33):
+    #         return True
 
-            # --- 条件20：高位巨幅“避雷针”反转压力 ---
-            # range_p1 = high_p1 - low_p1
-            # if range_p1 > 0:
-            #     body_p1_size = abs(open_p1 - close_p1)
-            #     upper_wick_p1 = high_p1 - max(open_p1, close_p1)
-            #
-            #     # 上影线长度是实体的3倍以上，且实体被压缩在总振幅的下三分之一
-            #     if body_p1_size > 0 and (upper_wick_p1 / body_p1_size > 3.0) and \
-            #             (max(open_p1, close_p1) < low_p1 + range_p1 * 0.33):
-            #         return True
+    # 重点关注 --- 条件26：中短期均线“趋势冲突” --- 好评
+    # if limit_up_day_idx > 65:  # 确保有足够的MA60数据
+    #     ma10_p1 = day_plus_1_data['ma10']
+    #     ma60_p1 = day_plus_1_data['ma60']
+    #
+    #     # 获取5天前的均线值用于计算斜率方向
+    #     ma10_m4 = df.iloc[limit_up_day_idx - 4]['ma10']
+    #     ma60_m4 = df.iloc[limit_up_day_idx - 4]['ma60']
+    #
+    #     if all(pd.notna([ma10_p1, ma60_p1, ma10_m4, ma60_m4])):
+    #         # 短期趋势向上，而中期趋势向下
+    #         if ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4:
+    #             return True
 
-            # 重点关注 --- 条件26：中短期均线“趋势冲突” --- 好评
-            # if limit_up_day_idx > 65:  # 确保有足够的MA60数据
-            #     ma10_p1 = day_plus_1_data['ma10']
-            #     ma60_p1 = day_plus_1_data['ma60']
-            #
-            #     # 获取5天前的均线值用于计算斜率方向
-            #     ma10_m4 = df.iloc[limit_up_day_idx - 4]['ma10']
-            #     ma60_m4 = df.iloc[limit_up_day_idx - 4]['ma60']
-            #
-            #     if all(pd.notna([ma10_p1, ma60_p1, ma10_m4, ma60_m4])):
-            #         # 短期趋势向上，而中期趋势向下
-            #         if ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4:
-            #             return True
+    # lookback_days_20 = 20
+    # if limit_up_day_idx > lookback_days_20:
+    #     hist_window_20d = df.iloc[limit_up_day_idx - lookback_days_20: limit_up_day_idx].copy()
+    #     avg_vol_20d = hist_window_20d['volume'].mean()
+    #
+    #     #--- 条件56：“潜行派发”——上涨过程中的“量能污点” ---
+    #     hist_window_20d['is_up_day'] = hist_window_20d['close'] > hist_window_20d['prev_close']
+    #     hist_window_20d['upper_wick_ratio'] = (hist_window_20d['high'] - hist_window_20d[
+    #         ['open', 'close']].max(axis=1)) / (hist_window_20d['high'] - hist_window_20d['low'])
+    #
+    #     stain_condition_A = (~hist_window_20d['is_up_day']) & (
+    #                 hist_window_20d['volume'] > avg_vol_20d * 1.5)
+    #     stain_condition_B = (hist_window_20d['is_up_day']) & (hist_window_20d['upper_wick_ratio'] > 0.4) & (
+    #                 hist_window_20d['volume'] > avg_vol_20d * 1.5)
+    #
+    #     stain_days_count = (stain_condition_A | stain_condition_B).sum()
+    #     if stain_days_count >= 3:
+    #         return True
 
-            # --- 条件44：跌破“心理锚点”后的“垂死挣扎” ---
-            # 用find_peaks找波谷（显著低点）
-            # troughs, _ = find_peaks(-hist_window_90d['low'], prominence=hist_window_90d['low'].std() * 0.8)
-            # if len(troughs) > 0:
-            #     # 取最近的一个显著低点作为心理锚点
-            #     recent_swing_low_val = hist_window_90d.iloc[troughs[-1]]['low']
-            #     # 检查T-5到T-1是否已跌破该锚点
-            #     pre_5d_window = df.iloc[limit_up_day_idx - 5:limit_up_day_idx]
-            #     if not pre_5d_window.empty and pre_5d_window['low'].min() < recent_swing_low_val:
-            #         # 检查T+1是否无力收复
-            #         if high_p1 < recent_swing_low_val:
-            #             return True
+    # lookback_days_60 = 60
+    # if limit_up_day_idx > lookback_days_60:
+    #     hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
+    #
+    #     # --- 条件68：“下降趋势线”的精准“狙击” ---
+    #     peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std() * 0.8,
+    #                           distance=5)
+    #     if len(peaks) >= 2:
+    #         # 取最近的两个波段高点
+    #         peak_b_idx, peak_a_idx = peaks[-1], peaks[-2]
+    #         peak_b, peak_a = hist_window_60d.iloc[peak_b_idx], hist_window_60d.iloc[peak_a_idx]
+    #
+    #         # 确认是下降趋势
+    #         if peak_b['high'] < peak_a['high']:
+    #             # 计算趋势线斜率和截距
+    #             x_coords = np.array([peak_a_idx, peak_b_idx])
+    #             y_coords = np.array([peak_a['high'], peak_b['high']])
+    #             slope = (y_coords[1] - y_coords[0]) / (x_coords[1] - x_coords[0])
+    #             # 延伸趋势线到T+0当天
+    #             trendline_price_t0 = peak_b['high'] + slope * (len(hist_window_60d) - 1 - peak_b_idx)
+    #
+    #             if abs(limit_up_day_high - trendline_price_t0) / trendline_price_t0 < 0.02:
+    #                 return True
 
-            # lookback_days_20 = 20
-            # if limit_up_day_idx > lookback_days_20:
-            #     hist_window_20d = df.iloc[limit_up_day_idx - lookback_days_20: limit_up_day_idx].copy()
-            #     avg_vol_20d = hist_window_20d['volume'].mean()
-            #
-            #     #--- 条件56：“潜行派发”——上涨过程中的“量能污点” ---
-            #     hist_window_20d['is_up_day'] = hist_window_20d['close'] > hist_window_20d['prev_close']
-            #     hist_window_20d['upper_wick_ratio'] = (hist_window_20d['high'] - hist_window_20d[
-            #         ['open', 'close']].max(axis=1)) / (hist_window_20d['high'] - hist_window_20d['low'])
-            #
-            #     stain_condition_A = (~hist_window_20d['is_up_day']) & (
-            #                 hist_window_20d['volume'] > avg_vol_20d * 1.5)
-            #     stain_condition_B = (hist_window_20d['is_up_day']) & (hist_window_20d['upper_wick_ratio'] > 0.4) & (
-            #                 hist_window_20d['volume'] > avg_vol_20d * 1.5)
-            #
-            #     stain_days_count = (stain_condition_A | stain_condition_B).sum()
-            #     if stain_days_count >= 3:
-            #         return True
+    # --- 条件70：深陷“巨额套牢区”的无力反弹 ---
+    # high_60d = hist_window_60d['high'].max()
+    # depth = (high_60d - limit_up_day_price) / high_60d if high_60d > 0 else 0
+    # if depth > 0.30:
+    #      return True
 
-            # lookback_days_60 = 60
-            # if limit_up_day_idx > lookback_days_60:
-            #     hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
-            #
-            #     # --- 条件68：“下降趋势线”的精准“狙击” ---
-            #     peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std() * 0.8,
-            #                           distance=5)
-            #     if len(peaks) >= 2:
-            #         # 取最近的两个波段高点
-            #         peak_b_idx, peak_a_idx = peaks[-1], peaks[-2]
-            #         peak_b, peak_a = hist_window_60d.iloc[peak_b_idx], hist_window_60d.iloc[peak_a_idx]
-            #
-            #         # 确认是下降趋势
-            #         if peak_b['high'] < peak_a['high']:
-            #             # 计算趋势线斜率和截距
-            #             x_coords = np.array([peak_a_idx, peak_b_idx])
-            #             y_coords = np.array([peak_a['high'], peak_b['high']])
-            #             slope = (y_coords[1] - y_coords[0]) / (x_coords[1] - x_coords[0])
-            #             # 延伸趋势线到T+0当天
-            #             trendline_price_t0 = peak_b['high'] + slope * (len(hist_window_60d) - 1 - peak_b_idx)
-            #
-            #             if abs(limit_up_day_high - trendline_price_t0) / trendline_price_t0 < 0.02:
-            #                 return True
+    # --- 条件71：MA20的“持续性压制” ---
+    # if limit_up_day_idx > 20:
+    #     hist_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+    #     days_below_ma20 = (hist_window_20d['close'] < hist_window_20d['ma20']).sum()
+    #     if days_below_ma20 >= 15:
+    #         return True
 
-            # --- 条件70：深陷“巨额套牢区”的无力反弹 ---
-            # high_60d = hist_window_60d['high'].max()
-            # depth = (high_60d - limit_up_day_price) / high_60d if high_60d > 0 else 0
-            # if depth > 0.30:
-            #      return True
-
-            # --- 条件71：MA20的“持续性压制” ---
-            # if limit_up_day_idx > 20:
-            #     hist_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
-            #     days_below_ma20 = (hist_window_20d['close'] < hist_window_20d['ma20']).sum()
-            #     if days_below_ma20 >= 15:
-            #         return True
-
-    return True
+    return False
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
@@ -1236,8 +1289,8 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '卖出原因': sell_reason_str,
         }
 
-    # for offset in range(2, 3):  # 检查涨停后第2、3、4、5天
-    for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
+    for offset in range(2, 3):  # 检查涨停后第2、3、4、5天
+        # for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
