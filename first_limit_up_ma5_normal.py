@@ -177,7 +177,9 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     limit_up_day_price = limit_up_day_data['close']  # 涨停日收盘价，重要支撑位
     limit_up_day_open = limit_up_day_data['open']
     limit_up_day_high = limit_up_day_data['high']
+    limit_up_day_low = limit_up_day_data['low']
     limit_up_day_volume = limit_up_day_data['volume']
+
     day_minus_1_idx = limit_up_day_idx - 1  # 涨停前一日
     day_minus_1_day_date = df.index[day_minus_1_idx]
     day_minus_1_data = df.iloc[day_minus_1_idx]
@@ -185,6 +187,23 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     high_m1 = day_minus_1_data['high']
     close_m1 = day_minus_1_data['close']
     volume_m1 = day_minus_1_data['volume']
+    day_minus_1_idx = limit_up_day_idx - 1
+    day_minus_1_day_date = df.index[day_minus_1_idx]
+    day_minus_1_data = df.iloc[limit_up_day_idx - 1]
+    open_m1 = day_minus_1_data['open']
+    high_m1 = day_minus_1_data['high']
+    close_m1 = day_minus_1_data['close']
+    volume_m1 = day_minus_1_data['volume']
+    day_minus_2_idx = limit_up_day_idx - 2
+    day_minus_2_day_date = df.index[day_minus_2_idx]
+    day_minus_2_data = df.iloc[limit_up_day_idx - 2]
+    open_m2 = day_minus_2_data['open']
+    high_m2 = day_minus_2_data['high']
+    close_m2 = day_minus_2_data['close']
+    volume_m2 = day_minus_2_data['volume']
+    day_minus_3_idx = limit_up_day_idx - 3
+    day_minus_3_day_date = df.index[day_minus_3_idx]
+    day_minus_3_data = df.iloc[limit_up_day_idx - 3]
     day_plus_1_idx = limit_up_day_idx + 1  # 涨停后一日
     day_plus_1_day_date = df.index[day_plus_1_idx]
     day_plus_1_data = df.iloc[day_plus_1_idx]
@@ -226,7 +245,37 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
         if total_change >= 15:
             return False
 
-    # 条件6：排除涨停和涨停后一天的最大量是前120天中最大量四倍以上的股票
+    # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），同时日内总振幅又比较大（如超过当天开盘价的5%）
+    high_m1, low_m1 = day_minus_1_data['high'], day_minus_1_data['low']
+    range_m1 = high_m1 - low_m1
+    is_chaotic_m1 = False
+    if range_m1 > 0 and (range_m1 / open_m1 > 0.05):
+        if abs(open_m1 - close_m1) / range_m1 < 0.3:
+            is_chaotic_m1 = True
+    high_m2, low_m2 = day_minus_2_data['high'], day_minus_2_data['low']
+    range_m2 = high_m2 - low_m2
+    is_chaotic_m2 = False
+    if range_m2 > 0 and (range_m2 / open_m2 > 0.05):
+        if abs(open_m2 - close_m2) / range_m2 < 0.3:
+            is_chaotic_m2 = True
+    days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
+    is_persistently_testing_ma10 = True
+    for day_data in days_to_check:
+        day_low = day_data['low']
+        day_close = day_data['close']
+        ma10_value = day_data['ma10']
+        if not (pd.notna(ma10_value) and ma10_value > 0):
+            is_persistently_testing_ma10 = False
+            break
+        touched_ma10 = day_low <= ma10_value
+        bounced_strongly = (day_close - ma10_value) / ma10_value > 0.01
+        if not (touched_ma10 and bounced_strongly):
+            is_persistently_testing_ma10 = False
+            break
+    if is_chaotic_m1 and is_chaotic_m2 and not is_persistently_testing_ma10:
+        return False
+
+    # 条件7：排除涨停和涨停后一天的最大量是前120天中最大量四倍以上的股票
     lookback_days_120 = 120
     if day_plus_1_idx >= lookback_days_120:
         lookback_window = df.iloc[limit_up_day_idx - lookback_days_120: limit_up_day_idx]
@@ -310,6 +359,219 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                 if (down_streaks >= 2).any():
                     # 如果在2连板之后，确实找到了2连跌停，则排除
                     print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
+                    return False
+
+
+    # 条件53：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票。副条件：排除涨停前第二天低于五日线的票
+    lookback_window = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+    breakdown_count = (lookback_window['close'] < lookback_window['ma20']).sum()
+    is_m2_day_below_ma5 = close_m2 < day_minus_2_data['ma5']
+    if limit_up_day_low == limit_up_day_price and breakdown_count > 1 and is_m2_day_below_ma5:
+        print("排除首板是一字板的")
+        return False
+
+    if limit_up_day_idx > 60:
+        # 定义回看窗口：涨停前的60个交易日
+        hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
+
+        # 条件3：前期密集峰/平台压力
+        # 逻辑：如果前期存在一个由多个小高点组成的密集平台区，这个区域将构成一个强大的阻力带。我们用算法找出这些小高点，如果它们密集分布，就形成一个平台。
+        peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std() * 0.5, width=2)
+        if len(peaks) >= 3:
+            peak_highs = hist_window_60d.iloc[peaks]['high']
+            price_spread = (peak_highs.max() - peak_highs.min()) / peak_highs.mean()
+            # 如果这些高点的价格差异在5%以内，我们认为它们构成了一个密集平台
+            if price_spread < 0.05:
+                resistance_zone_top = peak_highs.max()
+                ma5_m1 = day_minus_1_data['ma5']
+                ma10_m1 = day_minus_1_data['ma10']
+                ma20_m1 = day_minus_1_data['ma20']
+                is_nian_he = False
+                if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
+                    ma_list = [ma5_m1, ma10_m1, ma20_m1]
+                    max_ma = max(ma_list)
+                    min_ma = min(ma_list)
+                    avg_ma = sum(ma_list) / 3
+                    if avg_ma > 0:
+                        spread_ratio = (max_ma - min_ma) / avg_ma
+                        if spread_ratio < 0.012:
+                            is_nian_he = True
+                # T+1的最高价进入了这个平台区域，但收盘价未能站稳在平台之上
+                if high_p1 >= resistance_zone_top * 0.98 and close_p1 < resistance_zone_top and not is_nian_he:
+                    # print(f"[{code}] T+2买入排除(条件3)：T+1受阻于前期平台 {resistance_zone_top:.2f}。")
+                    return False
+
+        # 条件2：前期放量高点压力
+        # 逻辑：前期成交量最大的那一天往往是多空分歧最激烈的地方，其最高价是重要心理关口。如果T+1日尝试突破这个高点但失败，且成交量未能超越当时的量，说明买方力量不足。
+        peak_volume_day_idx_loc = hist_window_60d['volume'].argmax()
+        initial_peak_day = hist_window_60d.iloc[peak_volume_day_idx_loc]
+        effective_peak_high = initial_peak_day['high']
+        effective_peak_volume = initial_peak_day['volume']
+        start_loc = max(0, peak_volume_day_idx_loc - 2)
+        end_loc = min(len(hist_window_60d), peak_volume_day_idx_loc + 3)
+        search_window = hist_window_60d.iloc[start_loc:end_loc]
+        for _, candidate_day in search_window.iterrows():
+            is_high_volume = candidate_day['volume'] >= initial_peak_day['volume'] * 0.95
+            is_higher_price = candidate_day['high'] > effective_peak_high * 1.02
+            if is_high_volume and is_higher_price:
+                effective_peak_high = candidate_day['high']
+                effective_peak_volume = candidate_day['volume']
+        ma5_m1 = day_minus_1_data['ma5']
+        ma10_m1 = day_minus_1_data['ma10']
+        ma20_m1 = day_minus_1_data['ma20']
+        is_nian_he = False
+        if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
+            ma_list = [ma5_m1, ma10_m1, ma20_m1]
+            max_ma = max(ma_list)
+            min_ma = min(ma_list)
+            avg_ma = sum(ma_list) / 3
+            if avg_ma > 0:
+                spread_ratio = (max_ma - min_ma) / avg_ma
+                if spread_ratio < 0.02:
+                    is_nian_he = True
+        is_persistently_30_supported = True
+        days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
+        for day_idx in days_to_check_indices:
+            day_data = df.iloc[day_idx]
+            day_close = day_data['close']
+            day_low = day_data['low']
+            day_open = day_data['open']
+            day_30_ma_value = day_data['ma30']
+            is_above_30_ma = day_open >= day_30_ma_value * 0.98
+            is_open_30_to_ma = (abs(day_open - day_30_ma_value) / day_30_ma_value) <= 0.02
+            is_low_30_to_ma = (abs(day_low - day_30_ma_value) / day_30_ma_value) <= 0.02
+            is_close_30_to_ma = is_open_30_to_ma or is_low_30_to_ma
+            if not (is_above_30_ma and is_close_30_to_ma):
+                is_persistently_30_supported = False
+        if high_p1 >= effective_peak_high and close_p1  < effective_peak_high and volume_p1 < effective_peak_volume and not is_nian_he and not is_persistently_30_supported:
+            # print(f"[{code}] T+2买入排除(条件2-优化版)：T+1在放量区高点 {effective_peak_high:.2f} 处缩量回落。")
+            return False
+
+        # 条件13：价升量缩的“量价背离”压力
+        if limit_up_day_volume * 1.2 < volume_p1 <= limit_up_day_volume * 1.3:
+            days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
+            is_persistently_testing_ma60 = True
+            for day_data in days_to_check:
+                day_low = day_data['low']
+                day_close = day_data['close']
+                ma60_value = day_data['ma60']
+                if not (pd.notna(ma60_value) and ma60_value > 0):
+                    is_persistently_testing_ma60 = False
+                    break
+                touched_ma60 = day_low <= ma60_value * 1.02
+                bounced_strongly = (day_close - ma60_value) / ma60_value > 0.01
+                if not (touched_ma60 and bounced_strongly):
+                    is_persistently_testing_ma60 = False
+                    break
+            ma5_m1 = day_minus_1_data['ma5']
+            ma10_m1 = day_minus_1_data['ma10']
+            ma20_m1 = day_minus_1_data['ma20']
+            ma30_m1 = day_minus_1_data['ma30']
+            ma55_m1 = day_minus_1_data['ma55']
+            ma120_m1 = day_minus_1_data['ma120']
+            ma250_m1 = day_minus_1_data['ma250']
+            is_long_nian_he = False
+            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
+                ma_list = [ma55_m1, ma120_m1, ma250_m1]
+                max_ma = max(ma_list)
+                min_ma = min(ma_list)
+                avg_ma = sum(ma_list) / 3
+                if avg_ma > 0:
+                    spread_ratio = (max_ma - min_ma) / avg_ma
+                    if spread_ratio < 0.02:
+                        is_long_nian_he = True
+            is_nian_he = False
+            if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
+                ma_list = [ma5_m1, ma10_m1, ma20_m1]
+                max_ma = max(ma_list)
+                min_ma = min(ma_list)
+                avg_ma = sum(ma_list) / 3
+                if avg_ma > 0:
+                    spread_ratio = (max_ma - min_ma) / avg_ma
+                    if spread_ratio < 0.02:
+                        is_nian_he = True
+            is_zhong_nian_he = False
+            if pd.notna([ma10_m1, ma20_m1, ma30_m1]).all():
+                ma_list = [ma10_m1, ma20_m1, ma30_m1]
+                max_ma = max(ma_list)
+                min_ma = min(ma_list)
+                avg_ma = sum(ma_list) / 3
+                if avg_ma > 0:
+                    spread_ratio = (max_ma - min_ma) / avg_ma
+                    if spread_ratio < 0.025:
+                        is_zhong_nian_he = True
+
+            is_new_low = False
+            platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
+            bottom_prices = []
+            for _, day in platform_window.iterrows():
+                if day['close'] >= day['open']:  # 阳线或平盘
+                    bottom_prices.append(day['open'])
+                else:  # 阴线
+                    bottom_prices.append(day['close'])
+            if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
+                max_price = max(bottom_prices)
+                min_price = min(bottom_prices)
+                avg_price = sum(bottom_prices) / 4
+                if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
+                    support_line_level = avg_price
+                    if day_minus_1_data['close'] < support_line_level:
+                        entire_5d_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]  # T-5 到 T-1
+                        if day_minus_1_data['low'] == entire_5d_window['low'].min():
+                            is_new_low = True
+            if not is_persistently_testing_ma60 and not is_nian_he and not is_long_nian_he and not is_new_low and not is_zhong_nian_he:
+                return False
+
+        # 条件55：“力不从心”——OBV顶背离
+        if limit_up_day_idx > 60:
+            hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
+            peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std())
+            if len(peaks) > 0:
+                # 取最近的前高点
+                prev_peak_idx_in_window = peaks[-1]
+                prev_peak_day = hist_window_60d.iloc[prev_peak_idx_in_window]
+                prev_peak_price = prev_peak_day['high']
+                obv_at_prev_peak = prev_peak_day['obv']
+                ma55_m1 = day_minus_1_data['ma55']
+                ma120_m1 = day_minus_1_data['ma120']
+                ma250_m1 = day_minus_1_data['ma250']
+                low_m1 = day_minus_1_data['low']
+                is_nian_he = False
+                if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
+                    ma_list = [ma55_m1, ma120_m1, ma250_m1]
+                    max_ma = max(ma_list)
+                    min_ma = min(ma_list)
+                    avg_ma = sum(ma_list) / 3
+                    if avg_ma > 0:
+                        spread_ratio = (max_ma - min_ma) / avg_ma
+                        if spread_ratio < 0.02:
+                            is_nian_he = True
+
+                is_close_abc = False
+                price_a = limit_up_day_low
+                if day_minus_1_data['close'] < day_minus_1_data['open']:
+                    price_b = day_minus_1_data['close']
+                else:
+                    price_b = day_minus_1_data['low']
+                if day_minus_2_data['close'] < day_minus_2_data['open']:
+                    price_c = day_minus_2_data['close']
+                else:
+                    price_c = day_minus_2_data['low']
+                price_list = [price_a, price_b, price_c]
+                if all(p > 0 for p in price_list):
+                    max_price = max(price_list)
+                    min_price = min(price_list)
+                    avg_price = sum(price_list) / 3
+                    # 定义“接近”为价差小于平均价的1.5%
+                    if avg_price > 0 and (max_price - min_price) / avg_price < 0.015:
+                        is_close_abc = True
+                # 检查T+1是否形成背离
+                obv_p1 = day_plus_1_data['obv']
+                ma10_m1 = day_minus_1_data['ma10']
+                is_m10_support = False
+                if low_m1 < ma10_m1 * 1.05 <= close_m1:
+                    is_m10_support = True
+                if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc and not is_m10_support:
                     return False
 
     lookback_days_40 = 40
@@ -399,17 +661,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
 
     potential_buy_day_idx = limit_up_day_idx + offset
 
-    # 在第四天时，排除已经在第二天买入的股票
-    if offset == 4:
-        day_2_idx = limit_up_day_idx + 2
-        if day_2_idx < len(df):
-            day_2_timestamp = df.index[day_2_idx]
-            day_2_data = df.iloc[day_2_idx]
-            hypothetical_price_on_day_2 = simulate_ma5_order_prices(df, day_2_timestamp,
-                                                                    config.PREDICT_PRICE_INCREASE_RATIO)
-            if hypothetical_price_on_day_2 is not None:
-                if day_2_data['low'] <= hypothetical_price_on_day_2:
-                    return False
 
     # 买前条件1: 排除买入前日收盘价>80的股票
     latest_close = df.iloc[potential_buy_day_idx - 1]['close']
@@ -422,253 +673,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if df.loc[check_day, 'is_limit'] or df.loc[check_day, 'close'] < limit_up_day_price:
             return False
 
-    # 买前条件3：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票。副条件：排除涨停前第二天低于五日线的票
-    lookback_window = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
-    breakdown_count = (lookback_window['close'] < lookback_window['ma20']).sum()
-    is_m2_day_below_ma5 = close_m2 < day_minus_2_data['ma5']
-    if limit_up_day_low == limit_up_day_price and breakdown_count > 1 and is_m2_day_below_ma5:
-        print("排除首板是一字板的")
-        return False
-
-    # --- 条件24：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），同时日内总振幅又比较大（如超过当天开盘价的5%）
-    high_m1, low_m1 = day_minus_1_data['high'], day_minus_1_data['low']
-    range_m1 = high_m1 - low_m1
-    is_chaotic_m1 = False
-    if range_m1 > 0 and (range_m1 / open_m1 > 0.05):
-        if abs(open_m1 - close_m1) / range_m1 < 0.3:
-            is_chaotic_m1 = True
-    high_m2, low_m2 = day_minus_2_data['high'], day_minus_2_data['low']
-    range_m2 = high_m2 - low_m2
-    is_chaotic_m2 = False
-    if range_m2 > 0 and (range_m2 / open_m2 > 0.05):
-        if abs(open_m2 - close_m2) / range_m2 < 0.3:
-            is_chaotic_m2 = True
-    days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
-    is_persistently_testing_ma10 = True
-    for day_data in days_to_check:
-        day_low = day_data['low']
-        day_close = day_data['close']
-        ma10_value = day_data['ma10']
-        if not (pd.notna(ma10_value) and ma10_value > 0):
-            is_persistently_testing_ma10 = False
-            break
-        touched_ma10 = day_low <= ma10_value
-        bounced_strongly = (day_close - ma10_value) / ma10_value > 0.01
-        if not (touched_ma10 and bounced_strongly):
-            is_persistently_testing_ma10 = False
-            break
-    # 如果连续两天混乱
-    if is_chaotic_m1 and is_chaotic_m2 and not is_persistently_testing_ma10:
-        return False
-
-    lookback_days_60 = 60
-    if limit_up_day_idx > lookback_days_60:
-        # 定义回看窗口：涨停前的60个交易日
-        hist_window_60d = df.iloc[limit_up_day_idx - lookback_days_60: limit_up_day_idx]
-
-        # --- 条件3：前期密集峰/平台压力 ---
-        # 逻辑：如果前期存在一个由多个小高点组成的密集平台区，这个区域将构成一个强大的阻力带。
-        # 我们用算法找出这些小高点，如果它们密集分布，就形成一个平台。
-        peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std() * 0.5, width=2)
-        if len(peaks) >= 3:  # 如果能找到3个以上的显著小高点
-            peak_highs = hist_window_60d.iloc[peaks]['high']
-            # 计算这些高点的价格波动范围
-            price_spread = (peak_highs.max() - peak_highs.min()) / peak_highs.mean()
-            # 如果这些高点的价格差异在5%以内，我们认为它们构成了一个密集平台
-            if price_spread < 0.05:
-                resistance_zone_top = peak_highs.max()
-                ma5_m1 = day_minus_1_data['ma5']
-                ma10_m1 = day_minus_1_data['ma10']
-                ma20_m1 = day_minus_1_data['ma20']
-                is_nian_he = False
-                if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
-                    ma_list = [ma5_m1, ma10_m1, ma20_m1]
-                    max_ma = max(ma_list)
-                    min_ma = min(ma_list)
-                    avg_ma = sum(ma_list) / 3
-                    if avg_ma > 0:
-                        spread_ratio = (max_ma - min_ma) / avg_ma
-                        if spread_ratio < 0.012:
-                            is_nian_he = True
-                # T+1的最高价进入了这个平台区域，但收盘价未能站稳在平台之上
-                if high_p1 >= resistance_zone_top * 0.98 and close_p1 < resistance_zone_top and not is_nian_he:
-                    # print(f"[{code}] T+2买入排除(条件3)：T+1受阻于前期平台 {resistance_zone_top:.2f}。")
-                    return False
-
-        # --- 条件2：前期放量高点压力 ---
-        # 逻辑：前期成交量最大的那一天往往是多空分歧最激烈的地方，其最高价是重要心理关口。
-        # 如果T+1日尝试突破这个高点但失败，且成交量未能超越当时的量，说明买方力量不足。
-        peak_volume_day_idx_loc = hist_window_60d['volume'].argmax()
-        initial_peak_day = hist_window_60d.iloc[peak_volume_day_idx_loc]
-        effective_peak_high = initial_peak_day['high']
-        effective_peak_volume = initial_peak_day['volume']
-        start_loc = max(0, peak_volume_day_idx_loc - 2)
-        end_loc = min(len(hist_window_60d), peak_volume_day_idx_loc + 3)
-        search_window = hist_window_60d.iloc[start_loc:end_loc]
-        for _, candidate_day in search_window.iterrows():
-            is_high_volume = candidate_day['volume'] >= initial_peak_day['volume'] * 0.95
-            is_higher_price = candidate_day['high'] > effective_peak_high * 1.02
-            if is_high_volume and is_higher_price:
-                effective_peak_high = candidate_day['high']
-                effective_peak_volume = candidate_day['volume']
-        ma5_m1 = day_minus_1_data['ma5']
-        ma10_m1 = day_minus_1_data['ma10']
-        ma20_m1 = day_minus_1_data['ma20']
-        is_nian_he = False
-        if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
-            ma_list = [ma5_m1, ma10_m1, ma20_m1]
-            max_ma = max(ma_list)
-            min_ma = min(ma_list)
-            avg_ma = sum(ma_list) / 3
-            if avg_ma > 0:
-                spread_ratio = (max_ma - min_ma) / avg_ma
-                if spread_ratio < 0.02:
-                    is_nian_he = True
-        is_persistently_30_supported = True
-        days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
-        for day_idx in days_to_check_indices:
-            day_data = df.iloc[day_idx]
-            day_close = day_data['close']
-            day_low = day_data['low']
-            day_open = day_data['open']
-            day_30_ma_value = day_data['ma30']
-            is_above_30_ma = day_open >= day_30_ma_value * 0.98
-            is_open_30_to_ma = (abs(day_open - day_30_ma_value) / day_30_ma_value) <= 0.02
-            is_low_30_to_ma = (abs(day_low - day_30_ma_value) / day_30_ma_value) <= 0.02
-            is_close_30_to_ma = is_open_30_to_ma or is_low_30_to_ma
-            if not (is_above_30_ma and is_close_30_to_ma):
-                is_persistently_30_supported = False
-        if high_p1 >= effective_peak_high and close_p1 < effective_peak_high and volume_p1 < effective_peak_volume and not is_nian_he and not is_persistently_30_supported:
-            # print(f"[{code}] T+2买入排除(条件2-优化版)：T+1在放量区高点 {effective_peak_high:.2f} 处缩量回落。")
-            return False
-
-        # --- 条件13：价升量缩的“量价背离”压力 ---
-        if limit_up_day_volume * 1.2 < volume_p1 <= limit_up_day_volume * 1.3:
-            days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
-            is_persistently_testing_ma60 = True
-            for day_data in days_to_check:
-                day_low = day_data['low']
-                day_close = day_data['close']
-                ma60_value = day_data['ma60']
-                if not (pd.notna(ma60_value) and ma60_value > 0):
-                    is_persistently_testing_ma60 = False
-                    break
-                touched_ma60 = day_low <= ma60_value * 1.02
-                bounced_strongly = (day_close - ma60_value) / ma60_value > 0.01
-                if not (touched_ma60 and bounced_strongly):
-                    is_persistently_testing_ma60 = False
-                    break
-            ma5_m1 = day_minus_1_data['ma5']
-            ma10_m1 = day_minus_1_data['ma10']
-            ma20_m1 = day_minus_1_data['ma20']
-            ma30_m1 = day_minus_1_data['ma30']
-            ma55_m1 = day_minus_1_data['ma55']
-            ma120_m1 = day_minus_1_data['ma120']
-            ma250_m1 = day_minus_1_data['ma250']
-            is_long_nian_he = False
-            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
-                ma_list = [ma55_m1, ma120_m1, ma250_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.02:
-                        is_long_nian_he = True
-            is_nian_he = False
-            if pd.notna([ma5_m1, ma10_m1, ma20_m1]).all():
-                ma_list = [ma5_m1, ma10_m1, ma20_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.02:
-                        is_nian_he = True
-            is_zhong_nian_he = False
-            if pd.notna([ma10_m1, ma20_m1, ma30_m1]).all():
-                ma_list = [ma10_m1, ma20_m1, ma30_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.025:
-                        is_zhong_nian_he = True
-
-            is_new_low = False
-            platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
-            bottom_prices = []
-            for _, day in platform_window.iterrows():
-                if day['close'] >= day['open']:  # 阳线或平盘
-                    bottom_prices.append(day['open'])
-                else:  # 阴线
-                    bottom_prices.append(day['close'])
-            if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
-                max_price = max(bottom_prices)
-                min_price = min(bottom_prices)
-                avg_price = sum(bottom_prices) / 4
-                if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
-                    support_line_level = avg_price
-                    if day_minus_1_data['close'] < support_line_level:
-                        entire_5d_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]  # T-5 到 T-1
-                        if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                            is_new_low = True
-            if not is_persistently_testing_ma60 and not is_nian_he and not is_long_nian_he and not is_new_low and not is_zhong_nian_he:
-                return False
-
-        # --- 条件55：“力不从心”——OBV顶背离 ---
-        if limit_up_day_idx > 60:
-            hist_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
-            peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std())
-            if len(peaks) > 0:
-                # 取最近的前高点
-                prev_peak_idx_in_window = peaks[-1]
-                prev_peak_day = hist_window_60d.iloc[prev_peak_idx_in_window]
-                prev_peak_price = prev_peak_day['high']
-                obv_at_prev_peak = prev_peak_day['obv']
-                ma55_m1 = day_minus_1_data['ma55']
-                ma120_m1 = day_minus_1_data['ma120']
-                ma250_m1 = day_minus_1_data['ma250']
-                low_m1 = day_minus_1_data['low']
-                is_nian_he = False
-                if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
-                    ma_list = [ma55_m1, ma120_m1, ma250_m1]
-                    max_ma = max(ma_list)
-                    min_ma = min(ma_list)
-                    avg_ma = sum(ma_list) / 3
-                    if avg_ma > 0:
-                        spread_ratio = (max_ma - min_ma) / avg_ma
-                        if spread_ratio < 0.02:
-                            is_nian_he = True
-
-                is_close_abc = False
-                price_a = limit_up_day_low
-                if day_minus_1_data['close'] < day_minus_1_data['open']:
-                    price_b = day_minus_1_data['close']
-                else:
-                    price_b = day_minus_1_data['low']
-                if day_minus_2_data['close'] < day_minus_2_data['open']:
-                    price_c = day_minus_2_data['close']
-                else:
-                    price_c = day_minus_2_data['low']
-                price_list = [price_a, price_b, price_c]
-                if all(p > 0 for p in price_list):
-                    max_price = max(price_list)
-                    min_price = min(price_list)
-                    avg_price = sum(price_list) / 3
-                    # 定义“接近”为价差小于平均价的1.5%
-                    if avg_price > 0 and (max_price - min_price) / avg_price < 0.015:
-                        is_close_abc = True
-                # 检查T+1是否形成背离
-                obv_p1 = day_plus_1_data['obv']
-                ma10_m1 = day_minus_1_data['ma10']
-                is_m10_support = False
-                if low_m1 < ma10_m1 * 1.05 <= close_m1:
-                    is_m10_support = True
-                if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc and not is_m10_support:
-                    return False
-
+    # 第二日买入专有策略
     if offset == 2:
         # 买前条件0：低开比例
         gap_down_over_5pct = False
@@ -739,7 +744,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if not is_persistently_20_supported and not is_nian_he and not cond_all_closes_above_ma120 and not is_persistently_30_supported:
                 return False
 
-        # --- 条件11：涨停“撞线”前期关键高点 ---
+        # 条件11：涨停“撞线”前期关键高点
         lookback_days_90 = 90
         if limit_up_day_idx > lookback_days_90:
             hist_window_90d = df.iloc[limit_up_day_idx - lookback_days_90: limit_up_day_idx]
@@ -788,10 +793,9 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
 
         lookback_days_60 = 60
         if limit_up_day_idx > lookback_days_60:
-            # 定义回看窗口：涨停前的60个交易日
             hist_window_60d = df.iloc[limit_up_day_idx - lookback_days_60: limit_up_day_idx]
 
-            # 重点关注 --- 条件26：中短期均线“趋势冲突” --- 好评,短期趋势向上，而中期趋势向下
+            # 条件26：中短期均线“趋势冲突” --- 好评,短期趋势向上，而中期趋势向下，重点
             if limit_up_day_idx > 65:  # 确保有足够的MA60数据
                 ma10_p1 = day_plus_1_data['ma10']
                 ma60_p1 = day_plus_1_data['ma60']
@@ -896,7 +900,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                             and not is_30_m1_support and not is_persistently_20_supported) and not is_long_120_nian_he and not is_persistently_testing_ma30:
                         return False
 
-            # --- 条件68：“下降趋势线”的精准“狙击” ---
+            # 条件68：“下降趋势线”的精准“狙击”
             peaks, _ = find_peaks(hist_window_60d['high'], prominence=hist_window_60d['high'].std() * 0.8,
                                   distance=5)
             if len(peaks) >= 2:
@@ -935,7 +939,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                             is_close_120_to_ma = is_open_120_to_ma or is_low_120_to_ma
                             if not (is_above_120_ma and is_close_120_to_ma):
                                 is_persistently_120_supported = False
-
                         is_zhong_nian_he = False
                         if pd.notna([ma20_m1, ma30_m1, ma55_m1]).all():
                             ma_list = [ma20_m1, ma30_m1, ma55_m1]
@@ -1000,6 +1003,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                                 and not is_30_close_support and not is_nian_he):
                             return False
 
+    # 第四日买入专有策略
     if offset == 4:
         day_plus_2_idx = limit_up_day_idx + 2
         day_plus_2_day_date = df.index[day_plus_2_idx]
@@ -1024,6 +1028,17 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         is_red_candle_p3 = close_p3 >= open_p3
         upper_body_p3 = max(open_p3, close_p3)
         upper_shadow_ratio_p3 = (high_p2 - upper_body_p3) / close_p2 if close_p2 > 0 else 0
+
+        # 在第四天时，排除已经在第二天买入的股票
+        day_2_idx = limit_up_day_idx + 2
+        if day_2_idx < len(df):
+            day_2_timestamp = df.index[day_2_idx]
+            day_2_data = df.iloc[day_2_idx]
+            hypothetical_price_on_day_2 = simulate_ma5_order_prices(df, day_2_timestamp,
+                                                                    config.PREDICT_PRICE_INCREASE_RATIO)
+            if hypothetical_price_on_day_2 is not None:
+                if day_2_data['low'] <= hypothetical_price_on_day_2:
+                    return False
 
         # 买前条件6：排除p1是放量阳线+p2低开未收复前日实体中点
         volume_condition = (volume_p1 > limit_up_day_volume * 1.5)
