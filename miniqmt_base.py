@@ -155,7 +155,7 @@ def sell_breached_stocks():
                 sell_price = base_price * 0.99
 
             # 执行卖出
-            reason_memo = "涨停次日卖出策略" if '类型' in stock and stock['类型'] == '涨停断板' else "MA5止损策略"
+            reason_memo = "涨停次日卖出策略" if '类型' in stock and stock['类型'] == '断板止盈' else "MA5止损策略"
             async_seq = xt_trader.order_stock_async(
                 acc,
                 stock_code,
@@ -166,7 +166,7 @@ def sell_breached_stocks():
                 reason_memo,
                 stock_code
             )
-            reason = "涨停断板" if '类型' in stock and stock['类型'] == '涨停断板' else "跌破五日线"
+            reason = "断板止盈" if '类型' in stock and stock['类型'] == '断板止盈' else "跌破五日线"
             print(f"已提交卖出：{stock_name}({stock_code}) {hold_vol}股 | 原因：{reason}")
 
     except Exception as e:

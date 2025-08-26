@@ -1236,7 +1236,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             max_price = max(bottom_prices)
             min_price = min(bottom_prices)
             avg_price = sum(bottom_prices) / 3
-            if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于1%
+            if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于2%
                 support_line_level = avg_price
                 if day_minus_1_data['close'] < support_line_level:
                     entire_5d_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-4 到 T-1
