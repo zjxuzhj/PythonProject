@@ -648,6 +648,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if df.loc[check_day, 'is_limit'] or df.loc[check_day, 'close'] < limit_up_day_price:
             return False
 
+
     # 第二日买入专有策略
     if offset == 2:
         # 买前条件0：低开比例
@@ -709,6 +710,16 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if not is_persistently_20_supported and not is_nian_he and not cond_all_closes_above_ma120 and not is_persistently_30_supported:
                 return False
 
+        # 条件5：前高压制条件
+        historical_high = df.iloc[limit_up_day_idx - 20:limit_up_day_idx]['high'].max()
+        # 检查前3日最高价是否触及前高的99%
+        recent_3day_high = df.iloc[limit_up_day_idx - 3:limit_up_day_idx]['high'].max()
+        is_nian_he = False
+        if spread_ratio_51020_m1 < 0.02:
+            is_nian_he = True
+        if historical_high * 0.99 <= recent_3day_high < historical_high and not is_nian_he:
+            return False
+
         # 条件11：涨停“撞线”前期关键高点
         if limit_up_day_idx > 90:
             hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
@@ -717,8 +728,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             ma55_m1 = day_minus_1_data['ma55']
             ma120_m1 = day_minus_1_data['ma120']
             ma250_m1 = day_minus_1_data['ma250']
-            ma120_p1 = day_plus_1_data['ma120']
-            ma250_p1 = day_plus_1_data['ma250']
             is_long_nian_he = False
             if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
                 ma_list = [ma55_m1, ma120_m1, ma250_m1]
@@ -755,7 +764,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 # 获取5天前的均线值用于计算斜率方向
                 ma10_m4 = df.iloc[limit_up_day_idx - 4]['ma10']
                 ma60_m4 = df.iloc[limit_up_day_idx - 4]['ma60']
-                if all(pd.notna([ma10_p1, ma60_p1, ma10_m4, ma60_m4])):
+                if all(pd.notna([ma60_p1, ma10_m4, ma60_m4])):
                     ma30_m1 = day_minus_1_data['ma30']
                     ma55_m1 = day_minus_1_data['ma55']
                     ma120_m1 = day_minus_1_data['ma120']
@@ -1235,15 +1244,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                         is_new_low = True
         if gap_up_on_limit_day and gap_down_after_limit and not is_new_low:
             return False
-
-
-    # 条件5：前高压制条件
-    # if offset == 2:
-    #     historical_high = df.iloc[limit_up_day_idx - 20:limit_up_day_idx]['high'].max()
-    #     # 检查前3日最高价是否触及前高的95%
-    #     recent_3day_high = df.iloc[limit_up_day_idx - 3:limit_up_day_idx]['high'].max()
-    #     if historical_high * 0.98 <= recent_3day_high < historical_high:
-    #         return False
 
 
     return True
