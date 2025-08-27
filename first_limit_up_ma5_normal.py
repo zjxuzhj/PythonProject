@@ -581,6 +581,34 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             # print("排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票")
             return False
 
+    open_t0 = limit_up_day_data['open']
+    close_m1 = day_minus_1_data['close']
+    open_p1 = day_plus_1_data['open']
+    if close_m1 > 0 and limit_up_day_price > 0:
+        # 规则A：T+0日跳空高开超过2%
+        gap_up_on_limit_day = (open_t0 - close_m1) / close_m1 > 0.02
+        # 规则B：T+1日低开超过2%
+        gap_down_after_limit = (limit_up_day_price - open_p1) / limit_up_day_price > 0.02
+        is_new_low = False
+        platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx - 1]  # T-4, T-3, T-2
+        bottom_prices = []
+        for _, day in platform_window.iterrows():
+            if day['close'] >= day['open']:  # 阳线或平盘
+                bottom_prices.append(day['open'])
+            else:  # 阴线
+                bottom_prices.append(day['close'])
+        if len(bottom_prices) == 3 and all(p > 0 for p in bottom_prices):
+            max_price = max(bottom_prices)
+            min_price = min(bottom_prices)
+            avg_price = sum(bottom_prices) / 3
+            if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于2%
+                support_line_level = avg_price
+                if day_minus_1_data['close'] < support_line_level:
+                    entire_5d_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-4 到 T-1
+                    if day_minus_1_data['low'] == entire_5d_window['low'].min():
+                        is_new_low = True
+        if gap_up_on_limit_day and gap_down_after_limit and not is_new_low:
+            return False
     return True
 
 
@@ -647,7 +675,6 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         check_day = df.index[limit_up_day_idx + i]
         if df.loc[check_day, 'is_limit'] or df.loc[check_day, 'close'] < limit_up_day_price:
             return False
-
 
     # 第二日买入专有策略
     if offset == 2:
@@ -1216,36 +1243,19 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 if not is_persistently_20_supported and not is_persistently_30_supported:
                     return False
 
-    open_t0 = limit_up_day_data['open']
-    close_m1 = day_minus_1_data['close']
-    open_p1 = day_plus_1_data['open']
-    if close_m1 > 0 and limit_up_day_price > 0:
-        # 规则A：T+0日跳空高开超过2%
-        gap_up_on_limit_day = (open_t0 - close_m1) / close_m1 > 0.02
-        # 规则B：T+1日低开超过2%
-        gap_down_after_limit = (limit_up_day_price - open_p1) / limit_up_day_price > 0.02
-        is_new_low = False
-        platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx - 1]  # T-4, T-3, T-2
-        bottom_prices = []
-        for _, day in platform_window.iterrows():
-            if day['close'] >= day['open']:  # 阳线或平盘
-                bottom_prices.append(day['open'])
-            else:  # 阴线
-                bottom_prices.append(day['close'])
-        if len(bottom_prices) == 3 and all(p > 0 for p in bottom_prices):
-            max_price = max(bottom_prices)
-            min_price = min(bottom_prices)
-            avg_price = sum(bottom_prices) / 3
-            if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于2%
-                support_line_level = avg_price
-                if day_minus_1_data['close'] < support_line_level:
-                    entire_5d_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-4 到 T-1
-                    if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                        is_new_low = True
-        if gap_up_on_limit_day and gap_down_after_limit and not is_new_low:
-            return False
+        # 新增条件2：连续两日未能突破前高
+        # 逻辑: T+1的高点是短期阻力，如果连续两天都无法突破，说明上攻无力。
+        # if high_p2 < high_p1 and high_p3 < high_p1:
+        #     if low_p2 < low_p1 and low_p3 < low_p1:
+        #         return True
 
-
+        # 新增条件3：重心持续下移
+        # 逻辑: 每日的重心不断降低，表明短期下降趋势形成，不宜介入。
+        # center_p1 = (open_p1 + close_p1) / 2
+        # center_p2 = (open_p2 + close_p2) / 2
+        # center_p3 = (open_p3 + close_p3) / 2
+        # if center_p1>center_p3 > center_p2  :
+        #     return True
     return True
 
 
