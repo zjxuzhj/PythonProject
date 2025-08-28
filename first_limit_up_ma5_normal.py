@@ -16,7 +16,7 @@ from common_sell_logic import get_sell_decision, MarketDataContext
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = True   # False 使用2024年数据, True 使用2019年数据
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -1256,6 +1256,27 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         # center_p3 = (open_p3 + close_p3) / 2
         # if center_p1>center_p3 > center_p2  :
         #     return True
+
+        # is_yin_p1 = close_p1 < open_p1
+        # is_yin_p2 = close_p2 < open_p2
+        # is_yin_p3 = close_p3 < open_p3
+        # is_persistently_60_supported = True
+        # days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
+        # for day_idx in days_to_check_indices:
+        #     day_data = df.iloc[day_idx]
+        #     day_close = day_data['close']
+        #     day_low = day_data['low']
+        #     day_open = day_data['open']
+        #     day_60_ma_value = day_data['ma60']
+        #     is_above_60_ma = day_open >= day_60_ma_value * 0.98
+        #     is_open_60_to_ma = (abs(day_open - day_60_ma_value) / day_60_ma_value) <= 0.02
+        #     is_low_60_to_ma = (abs(day_low - day_60_ma_value) / day_60_ma_value) <= 0.02
+        #     is_close_60_to_ma = is_open_60_to_ma or is_low_60_to_ma
+        #     if not (is_above_60_ma and is_close_60_to_ma):
+        #         is_persistently_60_supported = False
+        # if is_yin_p1 and is_yin_p3 and not is_persistently_60_supported:
+        #     return False
+
     return True
 
 
@@ -1392,6 +1413,17 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
 
         current_day_idx = start_idx + offset
         current_day = df.index[start_idx + offset]
+
+        # --- 核心修改：排除每个月的最后两个交易日 ---
+        # 逻辑：动态获取当月的总天数，如果当前日期是倒数第二天或最后一天，则跳过。
+        # 这样可以精确适应28, 29, 30, 31天等所有月份。
+        days_in_month = current_day.days_in_month
+        if not (days_in_month - 0>current_day.day >= days_in_month - 1):
+            continue
+
+        # if current_day.day not in [30, 31]:
+        #     continue  # 如果是月末特定日期，则跳过本次买入机会
+
         current_data = df.iloc[start_idx + offset]
 
         if not is_valid_buy_opportunity(df, start_idx, offset, stock_code, config):
