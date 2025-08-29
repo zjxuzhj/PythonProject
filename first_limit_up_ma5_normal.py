@@ -16,7 +16,7 @@ from common_sell_logic import get_sell_decision, MarketDataContext
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = True   # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False   # False 使用2024年数据, True 使用2019年数据
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -34,6 +34,20 @@ class StrategyConfig:
     LIMIT_UP_VOLUME_LOOKBACK_DAYS: int = 100  # 寻找前期高点以校验成交量的回看天数
     LIMIT_UP_VOLUME_THRESHOLD: float = 0.9  # 涨停日成交量不得超过前高成交量的阈值
 
+
+@dataclass
+class StockDataContext:
+    # --- 当日或实时数据 ---
+    high: float
+    close: float
+    ma5: float
+    up_limit_price: float
+    down_limit_price: float
+
+    # --- 前一交易日数据 ---
+    prev_close: float
+    prev_up_limit_price: float
+    prev_down_limit_price: float
 
 def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
     """模拟预测买入日MA5值，然后计算挂单价格"""
@@ -93,57 +107,8 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
     df['ma120'] = df['close'].rolling(120, min_periods=120).mean()
     df['ma250'] = df['close'].rolling(250, min_periods=250).mean()
 
-    df['boll_mid'] = df['ma20']
-    df['boll_std'] = df['close'].rolling(20, min_periods=20).std()
-    df['boll_upper'] = df['boll_mid'] + 2 * df['boll_std']
-    df['boll_lower'] = df['boll_mid'] - 2 * df['boll_std']
-
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
-
-    df['prev_close_for_tr'] = df['close'].shift(1)
-    df['tr'] = df.apply(lambda row: max(row['high'] - row['low'],
-                                        abs(row['high'] - row['prev_close_for_tr']),
-                                        abs(row['low'] - row['prev_close_for_tr'])), axis=1)
-    df['atr'] = df['tr'].rolling(window=14).mean()
-    # 计算归一化ATR，使其在不同价格的股票间可比
-    df['natr'] = (df['atr'] / df['close']) * 100
-    df.drop(columns=['prev_close_for_tr', 'tr'], inplace=True)
-
-    df['rsi_slope'] = df['rsi'].diff(2)
-
     obv = (np.sign(df['close'].diff()) * df['volume']).fillna(0).cumsum()
     df['obv'] = obv
-
-    vwma_12 = (df['close'] * df['volume']).rolling(12).sum() / df['volume'].rolling(12).sum()
-    vwma_26 = (df['close'] * df['volume']).rolling(26).sum() / df['volume'].rolling(26).sum()
-
-    range_val = df['high'] - df['low']
-    # 避免除以零
-    clv = np.where(range_val > 0, ((df['close'] - df['low']) - (df['high'] - df['close'])) / range_val, 0)
-
-    # Volume-Weighted CLV，并计算其10日移动平均值以观察趋势
-    df['vwcl'] = clv * df['volume']
-    df['vwcl_ma10'] = df['vwcl'].rolling(10).mean()
-
-    # Volume-Weighted MACD
-    df['v_macd'] = vwma_12 - vwma_26
-    df['v_signal'] = df['v_macd'].rolling(9).mean()
-
-    mfm = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
-    mfm = mfm.fillna(0)  # 处理 high == low 的情况
-    # Money Flow Volume
-    mfv = mfm * df['volume']
-    # 20-day CMF
-    df['cmf_20d'] = mfv.rolling(20).sum() / df['volume'].rolling(20).sum()
-
-    # 计算5日VWAP
-    typical_price = (df['high'] + df['low'] + df['close']) / 3
-    tpv = typical_price * df['volume']
-    df['vwap_5d'] = tpv.rolling(5).sum() / df['volume'].rolling(5).sum()
 
     # 2. 计算涨跌停价和是否触及
     limit_rate = config.MARKET_LIMIT_RATES[get_market_type(symbol)]
@@ -1417,9 +1382,9 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
         # --- 核心修改：排除每个月的最后两个交易日 ---
         # 逻辑：动态获取当月的总天数，如果当前日期是倒数第二天或最后一天，则跳过。
         # 这样可以精确适应28, 29, 30, 31天等所有月份。
-        days_in_month = current_day.days_in_month
-        if not (days_in_month - 0>current_day.day >= days_in_month - 1):
-            continue
+        # days_in_month = curre
+        # if not (days_in_month - 1>current_day.day >= days_in_month - 2):
+        #     continue
 
         # if current_day.day not in [30, 31]:
         #     continue  # 如果是月末特定日期，则跳过本次买入机会
