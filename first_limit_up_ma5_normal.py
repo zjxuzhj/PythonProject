@@ -7,9 +7,10 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
-
+from typing import List, Dict, Any, Optional
 import getAllStockCsv
 from common_sell_logic import get_sell_decision, MarketDataContext
+from strategy_rules import RuleEnum
 
 
 @dataclass
@@ -61,7 +62,6 @@ def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
     except Exception as e:
         print(f"预测MA5失败: {e}")
         return None
-
 
 def get_stock_data(symbol, config: StrategyConfig):
     """带本地缓存的数据获取"""
@@ -122,19 +122,19 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
 
 
 def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, config: StrategyConfig,
-                                market_value: float, theme: str, name: str) -> bool:
+                                market_value: float, theme: str, name: str) ->  Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
     """
     # 没有涨停后一天数据的直接排除
     if df.index.get_loc(day) + 1 >= len(df):
-        return False
+        return RuleEnum.NO_DATA_AFTER_LIMIT_UP
 
     # 涨停前数据少于20的直接排除
     lookback_days = 20
     if df.index.get_loc(day) < lookback_days:
-        return False
+        return RuleEnum.INSUFFICIENT_DATA_BEFORE_LIMIT_UP
 
     limit_up_day_date = day  # 涨停日日期
     limit_up_day_idx = df.index.get_loc(limit_up_day_date)  # 涨停日行号
@@ -189,21 +189,19 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
 
     # 条件0：排除市值大于250亿的股票
     if market_value > config.MAX_MARKET_CAP_BILLIONS:
-        return False
+        return RuleEnum.MARKET_CAP_TOO_HIGH
 
     # 条件1：排除特定题材
-    if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme:  # 牛市旗手，跟不上，不参与
-        return False
-    if "外贸" in theme:
-        return False
+    if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme or "外贸" in theme:
+        return RuleEnum.IS_FINANCE_OR_SECURITY
 
     # 条件2：排除前一日涨停和后一日涨停 (连板)
     if day_minus_1_data['is_limit'] or day_plus_1_data['is_limit']:
-        return False
+        return RuleEnum.IS_CONSECUTIVE_LIMIT_UP
 
     # 条件3：涨停后第一天量能过滤条件。副条件：并且第一天是阴线
     if (volume_p1 >= limit_up_day_volume * 3.6) and not is_red_candle_p1:
-        return False
+        return RuleEnum.P1_HUGE_VOLUME_GREEN_CANDLE
 
     # 条件5：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
     pre5_start = df.index[df.index.get_loc(day) - 5]
@@ -211,9 +209,10 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     if pre5_close != 0:
         total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
         if total_change >= 15:
-            return False
+            return RuleEnum.LARGE_GAIN_BEFORE_LIMIT_UP
 
-    # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），同时日内总振幅又比较大（如超过当天开盘价的5%）
+    # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），
+    # 同时日内总振幅又比较大（如超过当天开盘价的5%）
     high_m1, low_m1 = day_minus_1_data['high'], day_minus_1_data['low']
     range_m1 = high_m1 - low_m1
     is_chaotic_m1 = False
@@ -241,13 +240,13 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             is_persistently_testing_ma10 = False
             break
     if is_chaotic_m1 and is_chaotic_m2 and not is_persistently_testing_ma10:
-        return False
+        return RuleEnum.PRE_LIMIT_UP_CHAOTIC_PATTERN
 
     # 条件4：排除10日内涨停超过4次的股票
     pre_window_10d = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
     limit_up_count = (pre_window_10d['close'] >= pre_window_10d['limit_price']).sum()
     if limit_up_count >= 4:
-        return False
+        return RuleEnum.FREQUENT_LIMIT_UPS_RECENTLY
 
     # 条件13: 排除涨停前10日内，先出现至少2连板后又出现至少2连跌停的极端走势
     # 检查窗口内是否存在2连板,找出所有2连板结束的位置
@@ -260,9 +259,8 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if len(search_for_down_streak_window) >= 2:
                 down_streaks = search_for_down_streak_window['is_limit_down'].rolling(window=2).sum()
                 if (down_streaks >= 2).any():
-                    # 如果在2连板之后，确实找到了2连跌停，则排除
                     print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
-                    return False
+                    return RuleEnum.EXTREME_VOLATILITY_UP_DOWN
 
     # 条件12: 排除前期高位连板后，出现的缩量反抽形态，如果回调期最低点高于起涨的最低点，排除说明的确是在反抽，不过是缩量反抽，不需要参与
     limit_up_days = pre_window_10d[pre_window_10d['is_limit']]
@@ -304,7 +302,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                 if vol_condition and price_condition and pullback_is_shallow:
                     print(
                         f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
-                    return False
+                    return RuleEnum.LOW_VOLUME_REBOUND_AFTER_STREAK
 
     # 条件53：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票。副条件：排除涨停前第二天低于五日线的票
     pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
@@ -312,7 +310,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
     is_m2_day_below_ma5 = close_m2 < day_minus_2_data['ma5']
     if limit_up_day_low == limit_up_day_price and breakdown_count > 1 and is_m2_day_below_ma5:
         print("排除首板是一字板的")
-        return False
+        return RuleEnum.ONE_WORD_LIMIT_UP_WITH_WEAK_TREND
 
     # 条件9：排除4日内存在跌破一半的涨停
     pre_window_4d = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]
@@ -325,7 +323,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
         if not intermediate_days.empty:
             min_low_in_between = intermediate_days['low'].min()
             if min_low_in_between < price_floor:
-                return False
+                return RuleEnum.RECENT_LIMIT_UP_FAILURE
 
     if limit_up_day_idx > 60:
         pre_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
@@ -345,7 +343,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                 # T+1的最高价进入了这个平台区域，但收盘价未能站稳在平台之上
                 if high_p1 >= resistance_zone_top * 0.98 and close_p1 < resistance_zone_top and not is_nian_he:
                     # print(f"[{code}] T+2买入排除(条件3)：T+1受阻于前期平台 {resistance_zone_top:.2f}。")
-                    return False
+                    return RuleEnum.REJECTED_BY_RESISTANCE_PLATFORM
 
         # 条件2：前期放量高点压力
         # 逻辑：前期成交量最大的那一天往往是多空分歧最激烈的地方，其最高价是重要心理关口。如果T+1日尝试突破这个高点但失败，且成交量未能超越当时的量，说明买方力量不足。
@@ -384,7 +382,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                 is_persistently_30_supported = False
         if high_p1 >= effective_peak_high and close_p1 < effective_peak_high and volume_p1 < effective_peak_volume and not is_nian_he and not is_persistently_30_supported:
             # print(f"[{code}] T+2买入排除(条件2-优化版)：T+1在放量区高点 {effective_peak_high:.2f} 处缩量回落。")
-            return False
+            return RuleEnum.REJECTED_BY_HIGH_VOLUME_PEAK
 
         # 条件13：价升量缩的“量价背离”压力
         if limit_up_day_volume * 1.2 < volume_p1 <= limit_up_day_volume * 1.3:
@@ -429,7 +427,6 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                     spread_ratio = (max_ma - min_ma) / avg_ma
                     if spread_ratio < 0.025:
                         is_zhong_nian_he = True
-
             is_new_low = False
             platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
             bottom_prices = []
@@ -449,7 +446,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                         if day_minus_1_data['low'] == entire_5d_window['low'].min():
                             is_new_low = True
             if not is_persistently_testing_ma60 and not is_nian_he and not is_long_nian_he and not is_new_low and not is_zhong_nian_he:
-                return False
+                return RuleEnum.WEAK_FOLLOW_THROUGH_VOLUME
 
         # 条件55：“力不从心”——OBV顶背离
         peaks, _ = find_peaks(pre_window_60d['high'], prominence=pre_window_60d['high'].std())
@@ -497,7 +494,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             if low_m1 < ma10_m1 * 1.05 <= close_m1:
                 is_m10_support = True
             if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc and not is_m10_support:
-                return False
+                return RuleEnum.OBV_BEARISH_DIVERGENCE
 
     if limit_up_day_idx >= 40:
         pre_window_40d = df.iloc[limit_up_day_idx - 40: limit_up_day_idx]
@@ -511,7 +508,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
             volatile_days_count = (daily_amplitude < 0.035).sum()
             if volatile_days_count > 37 and volume_p1 < limit_up_day_volume * 2.5:
                 # print(f"[{code}] 在 {day.date()} 的涨停被排除：前{lookback_days_40}日波动过小({volatile_days_count}天振幅 > 3.5%)。")
-                return False
+                return RuleEnum.INSUFFICIENT_PRIOR_VOLATILITY
 
         # 条件15:如果涨停前6天的最高点也是涨停前40天里面的最高点。p1最高价高于最高点并且上影线超过4%，并且收盘价低于最高点。并且最高点的量大于涨停后第一天量能的1.2倍，排除
         peak_40d_price = pre_window_40d['high'].max()
@@ -535,7 +532,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                     cond_d_p1_long_wick and
                     cond_e_p1_close_fails and
                     cond_f_volume_confirms):
-                return False
+                return RuleEnum.FALSE_BREAKOUT_OF_KEY_PEAK
 
     # 条件7：排除涨停和涨停后一天的最大量是前120天中最大量四倍以上的股票
     if limit_up_day_idx > 120:
@@ -544,7 +541,7 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
         max_volume = max(limit_up_day_volume, volume_p1)
         if max_volume > prev_high_volume * 4:
             # print("排除涨停和涨停后一天的交易量是前120天中最大交易量四倍以上的股票")
-            return False
+            return RuleEnum.ABNORMAL_VOLUME_SPIKE
 
     open_t0 = limit_up_day_data['open']
     close_m1 = day_minus_1_data['close']
@@ -573,12 +570,12 @@ def is_valid_first_limit_up_day(df: pd.DataFrame, day: pd.Timestamp, code: str, 
                     if day_minus_1_data['low'] == entire_5d_window['low'].min():
                         is_new_low = True
         if gap_up_on_limit_day and gap_down_after_limit and not is_new_low:
-            return False
-    return True
+            return RuleEnum.ISLAND_REVERSAL_PATTERN
+    return None # 所有检查通过
 
 
 def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
-                             config: StrategyConfig) -> bool:
+                             config: StrategyConfig) -> Optional[RuleEnum]:
     """
     检查从首板日到潜在买入日之间，是否满足所有的买入前置条件。
     """
@@ -633,13 +630,15 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
     # 买前条件1: 排除买入前日收盘价>80的股票
     latest_close = df.iloc[potential_buy_day_idx - 1]['close']
     if latest_close > 80:
-        return False
+        return RuleEnum.PRICE_TOO_HIGH
 
     # 买前条件2: 排除在首板日和买入日之间，有新的涨停的和收盘价低于首板收盘价
     for i in range(1, offset):
-        check_day = df.index[limit_up_day_idx + i]
-        if df.loc[check_day, 'is_limit'] or df.loc[check_day, 'close'] < limit_up_day_price:
-            return False
+        check_day_data = df.iloc[limit_up_day_idx + i]
+        if check_day_data['is_limit']:
+            return RuleEnum.NEW_LIMIT_UP_AFTER_FIRST
+        if check_day_data['close'] < limit_up_day_price:
+            return RuleEnum.PRICE_FELL_BELOW_LIMIT_UP_PRICE
 
     # 第二日买入专有策略
     if offset == 2:
@@ -700,7 +699,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 if not all_is_close_to_ma:
                     is_persistently_30_supported = False
             if not is_persistently_20_supported and not is_nian_he and not cond_all_closes_above_ma120 and not is_persistently_30_supported:
-                return False
+                return RuleEnum.T1_GAP_DOWN_WEAK_REBOUND
 
         # 条件5：前高压制条件
         historical_high = df.iloc[limit_up_day_idx - 20:limit_up_day_idx]['high'].max()
@@ -710,7 +709,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if spread_ratio_51020_m1 < 0.02:
             is_nian_he = True
         if historical_high * 0.99 <= recent_3day_high < historical_high and not is_nian_he:
-            return False
+            return RuleEnum.STALLED_BELOW_PRIOR_HIGH
 
         # 条件11：涨停“撞线”前期关键高点
         if limit_up_day_idx > 90:
@@ -744,13 +743,13 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                     if spread_ratio < 0.025:
                         is_zhong_nian_he = True
             if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98 and not is_long_nian_he and not is_nian_he and not is_zhong_nian_he:
-                return False
+                return RuleEnum.LIMIT_UP_HITS_MAJOR_RESISTANCE
 
         if limit_up_day_idx > 60:
             pre_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
 
             # 条件26：中短期均线“趋势冲突” --- 好评,短期趋势向上，而中期趋势向下，重点
-            if limit_up_day_idx > 65:  # 确保有足够的MA60数据
+            if limit_up_day_idx > 65:
                 ma10_p1 = day_plus_1_data['ma10']
                 ma60_p1 = day_plus_1_data['ma60']
                 # 获取5天前的均线值用于计算斜率方向
@@ -841,7 +840,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                     if (
                             ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4 and not is_5_55_support and not is_nian_he and not is_long_250_nian_he and not is_long_p1_support
                             and not is_30_m1_support and not is_persistently_20_supported) and not is_long_120_nian_he and not is_persistently_testing_ma30:
-                        return False
+                        return RuleEnum.TREND_CONFLICT
 
             # 条件68：“下降趋势线”的精准“狙击”
             peaks, _ = find_peaks(pre_window_60d['high'], prominence=pre_window_60d['high'].std() * 0.8,
@@ -934,7 +933,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                         if (
                                 not is_zhong_nian_he and not is_120_support and not is_55_support and not is_persistently_120_supported and not is_new_low
                                 and not is_30_close_support and not is_nian_he):
-                            return False
+                            return RuleEnum.REJECTED_BY_DOWNTREND_LINE
 
     # 第四日买入专有策略
     if offset == 4:
@@ -971,7 +970,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                                                                     config.PREDICT_PRICE_INCREASE_RATIO)
             if hypothetical_price_on_day_2 is not None:
                 if day_2_data['low'] <= hypothetical_price_on_day_2:
-                    return False
+                    return RuleEnum.PRIOR_BUY_OPPORTUNITY_TRIGGERED
 
         # 买前条件6：排除p1是放量阳线+p2低开未收复前日实体中点
         volume_condition = (volume_p1 > limit_up_day_volume * 1.5)
@@ -984,7 +983,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         midpoint = (close_p1 + open_p1) / 2
         low_open_recover_condition = (open_p2 < close_p1) and (close_p2 < midpoint)
         if volume_condition and candle_condition and low_open_recover_condition:
-            return False
+            return RuleEnum.STRONG_T1_IMMEDIATE_FAILURE_T2
 
         if limit_up_day_idx >= 40:
             # 买前条件7: 排除涨停后三天的最高价低于40天内最高价且距离小于1%。副条件：p3冲高回落超过4%
@@ -993,7 +992,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             max_high = max(high_p1, high_p2, high_p3)
             if max_high < prev_40d_high and (prev_40d_high - max_high) / prev_40d_high < 0.01:
                 if upper_shadow_ratio_p3 > 0.04:
-                    return False
+                    return RuleEnum.REJECTION_AT_KEY_RESISTANCE
 
             # 买前条件9： 排除p1,p2连续创40日新高但巨量回落的“双顶出货”形态
             pre_window_40d = df.iloc[limit_up_day_idx - 40: limit_up_day_idx]
@@ -1016,7 +1015,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 condition_D_met = (current_vol_sum > max_rolling_vol * 0.95)
             if condition_A_met and condition_B_met and condition_C_met and condition_D_met:
                 print(f"[{code}] 在 {df.index[limit_up_day_idx].date()} 后触发T+1,T+2双顶巨量回落形态，排除。")
-                return False
+                return RuleEnum.DOUBLE_TOP_DISTRIBUTION
 
         # 买前条件8：排除p1,p2,p3受到前期双头颈线压制
         for i in range(1, offset):
@@ -1027,7 +1026,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if is_resisted:
                 check_day_date = df.index[check_day_idx].date()
                 print(f"[{code}] 在涨停后第{i}天({check_day_date})触及双头颈线 {neckline:.2f} 回落，放弃买入机会。")
-                return False
+                return RuleEnum.REJECTED_BY_DOUBLE_TOP_NECKLINE
 
         # 买前条件9：如果涨停后第一天最高价大于第三天大于第二天，并且都有长上影线，则排除
         is_t1_peak = day_plus_1_data['high'] > day_plus_3_data['high'] > day_plus_2_data['high']
@@ -1036,17 +1035,17 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         s_t3 = upper_shadow_ratio_p3 > 0.03
         both_have_long_shadows = s_t2 and s_t3 and s_t1
         if is_t1_peak and both_have_long_shadows:
-            return False
+            return RuleEnum.PERSISTENT_REJECTION_LOWERING_PEAKS
 
-        # 买前条件10：如果p2和p3均出现高开大于2%的情况，排除
-        if open_p2 > (close_p1 * 1.02) and open_p3 > (close_p2 * 1.02):
-            return False
-        if open_p2 > (close_p1 * 1.03):
-            return False
+        # 买前条件10：排除整理期连续或单日大幅高开
+        consecutive_gaps = open_p2 > (close_p1 * 1.02) and open_p3 > (close_p2 * 1.02)
+        single_large_gap = open_p2 > (close_p1 * 1.03)
+        if consecutive_gaps or single_large_gap:
+            return RuleEnum.EXCESSIVE_GAP_UP_IN_CONSOLIDATION
 
         # 买前条件11：如果涨停后p2和p3都收阴线，并且p1大幅回落小于2.5%大于1%就排除
         if not is_red_candle_p2 and not is_red_candle_p3 and 0.025 > upper_shadow_ratio_p1 > 0.01:
-            return False
+            return RuleEnum.PERSISTENT_WEAKNESS_IN_CONSOLIDATION
 
         # 买前条件12：涨停后第一天被各条均线压制，并且第二天收盘价被均线压制，并且前三日不被30日线支撑,第二天是阳线的不排除
         days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
@@ -1071,7 +1070,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                 if tested_ma and is_rejected and close_p2 < ma_value and not is_persistently_supported and (
                         close_p2 < open_p2):
                     # print(f"[{code}] 在 {day_plus_1_data.name.date()} 触及 {ma_col} ({ma_value:.2f}) 后被压制，排除。")
-                    return False
+                    return RuleEnum.REJECTED_BY_MAJOR_MA
 
         # 买前条件13：挑选出涨停后第一天跳空高开，尾盘不回落的票，排除第二天和第三天不跌第一天最低点的票，排除涨停前一天粘合的票
         strong_support_level = limit_up_day_price * 1.03
@@ -1086,7 +1085,8 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         if spread_ratio_51020_m1 < 0.005:
             is_nian_he = True
         if is_strong_gap_and_hold and not t2_holds_support and not t3_holds_support and not is_nian_he:
-            return False
+            return RuleEnum.GAP_UP_STRENGTH_INVALIDATED
+
         # 买前条件10：p1最高价大于55日线，p2和p3收盘价低于55日线。副条件：三天都不被20日线和30日线支撑
         ma55_t0 = limit_up_day_data['ma55']
         ma55_t1 = day_plus_1_data['ma55']
@@ -1118,7 +1118,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                     is_persistently_20_supported = False
             if t1_above_ma55 and t3_below_ma55 and t2_above_ma55 and not is_persistently_30_supported and not is_persistently_20_supported:
                 # print(f"[{code}] 触发MA55假突破回落形态，排除。")
-                return False
+                return RuleEnum.FAILED_MA55_BREAKOUT
 
         # 买前条件11：p1阴线，p2红柱，p3十字星并且p3收盘价小于p2实体的一半。副条件：三天都不被十日线支撑，并且五日十日二十日不粘和
         if not is_red_candle_p1:
@@ -1151,7 +1151,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                             is_shi_zi = False
                     if close_p3 < midpoint_p2_body and not is_persistently_testing_ma10 and is_shi_zi and not is_nian_he:
                         # print(f"[{code}] 触发上涨乏力形态 (T+3跌破T+2阳线一半)，排除。")
-                        return False
+                        return RuleEnum.FAILED_REBOUND_PATTERN
 
         # 买前条件12：涨停后三天的最高值差不多相等，p1p2存在上影线长度占K线总长度的20%以上
         highs = [day_plus_1_data['high'], day_plus_2_data['high'], day_plus_3_data['high']]
@@ -1180,7 +1180,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             is_bald_p3 = abs(close_p3 - high_p3) / high_p3 <= 0.01
             # 如果三天最高价相近，并且每天都有长上影线，则排除
             if all_have_long_wicks and not low_support and not is_nian_he and not is_bald_p3:
-                return False
+                return RuleEnum.FLAT_TOP_REJECTION
 
         # 买前条件15：如果是第四天买入，排除第三天在预计1.04时可能买入的股票，同时保留0.98时候可能买入的股票。最后的结果再排除被20日线和30日线支撑的股票
         day_3_104_price = simulate_ma5_order_prices(df, day_plus_3_day_date, 1.04)
@@ -1206,8 +1206,10 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
                     if not (is_above_20_ma and is_close_20_to_ma):
                         is_persistently_20_supported = False
                 if not is_persistently_20_supported and not is_persistently_30_supported:
-                    return False
+                    return RuleEnum.UNSUPPORTED_PULLBACK_ON_T3
 
+
+        # 下面的是之前就注释的
         # 新增条件2：连续两日未能突破前高
         # 逻辑: T+1的高点是短期阻力，如果连续两天都无法突破，说明上攻无力。
         # if high_p2 < high_p1 and high_p3 < high_p1:
@@ -1242,7 +1244,7 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
         # if is_yin_p1 and is_yin_p3 and not is_persistently_60_supported:
         #     return False
 
-    return True
+    return None # 所有检查通过
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
@@ -1256,7 +1258,7 @@ def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, co
     return False
 
 
-def find_first_limit_up(symbol, df, config: StrategyConfig, query_tool, market_value, theme, name):
+def find_first_limit_up(symbol, df, config: StrategyConfig, query_tool, market_value, theme, name,rejection_log):
     """识别首板涨停日并排除连板"""
     limit_days = df[df['is_limit']].index.tolist()
 
@@ -1266,9 +1268,17 @@ def find_first_limit_up(symbol, df, config: StrategyConfig, query_tool, market_v
         if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
             continue
 
-        if is_valid_first_limit_up_day(df, day, symbol, config, market_value, theme, name):
-            valid_days.append(day)
+        rejection_rule = is_valid_first_limit_up_day(df, day, symbol, config, market_value, theme, name)
 
+        if rejection_rule:
+            rejection_log.append({
+                '股票代码': symbol, '股票名称': name, '日期': day.strftime('%Y-%m-%d'),
+                '阶段': '首板筛选', '规则名称': rejection_rule.name,
+                '规则描述': rejection_rule.description, '规则类型': rejection_rule.rule_type,
+                '排除原因': rejection_rule.message,
+            })
+        else:
+            valid_days.append(day)
     return valid_days
 
 
@@ -1335,7 +1345,7 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
     return False, None
 
 
-def generate_signals(df, first_limit_day, stock_code, stock_name, config: StrategyConfig):
+def generate_signals(df, first_limit_day, stock_code, stock_name, config: StrategyConfig,rejection_log):
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
@@ -1354,8 +1364,13 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
     if (start_idx + 1) >= len(df):
         return signals
 
-    def _create_signal_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price):
-        return {
+    def _create_record_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price, rejection_rule=None):
+        # 确保价格非空，避免计算错误
+        actual_price = actual_price if actual_price is not None else 0
+        sell_price = sell_price if sell_price is not None else 0
+        # 计算收益率
+        profit_rate = ((sell_price - actual_price) / actual_price * 100) if actual_price > 0 else 0
+        record = {
             '股票代码': stock_code,
             '股票名称': stock_name,
             '首板日': first_limit_day.strftime('%Y-%m-%d'),
@@ -1366,34 +1381,28 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             '买入价': round(actual_price, 2),
             '卖出价': round(sell_price, 2),
             '触碰类型': 'MA5支撑反弹' if buy_data['close'] > buy_data['ma5'] else 'MA5破位回升',
-            '收益率(%)': round((sell_price - actual_price) / actual_price * 100, 2),
+            '收益率(%)': round(profit_rate, 2),
             '涨停后第二日涨幅(%)': round(next_day_2_pct, 2) if next_day_2_pct is not None else None,
             '卖出原因': sell_reason_str,
         }
+        # 如果是排除记录，则附加规则详情
+        if rejection_rule:
+            record.update({
+                '阶段': f'T+{(buy_data.name - first_limit_timestamp).days}买入筛选',
+                '规则名称': rejection_rule.name,
+                '规则描述': rejection_rule.description,
+                '规则类型': rejection_rule.rule_type,
+            })
+        return record
 
-    # for offset in range(2, 3):  # 检查涨停后第2、3、4、5天
+    # for offset in range(4, 5):  # 检查涨停后第2、3、4、5天
     for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
         if start_idx + offset >= len(df):
             break
 
         current_day_idx = start_idx + offset
         current_day = df.index[start_idx + offset]
-
-        # --- 核心修改：排除每个月的最后两个交易日 ---
-        # 逻辑：动态获取当月的总天数，如果当前日期是倒数第二天或最后一天，则跳过。
-        # 这样可以精确适应28, 29, 30, 31天等所有月份。
-        # days_in_month = curre
-        # if not (days_in_month - 1>current_day.day >= days_in_month - 2):
-        #     continue
-
-        # if current_day.day not in [30, 31]:
-        #     continue  # 如果是月末特定日期，则跳过本次买入机会
-
         current_data = df.iloc[start_idx + offset]
-
-        if not is_valid_buy_opportunity(df, start_idx, offset, stock_code, config):
-            if not second_chance_check(df, start_idx, offset, stock_code, config):
-                continue
 
         # 计算挂单价格
         price_ma5 = simulate_ma5_order_prices(df, current_day, config.PREDICT_PRICE_INCREASE_RATIO)
@@ -1413,8 +1422,14 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
             order_valid = True
         actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
+        rejection_rule = is_valid_buy_opportunity(df, start_idx, offset, stock_code, config)
+
         # 持有期卖出逻辑
         hold_days = 0
+        final_sell_day = None
+        final_sell_price = 0
+        final_reason = '持有中'
+
         for sell_offset in range(1, 20):
             sell_day_idx = start_idx + offset + sell_offset
 
@@ -1437,57 +1452,98 @@ def generate_signals(df, first_limit_day, stock_code, stock_name, config: Strate
                 )
                 should_sell, reason = get_sell_decision(position_info, market_data)
                 if should_sell:
-                    sell_price = current_sell_data['close']
-                    signal = _create_signal_dict(current_data, sell_day, sell_price, reason, position_info['hold_days'],
-                                                 actual_price)
-                    signals.append(signal)
+                    final_sell_day = sell_day
+                    final_sell_price = current_sell_data['close']
+                    final_reason = reason
                     break
             else:
+                # 持有到回测结束
                 last_day_idx = len(df) - 1
-                sell_day = df.index[last_day_idx]
-                sell_data = df.loc[sell_day]
-                sell_price = df.iloc[last_day_idx]['close']
-                sell_reason = '持有中'
-                signal = _create_signal_dict(current_data, sell_day, sell_price, sell_reason, hold_days,
-                                             actual_price)
-                signals.append(signal)
+                final_sell_day = df.index[last_day_idx]
+                final_sell_price = df.iloc[last_day_idx]['close']
+                if hold_days == sell_offset - 1:
+                    hold_days += 1
                 break
 
-        if signals:  # 只要已经生成了信号，就终止，不然会重复统计一个涨停信号的不同时间段买入
+        # 如果循环结束都没有卖点，确保有最后的卖出信息
+        if final_sell_day is None and hold_days > 0:
+            last_day_idx = len(df) - 1
+            final_sell_day = df.index[last_day_idx]
+            final_sell_price = df.iloc[last_day_idx]['close']
+
+        # --- 第四步：根据判断结果，将完整记录存入对应的列表 ---
+        if rejection_rule:
+            # 如果被排除，创建一条完整的排除记录
+            rejection_record = _create_record_dict(
+                current_data, final_sell_day, final_sell_price,
+                final_reason, hold_days, actual_price,
+                rejection_rule=rejection_rule
+            )
+            rejection_log.append(rejection_record)
+        else:
+            # 如果未被排除，创建一条成功的交易信号
+            signal = _create_record_dict(
+                current_data, final_sell_day, final_sell_price,
+                final_reason, hold_days, actual_price
+            )
+            signals.append(signal)
+            # 找到一个买点后就终止对该首板信号的后续检查
             break
+
+
     return signals
 
 
 def create_daily_holdings(result_df):
+    """
+    创建每日持仓情况的DataFrame。
+    新版格式：数量 | 日期 | 具体的股票（名称），并按日期降序排列。
+    """
+    # 确保有交易数据，否则返回一个空表
+    if result_df.empty:
+        return pd.DataFrame(columns=['数量', '日期', '具体的股票'])
     # 转换日期格式
     result_df['买入日'] = pd.to_datetime(result_df['买入日'])
     result_df['卖出日'] = pd.to_datetime(result_df['卖出日'])
-
     # 生成日期范围
     min_date = result_df['买入日'].min()
     max_date = result_df['卖出日'].max()
     date_range = pd.date_range(min_date, max_date)
-
-    # 创建持仓字典
-    holdings = {}
+    # 创建一个列表来存放每日的持仓记录
+    holdings_records = []
     for date in date_range:
-        # 筛选当日持仓的股票
-        held_stocks = result_df[
+        # 筛选出在当前日期仍然持有的股票
+        held_stocks_df = result_df[
             (result_df['买入日'] <= date) &
             (result_df['卖出日'] >= date)
-            ]['股票代码'].tolist()
+            ]
 
-        # 格式化为字符串
-        holdings[date] = {
-            '日期': date.strftime('%Y-%m-%d'),
-            '持有股票': ','.join(held_stocks),
-            '数量': len(held_stocks)
-        }
+        # 如果当天有持仓
+        if not held_stocks_df.empty:
+            # 获取持仓股票的【名称】列表
+            held_stock_names = held_stocks_df['股票名称'].tolist()
+            # 创建当天的持仓记录字典
+            record = {
+                '日期': date.strftime('%Y-%m-%d'),
+                '数量': len(held_stock_names),
+                '具体的股票': ', '.join(held_stock_names)  # 使用逗号和空格连接，更美观
+            }
+            holdings_records.append(record)
+    # 如果整个回测期间都没有任何一天有持仓，则返回空表
+    if not holdings_records:
+        return pd.DataFrame(columns=['数量', '日期', '具体的股票'])
+    # 将记录列表转换为DataFrame
+    holdings_df = pd.DataFrame(holdings_records)
+    # 按照要求的列顺序重新排列
+    holdings_df = holdings_df[['数量', '日期', '具体的股票']]
+    # 按照日期降序排序
+    holdings_df = holdings_df.sort_values(by='日期', ascending=False)
+    # 重置索引，让序号从0开始
+    holdings_df = holdings_df.reset_index(drop=True)
+    return holdings_df
 
-    return pd.DataFrame(holdings.values())
 
-
-def save_trades_excel(result_df):
+def save_trades_excel(result_df,rejections_df):
     column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
                     '持有天数', '买入价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
     # 按买入日降序排序
@@ -1501,11 +1557,27 @@ def save_trades_excel(result_df):
     # 创建带格式的Excel写入器
     with pd.ExcelWriter(excel_name, engine='xlsxwriter') as writer:
         # 写入原始数据
-        result_df.to_excel(writer, sheet_name='交易明细', index=False)
+        if not result_df.empty:
+            result_df.to_excel(writer, sheet_name='交易明细', index=False)
+            # 获取工作表对象
+            workbook = writer.book
+            worksheet = writer.sheets['交易明细']
 
-        # 获取工作表对象
-        workbook = writer.book
-        worksheet = writer.sheets['交易明细']
+        if not rejections_df.empty:
+            column_order_rejections = [
+                '股票代码', '股票名称', '首板日', '买入日', '卖出日',
+                '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因',
+                '阶段', '规则名称', '规则描述', '规则类型'
+            ]
+            rejections_df = rejections_df.sort_values(by='日期', ascending=False)
+            rejections_df.reindex(columns=column_order_rejections).to_excel(writer, sheet_name='排除记录', index=False)
+            rejection_sheet = writer.sheets['排除记录']
+            # 为新表格设置格式
+            for idx, col in enumerate(rejections_df.columns):
+                max_len = max(rejections_df[col].astype(str).map(len).max(), len(col)) + 2
+                rejection_sheet.set_column(idx, idx, max_len)
+            rejection_sheet.freeze_panes(1, 0)
+            rejection_sheet.autofilter(0, 0, len(rejections_df), len(rejections_df.columns) - 1)
 
         # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):
@@ -1656,28 +1728,22 @@ def process_single_stock(stock_info):
     处理单只股票的回测逻辑，用于并行计算。
     """
     code, name, query_tool, config = stock_info  # 接收包含所有必需信息的元组
+    rejection_log = []
 
-    # 1. 加载数据
     df, _ = get_stock_data(code, config)
     if df is None or df.empty:
         return []  # 如果没有数据，返回空列表
-
-    # 2. 准备数据（计算指标）
     df = prepare_data(df, code, config)
-
-    # 3. 查询静态数据
     market_value = query_tool.get_stock_market_value(code)
     theme = query_tool.get_theme_by_code(code)
-
-    # 4. 寻找信号并生成交易记录
-    first_limit_days = find_first_limit_up(code, df, config, query_tool, market_value, theme, name)
+    first_limit_days = find_first_limit_up(code, df, config, query_tool, market_value, theme, name,rejection_log)
 
     all_signals = []
     for day in first_limit_days:
-        signals = generate_signals(df, day, code, name, config)
+        signals = generate_signals(df, day, code, name, config,rejection_log)
         all_signals.extend(signals)
 
-    return all_signals
+    return all_signals,rejection_log
 
 
 if __name__ == '__main__':
@@ -1689,6 +1755,7 @@ if __name__ == '__main__':
     stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
 
     all_signals = []
+    all_rejections = []
     stock_process_start = time.perf_counter()
     tasks = [(code, name, query_tool, config) for code, name in stock_list]
 
@@ -1696,60 +1763,63 @@ if __name__ == '__main__':
         # executor.map 会自动将tasks列表中的每一项分配给一个进程，并收集结果
         results = list(executor.map(process_single_stock, tasks))
 
-    for result in results:
-        all_signals.extend(result)
+    for signals, rejections in results:
+        all_signals.extend(signals)
+        all_rejections.extend(rejections)
 
     stock_process_duration = time.perf_counter() - stock_process_start
 
     # 生成统计报表
     result_df = pd.DataFrame(all_signals)
-    if not result_df.empty:
-        # 把原有的买入日从年月日类型转为年月日时分秒，确保买入日为日期类型
-        result_df['买入日'] = pd.to_datetime(result_df['买入日'])
-        # 获取最近三个月的截止日期（含当月）
-        current_date = datetime.now()
-        three_months_ago = current_date - pd.DateOffset(months=17)
+    rejections_df = pd.DataFrame(all_rejections)
+    if not result_df.empty or not rejections_df.empty:
+        if not result_df.empty:
+            # 把原有的买入日从年月日类型转为年月日时分秒，确保买入日为日期类型
+            result_df['买入日'] = pd.to_datetime(result_df['买入日'])
+            # 获取最近三个月的截止日期（含当月）
+            current_date = datetime.now()
+            three_months_ago = current_date - pd.DateOffset(months=17)
 
-        # 过滤最近三个月的交易记录
-        recent_trades = result_df[result_df['买入日'] >= three_months_ago]
+            # 过滤最近三个月的交易记录
+            recent_trades = result_df[result_df['买入日'] >= three_months_ago]
 
-        # 按月分组计算收益总和
-        monthly_returns = recent_trades.resample('ME', on='买入日')['收益率(%)'].sum()
-        monthly_returns = monthly_returns.round(2)  # 保留两位小数
-        monthly_summary = [f"{month.month}月 {ret}%" for month, ret in monthly_returns.items()]
-        monthly_str = "，".join(monthly_summary)  # 中文逗号分隔
+            # 按月分组计算收益总和
+            monthly_returns = recent_trades.resample('ME', on='买入日')['收益率(%)'].sum()
+            monthly_returns = monthly_returns.round(2)  # 保留两位小数
+            monthly_summary = [f"{month.month}月 {ret}%" for month, ret in monthly_returns.items()]
+            monthly_str = "，".join(monthly_summary)  # 中文逗号分隔
 
-        win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
-        avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
-        avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
-        profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
-        avg_hold_days = result_df['持有天数'].mean()
+            win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
+            avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
+            avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
+            profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
+            avg_hold_days = result_df['持有天数'].mean()
 
-        get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
-                1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
+            get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
+                    1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
-        print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
-        print(
-            f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
-        print(f"近三月收益：{monthly_str}")
+            print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
+            print(
+                f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
+            print(f"近三月收益：{monthly_str}")
 
-        # 示例输出
-        # print("\n\033[1m最近5笔交易记录:\033[0m")
-        # print(result_df.tail(5).to_string(index=False))
-    else:
-        print("未产生有效交易信号")
+            # 示例输出
+            # print("\n\033[1m最近5笔交易记录:\033[0m")
+            # print(result_df.tail(5).to_string(index=False))
+        else:
+            print("未产生有效交易信号")
 
-    if not result_df.empty:
-        result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
-        save_start = time.perf_counter()  # 记录Excel保存开始时间
-        save_trades_excel(result_df)
-        save_duration = time.perf_counter() - save_start
-        print(f"Excel保存耗时: {save_duration:.4f}秒")
+        if not result_df.empty:
+            result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
+            save_start = time.perf_counter()  # 记录Excel保存开始时间
+            save_trades_excel(result_df, rejections_df)
+            save_duration = time.perf_counter() - save_start
+            print(f"Excel保存耗时: {save_duration:.4f}秒")
 
-    # 程序总耗时统计
-    total_duration = time.perf_counter() - total_start
-    print(f"\n\033[1m=== 性能统计 ===\033[0m")
-    print(f"总运行时间: {total_duration:.2f}秒")
-    print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
-    print(f"Excel保存时间: {save_duration:.4f}秒")
-    print(f"平均每支股票处理时间: {stock_process_duration / len(stock_list) * 1000:.2f}毫秒")
+        # 程序总耗时统计
+        total_duration = time.perf_counter() - total_start
+        print(f"\n\033[1m=== 性能统计 ===\033[0m")
+        print(f"总运行时间: {total_duration:.2f}秒")
+        print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
+        print(f"Excel保存时间: {save_duration:.4f}秒")
+        print(f"平均每支股票处理时间: {stock_process_duration / len(stock_list) * 1000:.2f}毫秒")
