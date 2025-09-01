@@ -1513,9 +1513,18 @@ def create_daily_holdings(result_df):
     holdings_records = []
     for date in date_range:
         # 筛选出在当前日期仍然持有的股票
+        # 条件1：卖出日在今天之后，说明今天肯定持有
+        sold_after_today = (result_df['卖出日'] > date)
+
+        # 条件2：卖出日就是今天，但原因是“持有中”，说明今天收盘时也应算作持有
+        sold_today_but_holding_to_end = (
+                (result_df['卖出日'] == date) &
+                (result_df['卖出原因'] == '持有中')
+        )
+        # 筛选出在当前日期仍然持有的股票（满足以上任一条件即可）
         held_stocks_df = result_df[
             (result_df['买入日'] <= date) &
-            (result_df['卖出日'] >= date)
+            (sold_after_today | sold_today_but_holding_to_end)
             ]
 
         # 如果当天有持仓
@@ -1563,21 +1572,27 @@ def save_trades_excel(result_df,rejections_df):
             workbook = writer.book
             worksheet = writer.sheets['交易明细']
 
+
+
         if not rejections_df.empty:
-            column_order_rejections = [
-                '股票代码', '股票名称', '首板日', '买入日', '卖出日',
-                '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因',
-                '阶段', '规则名称', '规则描述', '规则类型'
-            ]
-            rejections_df = rejections_df.sort_values(by='日期', ascending=False)
-            rejections_df.reindex(columns=column_order_rejections).to_excel(writer, sheet_name='排除记录', index=False)
-            rejection_sheet = writer.sheets['排除记录']
-            # 为新表格设置格式
-            for idx, col in enumerate(rejections_df.columns):
-                max_len = max(rejections_df[col].astype(str).map(len).max(), len(col)) + 2
-                rejection_sheet.set_column(idx, idx, max_len)
-            rejection_sheet.freeze_panes(1, 0)
-            rejection_sheet.autofilter(0, 0, len(rejections_df), len(rejections_df.columns) - 1)
+            # --- 核心修改：在处理前，先筛选掉“首板筛选”阶段的记录 ---
+            rejections_df = rejections_df[rejections_df['阶段'] != '首板筛选'].copy()
+            if not rejections_df.empty:
+                column_order_rejections = [
+                    '股票代码', '股票名称', '首板日', '买入日', '卖出日',
+                    '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因',
+                    '阶段', '规则名称', '规则描述', '规则类型'
+                ]
+                rejections_df = rejections_df.sort_values(by='买入日', ascending=False)
+                rejections_df.reindex(columns=column_order_rejections).to_excel(writer, sheet_name='排除记录',
+                                                                                index=False)
+                rejection_sheet = writer.sheets['排除记录']
+                # 为新表格设置格式
+                for idx, col in enumerate(rejections_df.columns):
+                    max_len = max(rejections_df[col].astype(str).map(len).max(), len(col)) + 2
+                    rejection_sheet.set_column(idx, idx, max_len)
+                rejection_sheet.freeze_panes(1, 0)
+                rejection_sheet.autofilter(0, 0, len(rejections_df), len(rejections_df.columns) - 1)
 
         # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):

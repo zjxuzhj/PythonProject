@@ -65,7 +65,8 @@ def find_recent_first_limit_up(code, name, df, market_value, theme):
         if day != limit_days[0]:
             continue
 
-        if normal.is_valid_first_limit_up_day(df, day, code, config, market_value, theme, name):
+        rejection_rule = normal.is_valid_first_limit_up_day(df, day, code, config, market_value, theme, name)
+        if not rejection_rule:
             valid_days.append(day)
 
     return valid_days
@@ -157,7 +158,8 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
 
-            if normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig()):
+            rejection_rule = normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig())
+            if not rejection_rule:
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
 
@@ -166,7 +168,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153","sh600184","sz002492","sz002715"]:
+        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:
