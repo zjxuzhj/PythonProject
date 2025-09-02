@@ -2,10 +2,27 @@
 import os
 from collections import defaultdict
 from datetime import datetime
-
+import json
 import pandas as pd
 from xtquant import xtconstant
 
+FORCE_SELL_STATE_FILE = 'force_sell_list.json'
+
+def load_force_sell_list():
+    """从文件中加载需要强制卖出的股票列表和状态"""
+    if not os.path.exists(FORCE_SELL_STATE_FILE):
+        return {}
+    try:
+        with open(FORCE_SELL_STATE_FILE, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        # 文件存在但为空或损坏
+        return {}
+
+def save_force_sell_list(data):
+    """将需要强制卖出的股票列表和状态保存到文件"""
+    with open(FORCE_SELL_STATE_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
 
 def can_cancel_order_status(status_code):
     # 定义一个包含所有可撤销状态的集合

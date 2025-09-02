@@ -19,7 +19,8 @@ from first_limit_up_ma5_normal import StrategyConfig
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
 from miniqmt_logging_utils import setup_logger
-from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv
+from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
+    load_force_sell_list, save_force_sell_list
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
@@ -64,11 +65,15 @@ def sell_breached_stocks():
         now_str = now_dt.strftime("%H:%M")
         print(f"\n=== 开始执行通用定时卖出检测 ({now_str}) ===")
 
+        persistent_states = load_force_sell_list()
+
         positions = xt_trader.query_stock_positions(acc)
         if not positions:
             print("当前无持仓。")
             return
         sell_list = []
+        state_changed = False  # 标记状态是否发生变化
+
         # 统一遍历所有持仓
         for pos in positions:
             if pos.m_nCanUseVolume <= 0:
@@ -80,7 +85,8 @@ def sell_breached_stocks():
                 if tick is None or hist_df.empty or len(hist_df) < 2:
                     print(f"数据不足，跳过 {stock_code} 的卖出检测。")
                     continue
-                position_info = {'hold_days': 2}
+
+                position_info = persistent_states.get(stock_code, {'hold_days': 2})
 
                 ma5_price = get_ma5_price(stock_code, current_date=now_dt, current_price=tick['lastPrice'])
                 if ma5_price is None: continue
@@ -110,6 +116,11 @@ def sell_breached_stocks():
                     prev_down_limit_price=t1_down_limit_price
                 )
                 should_sell, reason = get_sell_decision(position_info, market_data)
+                if 'force_sell_next_day' in position_info and not persistent_states.get(stock_code, {}).get(
+                        'force_sell_next_day'):
+                    print(f"状态更新: {stock_code} 已被标记为次日强制卖出。")
+                    persistent_states[stock_code] = position_info
+                    state_changed = True
 
                 if should_sell:
                     stock_name = query_tool.get_name_by_code(stock_code)
@@ -119,6 +130,13 @@ def sell_breached_stocks():
                         '持有数量': pos.m_nCanUseVolume,
                         '原因': reason
                     })
+
+                    # 如果是因为强制卖出而卖掉，需要从状态文件中移除
+                    if reason == '大跌后次日卖出':
+                        if stock_code in persistent_states:
+                            print(f"状态更新: {stock_code} 已执行强制卖出，将从状态列表中移除。")
+                            del persistent_states[stock_code]
+                            state_changed = True
             except Exception as e:
                 print(f"检测 {stock_code} 异常: {e}")
                 continue
@@ -169,6 +187,9 @@ def sell_breached_stocks():
             reason = "断板止盈" if '类型' in stock and stock['类型'] == '断板止盈' else "跌破五日线"
             print(f"已提交卖出：{stock_name}({stock_code}) {hold_vol}股 | 原因：{reason}")
 
+        if state_changed:
+            save_force_sell_list(persistent_states)
+            print("交易状态已更新并保存到文件。")
     except Exception as e:
         print(f"‼定时任务执行异常: {str(e)}")
     finally:

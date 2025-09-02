@@ -1553,46 +1553,72 @@ def create_daily_holdings(result_df):
 
 
 def save_trades_excel(result_df,rejections_df):
-    column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
-                    '持有天数', '买入价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
-    # 按买入日降序排序
-    result_df = result_df.sort_values(by='买入日', ascending=False)
-    result_df = result_df[column_order]
     """专业级Excel导出函数"""
     # 生成带时间戳的文件名
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
     excel_name = f"首板交易记录_{timestamp}.xlsx"
 
-    # 创建带格式的Excel写入器
     with pd.ExcelWriter(excel_name, engine='xlsxwriter') as writer:
-        # 写入原始数据
+        workbook = writer.book
+        # --- 预先定义通用格式 ---
+        format_green = workbook.add_format({'font_color': '#00B050', 'num_format': '0.00%'})
+        format_red = workbook.add_format({'font_color': '#FF0000', 'num_format': '0.00%'})
+
+        # --- 写入交易明细 ---
         if not result_df.empty:
+            column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
+                            '持有天数', '买入价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
+            result_df = result_df[column_order]
+            # 按买入日降序排序
+            result_df = result_df.sort_values(by='买入日', ascending=False)
             result_df.to_excel(writer, sheet_name='交易明细', index=False)
             # 获取工作表对象
             workbook = writer.book
             worksheet = writer.sheets['交易明细']
 
 
-
         if not rejections_df.empty:
             # --- 核心修改：在处理前，先筛选掉“首板筛选”阶段的记录 ---
             rejections_df = rejections_df[rejections_df['阶段'] != '首板筛选'].copy()
             if not rejections_df.empty:
-                column_order_rejections = [
+                rejection_columns = [
                     '股票代码', '股票名称', '首板日', '买入日', '卖出日',
                     '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因',
                     '阶段', '规则名称', '规则描述', '规则类型'
                 ]
-                rejections_df = rejections_df.sort_values(by='买入日', ascending=False)
-                rejections_df.reindex(columns=column_order_rejections).to_excel(writer, sheet_name='排除记录',
-                                                                                index=False)
+                rejections_df = rejections_df.sort_values(by='首板日', ascending=False)
+                rejections_df_display = rejections_df.reindex(columns=rejection_columns)
+                rejections_df_display.to_excel(writer, sheet_name='排除记录', index=False)
+
                 rejection_sheet = writer.sheets['排除记录']
-                # 为新表格设置格式
-                for idx, col in enumerate(rejections_df.columns):
-                    max_len = max(rejections_df[col].astype(str).map(len).max(), len(col)) + 2
-                    rejection_sheet.set_column(idx, idx, max_len)
+                for idx, col in enumerate(rejections_df_display.columns):
+
+                    # 处理可能完全为空的列
+                    if col in rejections_df_display:
+                        max_len = max(rejections_df_display[col].astype(str).map(len).max(), len(col)) + 2
+                        rejection_sheet.set_column(idx, idx, max_len)
+
+                    # --- 核心新增：为排除记录表添加收益率红绿颜色格式 ---
+                if '收益率(%)' in rejections_df_display.columns:
+                    profit_col_idx_rej = rejections_df_display.columns.get_loc('收益率(%)')
+                    for row_num, profit in enumerate(rejections_df_display['收益率(%)']):
+                        if pd.notna(profit):
+                            cell_value = profit / 100
+                            if cell_value >= 0:
+                                rejection_sheet.write(row_num + 1, profit_col_idx_rej, cell_value, format_green)
+                            else:
+                                rejection_sheet.write(row_num + 1, profit_col_idx_rej, cell_value, format_red)
+
+
+                    # 格式化：冻结首行和筛选
                 rejection_sheet.freeze_panes(1, 0)
-                rejection_sheet.autofilter(0, 0, len(rejections_df), len(rejections_df.columns) - 1)
+                # 1. 列宽自适应
+                for idx, col in enumerate(result_df.columns):
+                    max_len = max(result_df[col].astype(str).map(len).max(), len(col)) + 2
+                    if col == '股票名称':
+                        max_len += 3
+                    worksheet.set_column(idx, idx, max_len)
+                rejection_sheet.autofilter(0, 0, len(rejections_df_display), len(rejections_df_display.columns) - 1)
 
         # 1. 列宽自适应
         for idx, col in enumerate(result_df.columns):

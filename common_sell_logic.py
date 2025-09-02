@@ -6,6 +6,8 @@ class SellStrategyConfig:
     """存放所有卖出策略的参数，便于统一调整。"""
     max_hold_days: int = 15
     ma_breakdown_threshold: float = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
+    postpone_sell_lower_bound: float = -0.09  # 延迟卖出的跌幅下限 (例如, -9%)
+    postpone_sell_upper_bound: float = -0.08  # 延迟卖出的跌幅上限 (例如, -8%)
 
 @dataclass
 class MarketDataContext:
@@ -73,7 +75,18 @@ def get_sell_decision(
     if market_data.ma5 and market_data.ma5 > 0:
         deviation = (market_data.close - market_data.ma5) / market_data.ma5
         if deviation <= config.ma_breakdown_threshold:
-            return True, '跌破五日线'
+            # 检查当天是否出现大幅下跌
+            daily_change = (market_data.close - market_data.prev_close) / market_data.prev_close
+            if config.postpone_sell_lower_bound < daily_change <= config.postpone_sell_upper_bound:
+                # 核心逻辑：当日跌幅在8%到9%之间，则延迟一天卖出
+                position_info['force_sell_next_day'] = True
+                return False, ''  # 今天不卖
+            else:
+                return True, '跌破五日线'
+
+    # --- 卖出条件6: 延迟后的强制卖出 ---
+    if position_info.get('force_sell_next_day', False):
+        return True, '大跌后次日卖出'
 
     # 如果所有条件都不满足，则继续持有
     return False, ''
