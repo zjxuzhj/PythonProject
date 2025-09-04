@@ -1272,36 +1272,74 @@ def is_valid_buy_opportunity(df: pd.DataFrame, limit_up_day_idx: int, offset: in
             if low_p2 < low_p1 and low_p3 < low_p1 and not is_nian_he and not is_zhong_nian_he and not is_120_support and not is_new_low:
                 return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
-        # 下面的是之前就注释的
-        # 新增条件3：重心持续下移
-        # 逻辑: 每日的重心不断降低，表明短期下降趋势形成，不宜介入。
-        # center_p1 = (open_p1 + close_p1) / 2
-        # center_p2 = (open_p2 + close_p2) / 2
-        # center_p3 = (open_p3 + close_p3) / 2
-        # if center_p1>center_p3 > center_p2  :
-        #     return True
-
-        # is_yin_p1 = close_p1 < open_p1
-        # is_yin_p2 = close_p2 < open_p2
-        # is_yin_p3 = close_p3 < open_p3
-        # is_persistently_60_supported = True
-        # days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
-        # for day_idx in days_to_check_indices:
-        #     day_data = df.iloc[day_idx]
-        #     day_close = day_data['close']
-        #     day_low = day_data['low']
-        #     day_open = day_data['open']
-        #     day_60_ma_value = day_data['ma60']
-        #     is_above_60_ma = day_open >= day_60_ma_value * 0.98
-        #     is_open_60_to_ma = (abs(day_open - day_60_ma_value) / day_60_ma_value) <= 0.02
-        #     is_low_60_to_ma = (abs(day_low - day_60_ma_value) / day_60_ma_value) <= 0.02
-        #     is_close_60_to_ma = is_open_60_to_ma or is_low_60_to_ma
-        #     if not (is_above_60_ma and is_close_60_to_ma):
-        #         is_persistently_60_supported = False
-        # if is_yin_p1 and is_yin_p3 and not is_persistently_60_supported:
-        #     return False
+        is_yin_p1 = close_p1 < open_p1
+        is_yin_p2 = close_p2 < open_p2
+        is_yin_p3 = close_p3 < open_p3
+        is_persistently_60_supported = True
+        days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
+        for day_idx in days_to_check_indices:
+            day_data = df.iloc[day_idx]
+            day_close = day_data['close']
+            day_low = day_data['low']
+            day_open = day_data['open']
+            day_60_ma_value = day_data['ma60']
+            is_above_60_ma = day_open >= day_60_ma_value * 0.98
+            is_open_60_to_ma = (abs(day_open - day_60_ma_value) / day_60_ma_value) <= 0.02
+            is_low_60_to_ma = (abs(day_low - day_60_ma_value) / day_60_ma_value) <= 0.02
+            is_close_60_to_ma = is_open_60_to_ma or is_low_60_to_ma
+            if not (is_above_60_ma and is_close_60_to_ma):
+                is_persistently_60_supported = False
+        is_persistently_20_supported = True
+        days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
+        for day_idx in days_to_check_indices:
+            day_data = df.iloc[day_idx]
+            day_close = day_data['close']
+            day_low = day_data['low']
+            day_open = day_data['open']
+            day_20_ma_value = day_data['ma20']
+            is_above_20_ma = day_open >= day_20_ma_value
+            is_close_20_to_ma = (abs(day_low - day_20_ma_value) / day_20_ma_value) <= 0.02
+            if not (is_above_20_ma and is_close_20_to_ma):
+                is_persistently_20_supported = False
+        is_persistently_20_supported_pre = True
+        days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
+        for day_idx in days_to_check_indices:
+            day_data = df.iloc[day_idx]
+            day_close = day_data['close']
+            day_low = day_data['low']
+            day_open = day_data['open']
+            day_20_ma_value = day_data['ma20']
+            is_above_20_ma = day_open >= day_20_ma_value * 0.98
+            is_open_20_to_ma = (abs(day_open - day_20_ma_value) / day_20_ma_value) <= 0.02
+            is_low_20_to_ma = (abs(day_low - day_20_ma_value) / day_20_ma_value) <= 0.02
+            is_close_20_to_ma = is_open_20_to_ma or is_low_20_to_ma
+            if not (is_above_20_ma and is_close_20_to_ma):
+                is_persistently_20_supported_pre = False
+        ma55_m1 = day_minus_1_data['ma55']
+        is_10_55_spread_ratio = False
+        if pd.notna(ma55_m1):
+            if abs(ma10_m1 - ma55_m1) / ma10_m1 < 0.01:
+                is_10_55_spread_ratio = True
+        is_new_low = False
+        platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx ]  # T-5, T-4, T-3, T-2
+        bottom_prices = []
+        for _, day in platform_window.iterrows():
+            if day['close'] >= day['open']:  # 阳线或平盘
+                bottom_prices.append(day['open'])
+            else:  # 阴线
+                bottom_prices.append(day['close'])
+        if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
+            max_price = max(bottom_prices)
+            min_price = min(bottom_prices)
+            avg_price = sum(bottom_prices) / 4
+            if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
+                  is_new_low = True
+        if (is_yin_p1 and is_yin_p3 and not is_persistently_60_supported and not is_persistently_20_supported and not is_10_55_spread_ratio
+                and not is_persistently_20_supported_pre and not is_new_low):
+            return RuleEnum.UNSUPPORTED_WEAK_CONSOLIDATION
 
     return None  # 所有检查通过
+    # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
