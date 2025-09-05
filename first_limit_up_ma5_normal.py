@@ -139,6 +139,10 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
     """
+    code = stock_info['code']
+    name = stock_info['name']
+    theme = stock_info['theme']
+    market_value = stock_info['market_value']
     day_idx = df.index.get_loc(day)
 
     # 没有涨停后一天数据的直接排除
@@ -149,10 +153,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
         return RuleEnum.INSUFFICIENT_DATA_BEFORE_LIMIT_UP
 
     checker = ConditionChecker(df, limit_up_day_idx=day_idx, offset=0, stock_info=stock_info)
-    code = stock_info['code']
-    name = stock_info['name']
-    theme = stock_info['theme']
-    market_value = stock_info['market_value']
+
     limit_up_day_date = day  # 涨停日日期
     limit_up_day_idx = df.index.get_loc(limit_up_day_date)  # 涨停日行号
     limit_up_day_data = df.loc[limit_up_day_date]  # 涨停日数据
@@ -408,30 +409,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                 if not (touched_ma60 and bounced_strongly):
                     is_persistently_testing_ma60 = False
                     break
-            ma30_m1 = day_minus_1_data['ma30']
-            ma55_m1 = day_minus_1_data['ma55']
-            ma120_m1 = day_minus_1_data['ma120']
-            ma250_m1 = day_minus_1_data['ma250']
-            is_long_nian_he = False
-            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
-                ma_list = [ma55_m1, ma120_m1, ma250_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.02:
-                        is_long_nian_he = True
-            is_zhong_nian_he = False
-            if pd.notna([ma10_m1, ma20_m1, ma30_m1]).all():
-                ma_list = [ma10_m1, ma20_m1, ma30_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.025:
-                        is_zhong_nian_he = True
             is_new_low = False
             platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
             bottom_prices = []
@@ -451,7 +428,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                         if day_minus_1_data['low'] == entire_5d_window['low'].min():
                             is_new_low = True
             if not is_persistently_testing_ma60 and not checker.is_51020_m1_nian_he(
-                    0.02) and not is_long_nian_he and not is_new_low and not is_zhong_nian_he:
+                    0.02) and not checker.is_55120250_m1_nian_he() and not is_new_low and not checker.is_102030_m1_nian_he():
                 return RuleEnum.WEAK_FOLLOW_THROUGH_VOLUME
 
         # 条件55：“力不从心”——OBV顶背离
@@ -462,20 +439,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             prev_peak_day = pre_window_60d.iloc[prev_peak_idx_in_window]
             prev_peak_price = prev_peak_day['high']
             obv_at_prev_peak = prev_peak_day['obv']
-            ma55_m1 = day_minus_1_data['ma55']
-            ma120_m1 = day_minus_1_data['ma120']
-            ma250_m1 = day_minus_1_data['ma250']
             low_m1 = day_minus_1_data['low']
-            is_nian_he = False
-            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
-                ma_list = [ma55_m1, ma120_m1, ma250_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.02:
-                        is_nian_he = True
             is_close_abc = False
             price_a = limit_up_day_low
             if day_minus_1_data['close'] < day_minus_1_data['open']:
@@ -499,7 +463,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             is_m10_support = False
             if low_m1 < ma10_m1 * 1.05 <= close_m1:
                 is_m10_support = True
-            if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not is_nian_he and not is_close_abc and not is_m10_support:
+            if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not checker.is_55120250_m1_nian_he() and not is_close_abc and not is_m10_support:
                 return RuleEnum.OBV_BEARISH_DIVERGENCE
 
     if limit_up_day_idx >= 40:
@@ -721,30 +685,8 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
             hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
             prev_major_high = hist_window_90d['high'].max()
             ma30_m1 = day_minus_1_data['ma30']
-            ma55_m1 = day_minus_1_data['ma55']
-            ma120_m1 = day_minus_1_data['ma120']
-            ma250_m1 = day_minus_1_data['ma250']
-            is_long_nian_he = False
-            if pd.notna([ma55_m1, ma120_m1, ma250_m1]).all():
-                ma_list = [ma55_m1, ma120_m1, ma250_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.012:
-                        is_long_nian_he = True
-            is_zhong_nian_he = False
-            if pd.notna([ma10_m1, ma20_m1, ma30_m1]).all():
-                ma_list = [ma10_m1, ma20_m1, ma30_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.025:
-                        is_zhong_nian_he = True
-            if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98 and not is_long_nian_he and not checker.is_51020_m1_nian_he() and not is_zhong_nian_he:
+            if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98 and not checker.is_55120250_m1_nian_he(
+                    0.012) and not checker.is_51020_m1_nian_he() and not checker.is_102030_m1_nian_he():
                 return RuleEnum.LIMIT_UP_HITS_MAJOR_RESISTANCE
 
         if limit_up_day_idx > 60:
@@ -878,16 +820,6 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                             is_close_120_to_ma = is_open_120_to_ma or is_low_120_to_ma
                             if not (is_above_120_ma and is_close_120_to_ma):
                                 is_persistently_120_supported = False
-                        is_zhong_nian_he = False
-                        if pd.notna([ma20_m1, ma30_m1, ma55_m1]).all():
-                            ma_list = [ma20_m1, ma30_m1, ma55_m1]
-                            max_ma = max(ma_list)
-                            min_ma = min(ma_list)
-                            avg_ma = sum(ma_list) / 3
-                            if avg_ma > 0:
-                                spread_ratio = (max_ma - min_ma) / avg_ma
-                                if spread_ratio < 0.015:
-                                    is_zhong_nian_he = True
                         is_120_support = False
                         if pd.notna(ma120_m1) and pd.notna(ma120_p0):
                             cond_m1 = day_minus_1_data['low'] < ma120_m1 < day_minus_1_data['close']
@@ -928,7 +860,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                                 if distance_pct < 0.01:
                                     is_30_close_support = True
                         if (
-                                not is_zhong_nian_he and not is_120_support and not is_55_support and not is_persistently_120_supported and not is_new_low
+                                not checker.is_203055_m1_nian_he() and not is_120_support and not is_55_support and not is_persistently_120_supported and not is_new_low
                                 and not is_30_close_support and not checker.is_51020_m1_nian_he(
                             0.015)):
                             return RuleEnum.REJECTED_BY_DOWNTREND_LINE
@@ -1212,16 +1144,6 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
 
         # 条件15：涨停后第一日高点高于涨停后第二日和第三日。涨停后第一日的低点高于涨停后第二日和第三日的低点。19年的数据还要优化，期望0.78
         if high_p2 < high_p1 and high_p3 < high_p1:
-            is_zhong_nian_he = False
-            if pd.notna([ma10_m1, ma20_m1, ma30_m1]).all():
-                ma_list = [ma10_m1, ma20_m1, ma30_m1]
-                max_ma = max(ma_list)
-                min_ma = min(ma_list)
-                avg_ma = sum(ma_list) / 3
-                if avg_ma > 0:
-                    spread_ratio = (max_ma - min_ma) / avg_ma
-                    if spread_ratio < 0.012:
-                        is_zhong_nian_he = True
             is_120_support = False
             ma120_p0 = limit_up_day_data['ma120']
             ma120_m1 = day_minus_1_data['ma120']
@@ -1249,7 +1171,8 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                         if day_minus_1_data['low'] == entire_5d_window['low'].min():
                             is_new_low = True
             if low_p2 < low_p1 and low_p3 < low_p1 and not checker.is_51020_m1_nian_he(
-                    0.012) and not is_zhong_nian_he and not is_120_support and not is_new_low:
+                    0.012) and not checker.is_102030_m1_nian_he(
+                    0.012) and not is_120_support and not is_new_low:
                 return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
         is_yin_p1 = close_p1 < open_p1
