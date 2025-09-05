@@ -26,7 +26,7 @@ def get_stock_data(symbol, isNeedLog):
     return pd.DataFrame()
 
 
-def find_recent_first_limit_up(code, name, df, market_value, theme):
+def find_recent_first_limit_up(stock_info: dict, df):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     config = StrategyConfig()
 
@@ -65,7 +65,7 @@ def find_recent_first_limit_up(code, name, df, market_value, theme):
         if day != limit_days[0]:
             continue
 
-        rejection_rule = normal.is_valid_first_limit_up_day(df, day, code, config, market_value, theme, name)
+        rejection_rule = normal.is_valid_first_limit_up_day(stock_info, df, day, config)
         if not rejection_rule:
             valid_days.append(day)
 
@@ -150,15 +150,19 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         df = normal.prepare_data(df, code, config)
 
         # 2. 一次性查询静态数据
-        market_value = query_tool.get_stock_market_value(code)
-        theme = query_tool.get_theme_by_code(code)
-        first_limit_days = find_recent_first_limit_up(code, name, df, market_value, theme)
+        stock_info = {
+            'code': code,
+            'name': name,
+            'theme': query_tool.get_theme_by_code(code),
+            'market_value': query_tool.get_stock_market_value(code)
+        }
+        first_limit_days = find_recent_first_limit_up(stock_info, df)
 
         for day in first_limit_days:
             base_day_idx = df.index.get_loc(day)
             offset = len(df) - base_day_idx
 
-            rejection_rule = normal.is_valid_buy_opportunity(df, base_day_idx, offset, code, StrategyConfig())
+            rejection_rule = normal.is_valid_buy_opportunity(stock_info, df, base_day_idx, offset, StrategyConfig())
             if not rejection_rule:
                 theme = query_tool.get_theme_by_code(code)
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
