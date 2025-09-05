@@ -371,9 +371,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             if is_high_volume and is_higher_price:
                 effective_peak_high = candidate_day['high']
                 effective_peak_volume = candidate_day['volume']
-        ma5_m1 = day_minus_1_data['ma5']
-        ma10_m1 = day_minus_1_data['ma10']
-        ma20_m1 = day_minus_1_data['ma20']
         is_persistently_30_supported = True
         days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
         for day_idx in days_to_check_indices:
