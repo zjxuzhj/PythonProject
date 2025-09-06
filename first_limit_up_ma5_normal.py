@@ -37,14 +37,6 @@ class StrategyConfig:
     LIMIT_UP_VOLUME_LOOKBACK_DAYS: int = 100  # 寻找前期高点以校验成交量的回看天数
     LIMIT_UP_VOLUME_THRESHOLD: float = 0.9  # 涨停日成交量不得超过前高成交量的阈值
 
-    # --- 形态与趋势参数 ---
-    MA_SPREAD_RATIO_THRESHOLD = 0.012  # MA5,10,20粘合的阈值
-    MA_ZHONG_NIAN_HE_THRESHOLD = 0.025  # 中期均线粘合阈值
-    MA_LONG_NIAN_HE_THRESHOLD = 0.02  # 长期均线粘合阈值
-
-    PRE_LIMIT_UP_CHAOTIC_AMPLITUDE = 0.05  # 涨停前混乱形态的振幅阈值
-    PRE_LIMIT_UP_CHAOTIC_BODY_RATIO = 0.3  # 涨停前混乱形态的实体比例阈值
-
 
 @dataclass
 class StockDataContext:
@@ -74,13 +66,11 @@ def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
         print(f"预测MA5失败: {e}")
         return None
 
-
 def get_stock_data(symbol, config: StrategyConfig):
     """带本地缓存的数据获取"""
     date_str = "20190101" if config.USE_2019_DATA else "20240201"
     cache_dir = "back_test_data_cache" if config.USE_2019_DATA else "data_cache"
     file_path = os.path.join(cache_dir, f"stock_{symbol}_{date_str}.parquet")
-
     if not os.path.exists(file_path):
         print(f"数据文件未找到: {symbol} at {file_path}")
         return None
@@ -129,7 +119,6 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
     df['is_limit'] = df['close'] >= df['limit_price']
     df['down_limit_price'] = (df['prev_close'] * (1 - limit_rate)).round(2)
     df['is_limit_down'] = df['close'] <= df['down_limit_price']
-
     return df
 
 
@@ -145,12 +134,10 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     market_value = stock_info['market_value']
     day_idx = df.index.get_loc(day)
 
-    # 没有涨停后一天数据的直接排除
     if df.index.get_loc(day) + 1 >= len(df):
-        return RuleEnum.NO_DATA_AFTER_LIMIT_UP
-    # 涨停前数据少于20的直接排除
+        return RuleEnum.NO_DATA_AFTER_LIMIT_UP # 没有涨停后一天数据的直接排除
     if df.index.get_loc(day) < 20:
-        return RuleEnum.INSUFFICIENT_DATA_BEFORE_LIMIT_UP
+        return RuleEnum.INSUFFICIENT_DATA_BEFORE_LIMIT_UP # 涨停前数据少于20的直接排除
 
     checker = ConditionChecker(df, limit_up_day_idx=day_idx, offset=0, stock_info=stock_info)
 
@@ -168,15 +155,12 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     day_minus_1_data = df.iloc[day_minus_1_idx]
     open_m1 = day_minus_1_data['open']
     high_m1 = day_minus_1_data['high']
+    low_m1 = day_minus_1_data['low']
     close_m1 = day_minus_1_data['close']
     volume_m1 = day_minus_1_data['volume']
     day_minus_1_idx = limit_up_day_idx - 1
     day_minus_1_day_date = df.index[day_minus_1_idx]
     day_minus_1_data = df.iloc[limit_up_day_idx - 1]
-    open_m1 = day_minus_1_data['open']
-    high_m1 = day_minus_1_data['high']
-    close_m1 = day_minus_1_data['close']
-    volume_m1 = day_minus_1_data['volume']
     ma5_m1 = day_minus_1_data['ma5']
     ma10_m1 = day_minus_1_data['ma10']
     ma20_m1 = day_minus_1_data['ma20']
@@ -187,6 +171,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     day_minus_2_data = df.iloc[limit_up_day_idx - 2]
     open_m2 = day_minus_2_data['open']
     high_m2 = day_minus_2_data['high']
+    low_m2 = day_minus_2_data['low']
     close_m2 = day_minus_2_data['close']
     volume_m2 = day_minus_2_data['volume']
     day_minus_3_idx = limit_up_day_idx - 3
@@ -227,33 +212,18 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
 
     # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），
     # 同时日内总振幅又比较大（如超过当天开盘价的5%）
-    high_m1, low_m1 = day_minus_1_data['high'], day_minus_1_data['low']
     range_m1 = high_m1 - low_m1
     is_chaotic_m1 = False
     if range_m1 > 0 and (range_m1 / open_m1 > 0.05):
         if abs(open_m1 - close_m1) / range_m1 < 0.3:
             is_chaotic_m1 = True
-    high_m2, low_m2 = day_minus_2_data['high'], day_minus_2_data['low']
     range_m2 = high_m2 - low_m2
     is_chaotic_m2 = False
     if range_m2 > 0 and (range_m2 / open_m2 > 0.05):
         if abs(open_m2 - close_m2) / range_m2 < 0.3:
             is_chaotic_m2 = True
-    days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
-    is_persistently_testing_ma10 = True
-    for day_data in days_to_check:
-        day_low = day_data['low']
-        day_close = day_data['close']
-        ma10_value = day_data['ma10']
-        if not (pd.notna(ma10_value) and ma10_value > 0):
-            is_persistently_testing_ma10 = False
-            break
-        touched_ma10 = day_low <= ma10_value
-        bounced_strongly = (day_close - ma10_value) / ma10_value > 0.01
-        if not (touched_ma10 and bounced_strongly):
-            is_persistently_testing_ma10 = False
-            break
-    if is_chaotic_m1 and is_chaotic_m2 and not is_persistently_testing_ma10:
+    if (is_chaotic_m1 and is_chaotic_m2
+            and not checker.is_10_m1m2m3_support_only_close()):
         return RuleEnum.PRE_LIMIT_UP_CHAOTIC_PATTERN
 
     # 条件4：排除10日内涨停超过4次的股票
@@ -288,7 +258,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                 streak_df = df.iloc[streak_indices]
                 peak_day_timestamp = streak_df['high'].idxmax()
                 peak_day_data = df.loc[peak_day_timestamp]
-                peak_day_idx = df.index.get_loc(peak_day_timestamp)
                 # 子条件3: 涨停日和次日成交量均小于峰值日成交量
                 vol_condition = (limit_up_day_volume < peak_day_data['volume'] and
                                  volume_p1 < peak_day_data['volume'])
@@ -312,7 +281,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                         total_rise = peak_high - preceding_low
                         if total_rise > 0 and lowest_low_in_between > preceding_low + total_rise * 0.1:
                             pullback_is_shallow = True
-
                 if vol_condition and price_condition and pullback_is_shallow:
                     print(
                         f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
@@ -352,7 +320,8 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             if price_spread < 0.05:
                 resistance_zone_top = peak_highs.max()
                 # T+1的最高价进入了这个平台区域，但收盘价未能站稳在平台之上
-                if high_p1 >= resistance_zone_top * 0.98 and close_p1 < resistance_zone_top and not checker.is_51020_m1_nian_he():
+                if (high_p1 >= resistance_zone_top * 0.98 and close_p1 < resistance_zone_top
+                        and not checker.is_51020_m1_nian_he()):
                     # print(f"[{code}] T+2买入排除(条件3)：T+1受阻于前期平台 {resistance_zone_top:.2f}。")
                     return RuleEnum.REJECTED_BY_RESISTANCE_PLATFORM
 
@@ -371,61 +340,19 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             if is_high_volume and is_higher_price:
                 effective_peak_high = candidate_day['high']
                 effective_peak_volume = candidate_day['volume']
-        is_persistently_30_supported = True
-        days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
-        for day_idx in days_to_check_indices:
-            day_data = df.iloc[day_idx]
-            day_close = day_data['close']
-            day_low = day_data['low']
-            day_open = day_data['open']
-            day_30_ma_value = day_data['ma30']
-            is_above_30_ma = day_open >= day_30_ma_value * 0.98
-            is_open_30_to_ma = (abs(day_open - day_30_ma_value) / day_30_ma_value) <= 0.02
-            is_low_30_to_ma = (abs(day_low - day_30_ma_value) / day_30_ma_value) <= 0.02
-            is_close_30_to_ma = is_open_30_to_ma or is_low_30_to_ma
-            if not (is_above_30_ma and is_close_30_to_ma):
-                is_persistently_30_supported = False
-        if high_p1 >= effective_peak_high and close_p1 < effective_peak_high and volume_p1 < effective_peak_volume and not checker.is_51020_m1_nian_he(
-                0.02) and not is_persistently_30_supported:
+        if (high_p1 >= effective_peak_high and close_p1 < effective_peak_high and volume_p1 < effective_peak_volume
+                and not checker.is_51020_m1_nian_he(0.02)
+                and not checker.is_30_p0m1m2_support()):
             # print(f"[{code}] T+2买入排除(条件2-优化版)：T+1在放量区高点 {effective_peak_high:.2f} 处缩量回落。")
             return RuleEnum.REJECTED_BY_HIGH_VOLUME_PEAK
 
         # 条件13：价升量缩的“量价背离”压力
         if limit_up_day_volume * 1.2 < volume_p1 <= limit_up_day_volume * 1.3:
-            days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
-            is_persistently_testing_ma60 = True
-            for day_data in days_to_check:
-                day_low = day_data['low']
-                day_close = day_data['close']
-                ma60_value = day_data['ma60']
-                if not (pd.notna(ma60_value) and ma60_value > 0):
-                    is_persistently_testing_ma60 = False
-                    break
-                touched_ma60 = day_low <= ma60_value * 1.02
-                bounced_strongly = (day_close - ma60_value) / ma60_value > 0.01
-                if not (touched_ma60 and bounced_strongly):
-                    is_persistently_testing_ma60 = False
-                    break
-            is_new_low = False
-            platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
-            bottom_prices = []
-            for _, day in platform_window.iterrows():
-                if day['close'] >= day['open']:  # 阳线或平盘
-                    bottom_prices.append(day['open'])
-                else:  # 阴线
-                    bottom_prices.append(day['close'])
-            if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
-                max_price = max(bottom_prices)
-                min_price = min(bottom_prices)
-                avg_price = sum(bottom_prices) / 4
-                if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
-                    support_line_level = avg_price
-                    if day_minus_1_data['close'] < support_line_level:
-                        entire_5d_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]  # T-5 到 T-1
-                        if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                            is_new_low = True
-            if not is_persistently_testing_ma60 and not checker.is_51020_m1_nian_he(
-                    0.02) and not checker.is_55120250_m1_nian_he() and not is_new_low and not checker.is_102030_m1_nian_he():
+            if (not checker.is_60_m1m2m3_support()
+                    and not checker.is_51020_m1_nian_he(0.02)
+                    and not checker.is_55120250_m1_nian_he()
+                    and not checker.is_stable_platform_to_new_low()
+                    and not checker.is_102030_m1_nian_he()):
                 return RuleEnum.WEAK_FOLLOW_THROUGH_VOLUME
 
         # 条件55：“力不从心”——OBV顶背离
@@ -436,7 +363,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             prev_peak_day = pre_window_60d.iloc[prev_peak_idx_in_window]
             prev_peak_price = prev_peak_day['high']
             obv_at_prev_peak = prev_peak_day['obv']
-            low_m1 = day_minus_1_data['low']
             is_close_abc = False
             price_a = limit_up_day_low
             if day_minus_1_data['close'] < day_minus_1_data['open']:
@@ -457,10 +383,8 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             # 检查T+1是否形成背离
             obv_p1 = day_plus_1_data['obv']
             ma10_m1 = day_minus_1_data['ma10']
-            is_m10_support = False
-            if low_m1 < ma10_m1 * 1.05 <= close_m1:
-                is_m10_support = True
-            if high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak and not checker.is_55120250_m1_nian_he() and not is_close_abc and not is_m10_support:
+            if (high_p1 > prev_peak_price and obv_p1 < obv_at_prev_peak
+                    and not checker.is_55120250_m1_nian_he() and not is_close_abc and not checker.is_10_m1_support_005()):
                 return RuleEnum.OBV_BEARISH_DIVERGENCE
 
     if limit_up_day_idx >= 40:
@@ -518,25 +442,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
         gap_up_on_limit_day = (open_t0 - close_m1) / close_m1 > 0.02
         # 规则B：T+1日低开超过2%
         gap_down_after_limit = (limit_up_day_price - open_p1) / limit_up_day_price > 0.02
-        is_new_low = False
-        platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx - 1]  # T-4, T-3, T-2
-        bottom_prices = []
-        for _, day in platform_window.iterrows():
-            if day['close'] >= day['open']:  # 阳线或平盘
-                bottom_prices.append(day['open'])
-            else:  # 阴线
-                bottom_prices.append(day['close'])
-        if len(bottom_prices) == 3 and all(p > 0 for p in bottom_prices):
-            max_price = max(bottom_prices)
-            min_price = min(bottom_prices)
-            avg_price = sum(bottom_prices) / 3
-            if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于2%
-                support_line_level = avg_price
-                if day_minus_1_data['close'] < support_line_level:
-                    entire_5d_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-4 到 T-1
-                    if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                        is_new_low = True
-        if gap_up_on_limit_day and gap_down_after_limit and not is_new_low:
+        if gap_up_on_limit_day and gap_down_after_limit and not checker.is_stable_platform_to_new_low():
             return RuleEnum.ISLAND_REVERSAL_PATTERN
     return None  # 所有检查通过
     # return RuleEnum.ISLAND_REVERSAL_PATTERN
@@ -622,20 +528,6 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 gap_down_over_5pct = True
         if gap_down_over_5pct and upper_shadow_ratio_p1 > 0.02:
             # print(f"[{code}] 在 {day.date()} 排除：涨停次日低开超5%且有长上影线。")
-            is_persistently_20_supported = True
-            days_to_check_indices = [limit_up_day_idx, day_minus_1_idx, day_minus_2_idx]
-            for day_idx in days_to_check_indices:
-                day_data = df.iloc[day_idx]
-                day_close = day_data['close']
-                day_low = day_data['low']
-                day_open = day_data['open']
-                day_20_ma_value = day_data['ma20']
-                is_above_20_ma = day_open >= day_20_ma_value * 0.98
-                is_open_20_to_ma = (abs(day_open - day_20_ma_value) / day_20_ma_value) <= 0.02
-                is_low_20_to_ma = (abs(day_low - day_20_ma_value) / day_20_ma_value) <= 0.02
-                is_close_20_to_ma = is_open_20_to_ma or is_low_20_to_ma
-                if not (is_above_20_ma and is_close_20_to_ma):
-                    is_persistently_20_supported = False
             cond_all_closes_above_ma120 = False
             lookback_days_ma120 = 10
             if limit_up_day_idx > lookback_days_ma120:
@@ -652,37 +544,28 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     if cond_A_all_closes_above_ma120 and cond_B_lows_test_ma120 and cond_C_lows_hug_ma120:
                         # print(f"[{code}] 在 {day.date()} 排除：涨停前10日在MA120附近过度纠缠。") # 调试时可开启
                         cond_all_closes_above_ma120 = True
-            is_persistently_30_supported = True
-            days_to_check_indices = [day_minus_1_idx, day_minus_2_idx, day_minus_3_idx]
-            for day_idx in days_to_check_indices:
-                day_data = df.iloc[day_idx]
-                day_close = day_data['close']
-                day_low = day_data['low']
-                day_open = day_data['open']
-                day_ma_value = day_data['ma30']
-                is_above_ma = day_close >= day_ma_value
-                is_open_to_ma = (abs(day_open - day_ma_value) / day_ma_value) <= 0.02
-                is_close_to_ma = (abs(day_low - day_ma_value) / day_ma_value) <= 0.02
-                all_is_close_to_ma = is_open_to_ma or is_close_to_ma
-                if not all_is_close_to_ma:
-                    is_persistently_30_supported = False
-            if not is_persistently_20_supported and not checker.is_51020_m1_nian_he(
-                    0.02) and not cond_all_closes_above_ma120 and not is_persistently_30_supported:
+            if (not checker.is_20_p0m1m2_support()
+                    and not checker.is_51020_m1_nian_he(0.02)
+                    and not cond_all_closes_above_ma120
+                    and not checker.is_30_p0m1m2_support()):
                 return RuleEnum.T1_GAP_DOWN_WEAK_REBOUND
 
         # 条件5：前高压制条件
         historical_high = df.iloc[limit_up_day_idx - 20:limit_up_day_idx]['high'].max()
         # 检查前3日最高价是否触及前高的99%
         recent_3day_high = df.iloc[limit_up_day_idx - 3:limit_up_day_idx]['high'].max()
-        if historical_high * 0.99 <= recent_3day_high < historical_high and not checker.is_51020_m1_nian_he(0.02):
+        if (historical_high * 0.99 <= recent_3day_high < historical_high
+                and not checker.is_51020_m1_nian_he(0.02)):
             return RuleEnum.STALLED_BELOW_PRIOR_HIGH
 
         # 条件11：涨停“撞线”前期关键高点
         if limit_up_day_idx > 90:
             hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
             prev_major_high = hist_window_90d['high'].max()
-            if limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98 and not checker.is_55120250_m1_nian_he(
-                    0.012) and not checker.is_51020_m1_nian_he() and not checker.is_102030_m1_nian_he():
+            if (limit_up_day_price < prev_major_high and limit_up_day_price >= prev_major_high * 0.98
+                    and not checker.is_55120250_m1_nian_he(0.012)
+                    and not checker.is_51020_m1_nian_he()
+                    and not checker.is_102030_m1_nian_he()):
                 return RuleEnum.LIMIT_UP_HITS_MAJOR_RESISTANCE
 
         if limit_up_day_idx > 60:
@@ -711,7 +594,6 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     # 如果三个条件全部成立
                     if are_adhesive and low_pierced and close_recovered:
                         is_5_55_support = True
-
                     is_long_p1_support = False
                     if pd.notna([ma120_p1, ma250_p1]).all():
                         are_adhesive = abs(ma120_p1 - ma250_p1) / ma250_p1 < 0.005
@@ -719,27 +601,15 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                         close_recovered = close_p1 > ma120_p1 and close_p1 > ma250_p1
                         if are_adhesive and low_pierced and close_recovered:
                             is_long_p1_support = True
-                    is_30_m1_support = False
-                    if low_m1 < ma30_m1 < close_m1:
-                        is_30_m1_support = True
-                    days_to_check = [day_minus_1_data, day_minus_2_data, day_minus_3_data]
-                    is_persistently_testing_ma30 = True
-                    for day_data in days_to_check:
-                        day_low = day_data['low']
-                        day_close = day_data['close']
-                        ma30_value = day_data['ma30']
-                        if not (pd.notna(ma30_value) and ma30_value > 0):
-                            is_persistently_testing_ma30 = False
-                            break
-                        touched_ma30 = day_low * 0.995 <= ma30_value
-                        bounced_strongly = (abs(day_close - ma30_value) / ma30_value) <= 0.02
-                        if not (touched_ma30 and bounced_strongly):
-                            is_persistently_testing_ma30 = False
-                            break
-                    if (ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4 and not is_5_55_support and not checker.is_51020_m1_nian_he(0.015)
-                        and not checker.is_55250_m1_nian_he() and not is_long_p1_support and not is_30_m1_support
-                            and not checker.is_persistently_120_supported_p0m1m2()
-                            and not checker.is_55120_m1_nian_he() and not is_persistently_testing_ma30):
+                    if (ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4
+                            and not is_5_55_support
+                            and not checker.is_30_m1_support()
+                            and not is_long_p1_support
+                            and not checker.is_51020_m1_nian_he(0.015)
+                            and not checker.is_55120_m1_nian_he()
+                            and not checker.is_55250_m1_nian_he()
+                            and not checker.is_120_p0m1m2_support()
+                            and not checker.is_30_m1m2m3_support_only_close()):
                         return RuleEnum.TREND_CONFLICT
 
             # 条件68：“下降趋势线”的精准“狙击”
@@ -759,41 +629,6 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     # 延伸趋势线到T+0当天
                     trendline_price_t0 = peak_b['high'] + slope * (len(pre_window_60d) - 1 - peak_b_idx)
                     if abs(limit_up_day_high - trendline_price_t0) / trendline_price_t0 < 0.02:
-                        ma30_m1 = day_minus_1_data['ma30']
-                        ma55_m1 = day_minus_1_data['ma55']
-                        ma55_p0 = limit_up_day_data['ma55']
-                        ma120_p0 = limit_up_day_data['ma120']
-                        ma120_m1 = day_minus_1_data['ma120']
-                        is_120_support = False
-                        if pd.notna(ma120_m1) and pd.notna(ma120_p0):
-                            cond_m1 = day_minus_1_data['low'] < ma120_m1 < day_minus_1_data['close']
-                            cond_t0 = limit_up_day_data['low'] < ma120_p0 < limit_up_day_data['close']
-                            if cond_m1 and cond_t0:
-                                is_120_support = True
-                        is_55_support = False
-                        if pd.notna(ma55_m1) and pd.notna(ma55_p0):
-                            cond_m1 = day_minus_1_data['low'] < ma55_m1 * 0.995 < day_minus_1_data['close']
-                            cond_t0 = limit_up_day_data['low'] < ma55_p0 * 0.995 < limit_up_day_data['close']
-                            if cond_m1 and cond_t0:
-                                is_55_support = True
-                        is_new_low = False
-                        platform_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx - 1]  # T-5, T-4, T-3, T-2
-                        bottom_prices = []
-                        for _, day in platform_window.iterrows():
-                            if day['close'] >= day['open']:  # 阳线或平盘
-                                bottom_prices.append(day['open'])
-                            else:  # 阴线
-                                bottom_prices.append(day['close'])
-                        if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
-                            max_price = max(bottom_prices)
-                            min_price = min(bottom_prices)
-                            avg_price = sum(bottom_prices) / 4
-                            if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
-                                support_line_level = avg_price
-                                if day_minus_1_data['close'] < support_line_level:
-                                    entire_5d_window = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]  # T-5 到 T-1
-                                    if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                                        is_new_low = True
                         is_30_close_support = False
                         pre_30d_window = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
                         if not pre_30d_window.empty:
@@ -804,10 +639,12 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                                 if distance_pct < 0.01:
                                     is_30_close_support = True
                         if (
-                                not checker.is_203055_m1_nian_he() and not is_120_support and not is_55_support
-                                and not checker.is_persistently_120_supported_p0m1m2() and not is_new_low
-                                and not is_30_close_support and not checker.is_51020_m1_nian_he(
-                            0.015)):
+                                not checker.is_203055_m1_nian_he()
+                                and not checker.is_120_p0m1m2_support()
+                                and not checker.is_120_p0m1m2_support()
+                                and not checker.is_stable_platform_to_new_low()
+                                and not is_30_close_support
+                                and not checker.is_51020_m1_nian_he(0.015)):
                             return RuleEnum.REJECTED_BY_DOWNTREND_LINE
 
     # 第四日买入专有策略
@@ -923,27 +760,14 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
             return RuleEnum.PERSISTENT_WEAKNESS_IN_CONSOLIDATION
 
         # 买前条件12：涨停后第一天被各条均线压制，并且第二天收盘价被均线压制，并且前三日不被30日线支撑,第二天是阳线的不排除
-        days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
         long_term_mas = ['ma20', 'ma30', 'ma55', 'ma60']
         for ma_col in long_term_mas:
             ma_value = day_plus_1_data[ma_col]
-            is_persistently_supported = True  # 先假设被该均线持续支撑
-            for day_idx in days_to_check_indices:
-                day_data = df.iloc[day_idx]
-                day_close = day_data['close']
-                day_open = day_data['open']
-                day_ma_value = day_data['ma30']
-                if not (pd.notna(day_ma_value) and day_ma_value > 0):
-                    is_persistently_supported = False
-                is_above_ma = day_open >= day_ma_value
-                is_close_to_ma = (abs(day_close - day_ma_value) / day_ma_value) <= 0.02
-                if not (is_above_ma and is_close_to_ma):
-                    is_persistently_supported = False
             if pd.notna(ma_value) and ma_value > 0:
                 tested_ma = high_p1 > ma_value
                 is_rejected = (abs(close_p1 - ma_value) / ma_value) <= 0.02
-                if tested_ma and is_rejected and close_p2 < ma_value and not is_persistently_supported and (
-                        close_p2 < open_p2):
+                if (tested_ma and is_rejected and close_p2 < ma_value and (close_p2 < open_p2)
+                        and not checker.is_30_p1p2p3_support()):
                     # print(f"[{code}] 在 {day_plus_1_data.name.date()} 触及 {ma_col} ({ma_value:.2f}) 后被压制，排除。")
                     return RuleEnum.REJECTED_BY_MAJOR_MA
 
@@ -956,8 +780,8 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
         t2_holds_support = day_plus_2_data['low'] >= t1_low
         # 条件C: T+3收盘价也守住T+1的最低点
         t3_holds_support = day_plus_3_data['low'] >= t1_low
-        if is_strong_gap_and_hold and not t2_holds_support and not t3_holds_support and not checker.is_51020_m1_nian_he(
-                0.005):
+        if (is_strong_gap_and_hold and not t2_holds_support and not t3_holds_support
+                and not checker.is_51020_m1_nian_he(0.005)):
             return RuleEnum.GAP_UP_STRENGTH_INVALIDATED
 
         # 买前条件10：p1最高价大于55日线，p2和p3收盘价低于55日线。副条件：三天都不被20日线和30日线支撑
@@ -971,19 +795,9 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
             t1_above_ma55 = day_plus_1_data['high'] > ma55_t1
             t2_above_ma55 = day_plus_2_data['close'] < ma55_t2
             t3_below_ma55 = day_plus_3_data['close'] < ma55_t3
-            is_persistently_30_supported = True
-            days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
-            for day_idx in days_to_check_indices:
-                day_data = df.iloc[day_idx]
-                day_close = day_data['close']
-                day_low = day_data['low']
-                day_open = day_data['open']
-                day_ma_value = day_data['ma30']
-                is_above_ma = day_open >= day_ma_value
-                is_close_to_ma = (abs(day_close - day_ma_value) / day_ma_value) <= 0.02
-                if not (is_above_ma and is_close_to_ma):
-                    is_persistently_30_supported = False
-            if t1_above_ma55 and t3_below_ma55 and t2_above_ma55 and not is_persistently_30_supported and not checker.is_persistently_20_supported_p1p2p3():
+            if (t1_above_ma55 and t3_below_ma55 and t2_above_ma55
+                    and not checker.is_30_p1p2p3_support()
+                    and not checker.is_20_p1p2p3_support()):
                 # print(f"[{code}] 触发MA55假突破回落形态，排除。")
                 return RuleEnum.FAILED_MA55_BREAKOUT
 
@@ -994,27 +808,14 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 # print(f"[{code}] 触发弱反弹形态 (T+2未能收复T+1阴线一半)，排除。")
                 if is_red_candle_p2:
                     midpoint_p2_body = (open_p2 + close_p2) / 2
-                    days_to_check = [day_plus_1_data, day_plus_2_data, day_plus_3_data]
-                    is_persistently_testing_ma10 = True
-                    for day_data in days_to_check:
-                        day_low = day_data['low']
-                        day_close = day_data['close']
-                        ma10_value = day_data['ma10']
-                        if not (pd.notna(ma10_value) and ma10_value > 0):
-                            is_persistently_testing_ma10 = False
-                            break
-                        touched_ma10 = day_low <= ma10_value
-                        bounced_strongly = (day_close - ma10_value) / ma10_value > 0.01
-                        if not (touched_ma10 and bounced_strongly):
-                            is_persistently_testing_ma10 = False
-                            break
                     is_shi_zi = True
                     if close_p3 > 0:
                         real_body_ratio_p3 = abs(open_p3 - close_p3) / close_p3
                         if real_body_ratio_p3 < 0.004:
                             is_shi_zi = False
-                    if close_p3 < midpoint_p2_body and not is_persistently_testing_ma10 and is_shi_zi and not checker.is_51020_m1_nian_he(
-                            0.012):
+                    if (close_p3 < midpoint_p2_body
+                            and not checker.is_10_p1p2p3_support()
+                            and is_shi_zi and not checker.is_51020_m1_nian_he(0.012)):
                         # print(f"[{code}] 触发上涨乏力形态 (T+3跌破T+2阳线一半)，排除。")
                         return RuleEnum.FAILED_REBOUND_PATTERN
 
@@ -1041,8 +842,8 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
             low_support = low_p3 > low_p1 and close_p3 > close_p1
             is_bald_p3 = abs(close_p3 - high_p3) / high_p3 <= 0.01
             # 如果三天最高价相近，并且每天都有长上影线，则排除
-            if all_have_long_wicks and not low_support and not checker.is_51020_m1_nian_he(
-                    0.005) and not is_bald_p3:
+            if (all_have_long_wicks and not low_support and not is_bald_p3
+                    and not checker.is_51020_m1_nian_he( 0.005)):
                 return RuleEnum.FLAT_TOP_REJECTION
 
         # 买前条件15：如果是第四天买入，排除第三天在预计1.04时可能买入的股票，同时保留0.98时候可能买入的股票。最后的结果再排除被20日线和30日线支撑的股票
@@ -1050,81 +851,30 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
         day_3_098_price = simulate_ma5_order_prices(df, day_plus_3_day_date, 0.98)
         if day_3_104_price is not None and day_3_098_price is not None:
             if day_3_098_price < low_p3 <= day_3_104_price:
-                is_persistently_30_supported = True
-                is_persistently_20_supported = True
-                days_to_check_indices = [day_plus_1_idx, day_plus_2_idx, day_plus_3_idx]
-                for day_idx in days_to_check_indices:
-                    day_data = df.iloc[day_idx]
-                    day_close = day_data['close']
-                    day_low = day_data['low']
-                    day_open = day_data['open']
-                    day_ma_value = day_data['ma30']
-                    day_20_ma_value = day_data['ma20']
-                    is_above_ma = day_open >= day_ma_value
-                    is_close_to_ma = (abs(day_close - day_ma_value) / day_ma_value) <= 0.02
-                    if not (is_above_ma and is_close_to_ma):
-                        is_persistently_30_supported = False
-                    is_above_20_ma = day_open >= day_20_ma_value
-                    is_close_20_to_ma = (abs(day_low - day_20_ma_value) / day_20_ma_value) <= 0.02
-                    if not (is_above_20_ma and is_close_20_to_ma):
-                        is_persistently_20_supported = False
-                if not is_persistently_20_supported and not is_persistently_30_supported and not checker.is_555_m1_abs_nian_he() and not checker.is_10120_m1_nian_he():
+                if (not checker.is_20_p1p2p3_support_only_close()
+                        and not checker.is_30_p1p2p3_support_only_close()
+                        and not checker.is_555_m1_abs_nian_he()
+                        and not checker.is_10120_m1_nian_he()):
                     return RuleEnum.UNSUPPORTED_PULLBACK_ON_T3
 
         # 条件15：涨停后第一日高点高于涨停后第二日和第三日。涨停后第一日的低点高于涨停后第二日和第三日的低点。19年的数据还要优化，期望0.78
         if high_p2 < high_p1 and high_p3 < high_p1:
-            is_120_support = False
-            ma120_p0 = limit_up_day_data['ma120']
-            ma120_m1 = day_minus_1_data['ma120']
-            if pd.notna(ma120_m1) and pd.notna(ma120_p0):
-                cond_m1 = day_minus_1_data['low'] * 0.99 < ma120_m1 < day_minus_1_data['close']
-                cond_t0 = limit_up_day_data['low'] * 0.99 < ma120_p0 < limit_up_day_data['close']
-                if cond_m1 and cond_t0:
-                    is_120_support = True
-            is_new_low = False
-            platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx - 1]  # T-4, T-3, T-2
-            bottom_prices = []
-            for _, day in platform_window.iterrows():
-                if day['close'] >= day['open']:  # 阳线或平盘
-                    bottom_prices.append(day['open'])
-                else:  # 阴线
-                    bottom_prices.append(day['close'])
-            if len(bottom_prices) == 3 and all(p > 0 for p in bottom_prices):
-                max_price = max(bottom_prices)
-                min_price = min(bottom_prices)
-                avg_price = sum(bottom_prices) / 3
-                if avg_price > 0 and (max_price - min_price) / avg_price < 0.02:  # 平台波动小于2%
-                    support_line_level = avg_price
-                    if day_minus_1_data['close'] < support_line_level:
-                        entire_5d_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-4 到 T-1
-                        if day_minus_1_data['low'] == entire_5d_window['low'].min():
-                            is_new_low = True
-            if (low_p2 < low_p1 and low_p3 < low_p1 and not checker.is_51020_m1_nian_he(0.012)
-                    and not checker.is_102030_m1_nian_he(0.012) and not is_120_support and not is_new_low):
+            if (low_p2 < low_p1 and low_p3 < low_p1
+                    and not checker.is_51020_m1_nian_he(0.012)
+                    and not checker.is_102030_m1_nian_he(0.012)
+                    and not checker.is_stable_platform_to_new_low()):
                 return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
         is_yin_p1 = close_p1 < open_p1
         is_yin_p2 = close_p2 < open_p2
         is_yin_p3 = close_p3 < open_p3
-        is_new_low = False
-        platform_window = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]  # T-5, T-4, T-3, T-2
-        bottom_prices = []
-        for _, day in platform_window.iterrows():
-            if day['close'] >= day['open']:  # 阳线或平盘
-                bottom_prices.append(day['open'])
-            else:  # 阴线
-                bottom_prices.append(day['close'])
-        if len(bottom_prices) == 4 and all(p > 0 for p in bottom_prices):
-            max_price = max(bottom_prices)
-            min_price = min(bottom_prices)
-            avg_price = sum(bottom_prices) / 4
-            if avg_price > 0 and (max_price - min_price) / avg_price < 0.01:  # 平台波动小于1%
-                is_new_low = True
         if (
-                is_yin_p1 and is_yin_p3 and not checker.is_persistently_60_supported_p0m1m2()
-                and not checker.is_persistently_20_supported_p1p2p3()
+                is_yin_p1 and is_yin_p3
+                and not checker.is_60_p0m1m2_support()
+                and not checker.is_20_p1p2p3_support()
                 and not checker.is_555_m1_abs_nian_he()
-                and not checker.is_persistently_20_supported_p0m1m2() and not is_new_low):
+                and not checker.is_20_p0m1m2_support()
+                and not checker.is_stable_platform()):
             return RuleEnum.UNSUPPORTED_WEAK_CONSOLIDATION
 
     return None  # 所有检查通过

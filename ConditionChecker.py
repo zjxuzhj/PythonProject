@@ -17,6 +17,10 @@ class RuleEnumConfig:
 
     MA10_MA55_COHESION_THRESHOLD = 0.01  # 10日线和55日线粘合阈值
 
+    MA_SUPPORT_RECOVERY_TOLERANCE = 0.05  # 均线支撑回升形态的容差 (5%)
+
+    PLATFORM_SPREAD_THRESHOLD_STRICT = 0.01  # 平台波动阈值(严格, 1%)
+    PLATFORM_SPREAD_THRESHOLD_LOOSE = 0.02   # 平台波动阈值(宽松, 2%)
 
 class ConditionChecker:
     def __init__(self, df: pd.DataFrame, limit_up_day_idx: int, offset: int, stock_info: dict):
@@ -130,7 +134,23 @@ class ConditionChecker:
         percent_diff = abs(base_ma_val - other_ma_val) / base_ma_val
         return percent_diff < threshold
 
-    def is_persistently_20_supported_p0m1m2(self) -> bool:
+    def is_10_m1m2m3_support_only_close(self) -> bool:
+        days_to_check_indices = [
+            self.limit_up_idx - 1,
+            self.limit_up_idx - 2,
+            self.limit_up_idx - 3
+        ]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma10', only_close=True)
+
+    def is_10_p1p2p3_support(self) -> bool:
+        days_to_check_indices = [
+            self.limit_up_idx + 1,
+            self.limit_up_idx + 2,
+            self.limit_up_idx + 3
+        ]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma10')
+
+    def is_20_p0m1m2_support(self) -> bool:
         days_to_check_indices = [
             self.limit_up_idx,
             self.limit_up_idx - 1,
@@ -138,15 +158,47 @@ class ConditionChecker:
         ]
         return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20')
 
-    def is_persistently_20_supported_p1p2p3(self) -> bool:
+    def is_20_p1p2p3_support(self) -> bool:
+        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20')
+
+    def is_20_p1p2p3_support_only_close(self) -> bool:
+        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20', only_close=True)
+
+    def is_30_m1m2m3_support_only_close(self) -> bool:
+        days_to_check_indices = [self.limit_up_idx - 1, self.limit_up_idx - 2, self.limit_up_idx - 3]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30', only_close=True)
+
+    def is_30_p0m1m2_support(self) -> bool:
+        days_to_check_indices = [
+            self.limit_up_idx,
+            self.limit_up_idx - 1,
+            self.limit_up_idx - 2
+        ]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30')
+
+    def is_30_p1p2p3_support(self) -> bool:
         days_to_check_indices = [
             self.limit_up_idx + 1,
             self.limit_up_idx + 2,
             self.limit_up_idx + 3
         ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20')
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30')
 
-    def is_persistently_60_supported_p0m1m2(self) -> bool:
+    def is_30_p1p2p3_support_only_close(self) -> bool:
+        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30', only_close=True)
+
+    def is_60_m1m2m3_support(self) -> bool:
+        days_to_check_indices = [
+            self.limit_up_idx - 1,
+            self.limit_up_idx - 2,
+            self.limit_up_idx - 3
+        ]
+        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma60')
+
+    def is_60_p0m1m2_support(self) -> bool:
         days_to_check_indices = [
             self.limit_up_idx,
             self.limit_up_idx - 1,
@@ -154,7 +206,7 @@ class ConditionChecker:
         ]
         return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma60')
 
-    def is_persistently_120_supported_p0m1m2(self) -> bool:
+    def is_120_p0m1m2_support(self) -> bool:
         days_to_check_indices = [
             self.limit_up_idx,
             self.limit_up_idx - 1,
@@ -167,7 +219,8 @@ class ConditionChecker:
             day_indices: list[int],
             ma_name: str,
             proximity_threshold: float = 0.02,
-            above_ma_threshold: float = 0.98
+            above_ma_threshold: float = 0.98,
+            only_close: bool = False
     ) -> bool:
         """
         检查在一系列指定的日子里，价格是否持续受到某条特定均线的支撑。
@@ -188,14 +241,133 @@ class ConditionChecker:
                 return False
             day_open = day_data['open']
             day_low = day_data['low']
+            day_close = day_data['close']
             is_above_ma = day_open >= ma_value * above_ma_threshold
-            is_close_to_ma = (
-                    (abs(day_open - ma_value) / ma_value) <= proximity_threshold or
-                    (abs(day_low - ma_value) / ma_value) <= proximity_threshold
-            )
+            if only_close:
+                is_close_to_ma = (
+                        (abs(day_close - ma_value) / ma_value) <= proximity_threshold
+                )
+            else:
+                is_close_to_ma = (
+                        (abs(day_open - ma_value) / ma_value) <= proximity_threshold or
+                        (abs(day_low - ma_value) / ma_value) <= proximity_threshold or
+                        (abs(day_close - ma_value) / ma_value) <= proximity_threshold
+                )
             if not (is_above_ma and is_close_to_ma):
                 return False
         return True
+
+    def is_10_m1_support_005(self) -> bool:
+        return self.is_ma_pierce_and_recover(
+            ma_name='ma10',
+            day_data=self.day_m1_data,
+            tolerance=self.config.MA_SUPPORT_RECOVERY_TOLERANCE
+        )
+
+    def is_30_m1_support(self) -> bool:
+        return self.is_ma_pierce_and_recover(
+            ma_name='ma30',
+            day_data=self.day_m1_data
+        )
+    def is_ma_pierce_and_recover(
+            self,
+            ma_name: str,
+            day_data: pd.Series,
+            tolerance: float = 0.0
+    ) -> bool:
+        """
+        检查在指定的某一天，价格是否形成下探均线后又回升的支撑形态。
+        精确匹配逻辑: low < ma * (1 + tolerance) <= close
+
+        :param ma_name: 要检查的均线列名 (e.g., 'ma10')。
+        :param day_data: 要检查的当日的DataFrame行数据 (e.g., self.day_m1_data)。
+        :param tolerance: 均线值的容差，0.05代表5%。
+        :return: 如果形成该形态，则返回 True，否则 False。
+        """
+        # 检查传入的数据是否有效
+        if day_data is None:
+            return False
+        ma_value = day_data.get(ma_name)
+        day_low = day_data['low']
+        day_close = day_data['close']
+        # 检查数值有效性
+        if pd.isna(ma_value) or pd.isna(day_low) or pd.isna(day_close) or ma_value <= 0:
+            return False
+        # 核心逻辑判断
+        ma_with_tolerance = ma_value * (1 + tolerance)
+        return day_low < ma_with_tolerance <= day_close
+
+    def is_stable_platform(self) -> bool:
+        support_level = self._find_stable_platform_level(
+            start_offset_from_anchor=-4,
+            end_offset_from_anchor=0,
+            spread_threshold=self.config.PLATFORM_SPREAD_THRESHOLD_STRICT
+        )
+        return support_level is not None
+
+    def is_stable_platform_to_new_low(self) -> bool:
+        return self._is_platform_breakdown_to_new_low(
+            platform_start_offset=-4,
+            platform_end_offset=-1,
+            spread_threshold=self.config.PLATFORM_SPREAD_THRESHOLD_STRICT
+        )
+
+    def _find_stable_platform_level(
+            self,
+            start_offset_from_anchor: int,
+            end_offset_from_anchor: int,
+            spread_threshold: float
+    ) -> Optional[float]:
+        """
+        [内部辅助方法] 在指定窗口内查找是否存在一个稳定的价格平台。
+
+        :param start_offset_from_anchor: 平台窗口开始位置的偏移量 (e.g., -5)。
+        :param end_offset_from_anchor: 平台窗口结束位置的偏移量 (e.g., -1)。
+        :param spread_threshold: 平台价格波动的容忍阈值。
+        :return: 如果找到稳定平台，则返回平台的平均支撑位；否则返回 None。
+        """
+        platform_window = self.df.iloc[
+                          self.limit_up_idx + start_offset_from_anchor: self.limit_up_idx + end_offset_from_anchor]
+        if len(platform_window) != (end_offset_from_anchor - start_offset_from_anchor):
+            return None  # 数据窗口长度不足
+        bottom_prices = []
+        for _, day in platform_window.iterrows():
+            bottom_prices.append(day['open'] if day['close'] >= day['open'] else day['close'])
+        if not all(p > 0 for p in bottom_prices):
+            return None
+        avg_price = sum(bottom_prices) / len(bottom_prices)
+        if avg_price > 0 and (max(bottom_prices) - min(bottom_prices)) / avg_price < spread_threshold:
+            return avg_price  # 找到了平台，返回支撑位
+        return None
+
+    def _is_platform_breakdown_to_new_low(
+            self,
+            platform_start_offset: int,
+            platform_end_offset: int,
+            spread_threshold: float
+    ) -> bool:
+        """
+        检查是否存在一个稳定平台，并且在平台之后的一天(T-1)破位创下新低。
+
+        :param platform_start_offset: 平台窗口开始位置的偏移量 (e.g., -5)。
+        :param platform_end_offset: 平台窗口结束位置的偏移量 (e.g., -2)。
+        :param spread_threshold: 平台价格波动的容忍阈值。
+        :return: 如果该模式成立，返回 True。
+        """
+        # 1. 查找是否存在稳定平台
+        support_line_level = self._find_stable_platform_level(
+            platform_start_offset, platform_end_offset, spread_threshold
+        )
+        if support_line_level is None:
+            return False  # 没有找到平台，模式不成立
+        # 2. 检查T-1日是否收盘破位
+        if self.day_m1_data is None or self.day_m1_data['close'] >= support_line_level:
+            return False  # 没有T-1数据或没有破位，模式不成立
+        # 3. 检查T-1日的最低价是否为近期新低
+        entire_window = self.df.iloc[self.limit_up_idx + platform_start_offset: self.limit_up_idx]  # e.g., T-5 到 T-1
+        if self.day_m1_data['low'] == entire_window['low'].min():
+            return True  # 破位且创下新低，模式成立
+        return False
 
     def is_p1_huge_volume_green_candle(self) -> bool:
         """条件3：检查T+1是否为巨量阴线"""
