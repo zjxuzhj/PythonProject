@@ -20,7 +20,8 @@ class RuleEnumConfig:
     MA_SUPPORT_RECOVERY_TOLERANCE = 0.05  # 均线支撑回升形态的容差 (5%)
 
     PLATFORM_SPREAD_THRESHOLD_STRICT = 0.01  # 平台波动阈值(严格, 1%)
-    PLATFORM_SPREAD_THRESHOLD_LOOSE = 0.02   # 平台波动阈值(宽松, 2%)
+    PLATFORM_SPREAD_THRESHOLD_LOOSE = 0.02  # 平台波动阈值(宽松, 2%)
+
 
 class ConditionChecker:
     def __init__(self, df: pd.DataFrame, limit_up_day_idx: int, offset: int, stock_info: dict):
@@ -43,10 +44,16 @@ class ConditionChecker:
         # --- 预加载所有可能用到的数据，全部相对于 limit_up_idx ---
         self.limit_up_day_data = self.df.iloc[self.limit_up_idx] if self.limit_up_idx < len(df) else None
         self.day_m1_data = self.df.iloc[self.limit_up_idx - 1] if self.limit_up_idx > 0 else None
+        self.day_m2_data = self.df.iloc[self.limit_up_idx - 2] if self.limit_up_idx > -1 else None
+        self.day_m3_data = self.df.iloc[self.limit_up_idx - 3] if self.limit_up_idx > -2 else None
 
         self.day_p1_data = self.df.iloc[self.limit_up_idx + 1] if self.limit_up_idx + 1 < len(df) else None
         self.day_p2_data = self.df.iloc[self.limit_up_idx + 2] if self.limit_up_idx + 2 < len(df) else None
         self.day_p3_data = self.df.iloc[self.limit_up_idx + 3] if self.limit_up_idx + 3 < len(df) else None
+
+        self.days_check_m1m2m3 = [self.limit_up_idx - 1, self.limit_up_idx - 2, self.limit_up_idx - 3]
+        self.days_check_p0m1m2 = [self.limit_up_idx, self.limit_up_idx - 1, self.limit_up_idx - 2]
+        self.days_check_p1p2p3 = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
 
     def is_ma_cohesive(self, ma_list_names: list[str], threshold: float, day_data: pd.Series = None) -> bool:
         """
@@ -108,6 +115,10 @@ class ConditionChecker:
         actual_threshold = threshold if threshold is not None else self.config.MA10_MA55_COHESION_THRESHOLD
         return self.are_mas_within_percent_diff('ma5', 'ma55', actual_threshold)
 
+    def is_120250_m1_nian_he(self, threshold: Optional[float] = None) -> bool:
+        actual_threshold = threshold if threshold is not None else 0.005
+        return self.is_ma_cohesive(['ma120', 'ma250'], actual_threshold)
+
     def are_mas_within_percent_diff(self, base_ma_name: str, other_ma_name: str, threshold: float,
                                     day_data: pd.Series = None) -> bool:
         """
@@ -135,84 +146,40 @@ class ConditionChecker:
         return percent_diff < threshold
 
     def is_10_m1m2m3_support_only_close(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2,
-            self.limit_up_idx - 3
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma10', only_close=True)
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_m1m2m3, ma_name='ma10', only_close=True)
 
     def is_10_p1p2p3_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx + 1,
-            self.limit_up_idx + 2,
-            self.limit_up_idx + 3
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma10')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p1p2p3, ma_name='ma10')
 
     def is_20_p0m1m2_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx,
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p0m1m2, ma_name='ma20')
 
     def is_20_p1p2p3_support(self) -> bool:
-        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p1p2p3, ma_name='ma20')
 
     def is_20_p1p2p3_support_only_close(self) -> bool:
-        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma20', only_close=True)
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p1p2p3, ma_name='ma20', only_close=True)
 
     def is_30_m1m2m3_support_only_close(self) -> bool:
-        days_to_check_indices = [self.limit_up_idx - 1, self.limit_up_idx - 2, self.limit_up_idx - 3]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30', only_close=True)
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_m1m2m3, ma_name='ma30', only_close=True)
 
     def is_30_p0m1m2_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx,
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p0m1m2, ma_name='ma30')
 
     def is_30_p1p2p3_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx + 1,
-            self.limit_up_idx + 2,
-            self.limit_up_idx + 3
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p1p2p3, ma_name='ma30')
 
     def is_30_p1p2p3_support_only_close(self) -> bool:
-        days_to_check_indices = [self.limit_up_idx + 1, self.limit_up_idx + 2, self.limit_up_idx + 3]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma30', only_close=True)
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p1p2p3, ma_name='ma30', only_close=True)
 
     def is_60_m1m2m3_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2,
-            self.limit_up_idx - 3
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma60')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_m1m2m3, ma_name='ma60')
 
     def is_60_p0m1m2_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx,
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma60')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p0m1m2, ma_name='ma60')
 
     def is_120_p0m1m2_support(self) -> bool:
-        days_to_check_indices = [
-            self.limit_up_idx,
-            self.limit_up_idx - 1,
-            self.limit_up_idx - 2
-        ]
-        return self.is_persistently_supported_by_ma(day_indices=days_to_check_indices, ma_name='ma120')
+        return self.is_persistently_supported_by_ma(day_indices=self.days_check_p0m1m2, ma_name='ma120')
 
     def is_persistently_supported_by_ma(
             self,
@@ -257,7 +224,7 @@ class ConditionChecker:
                 return False
         return True
 
-    def is_10_m1_support_005(self) -> bool:
+    def is_10_m1_support(self) -> bool:
         return self.is_ma_pierce_and_recover(
             ma_name='ma10',
             day_data=self.day_m1_data,
@@ -269,6 +236,7 @@ class ConditionChecker:
             ma_name='ma30',
             day_data=self.day_m1_data
         )
+
     def is_ma_pierce_and_recover(
             self,
             ma_name: str,
@@ -380,3 +348,35 @@ class ConditionChecker:
         volume_check = volume_p1 >= volume_p0 * self.config.P1_HUGE_VOLUME_GREEN_CANDLE_RATIO
 
         return volume_check and not is_red_candle_p1
+
+        # and not checker.is_51020_m1_nian_he()
+        # and not checker.is_51020_m1_nian_he(0.015)
+        # and not checker.is_51020_m1_nian_he(0.02)
+        # and not checker.is_102030_m1_nian_he()
+        # and not checker.is_203055_m1_nian_he()
+        # and not checker.is_55120250_m1_nian_he(0.012)
+        # and not checker.is_55120250_m1_nian_he()
+        # and not checker.is_555_m1_abs_nian_he(0.005)
+        # and not checker.is_555_m1_abs_nian_he()
+        # and not checker.is_10120_m1_nian_he()
+        # and not checker.is_55120_m1_nian_he()
+        # and not checker.is_55250_m1_nian_he()
+        # and not checker.is_120250_m1_nian_he()
+        #
+        # and not checker.is_10_m1m2m3_support_only_close()
+        # and not checker.is_10_p1p2p3_support()
+        # and not checker.is_20_p0m1m2_support()
+        # and not checker.is_20_p1p2p3_support()
+        # and not checker.is_20_p1p2p3_support_only_close()
+        # and not checker.is_30_p0m1m2_support()
+        # and not checker.is_30_m1m2m3_support_only_close()
+        # and not checker.is_30_p1p2p3_support()
+        # and not checker.is_30_p1p2p3_support_only_close()
+        # and not checker.is_60_m1m2m3_support()
+        # and not checker.is_60_p0m1m2_support()
+        # and not checker.is_120_p0m1m2_support()
+        # and not checker.is_10_m1_support()
+        # and not checker.is_30_m1_support()
+        #
+        # and not checker.is_stable_platform()
+        # and not checker.is_stable_platform_to_new_low()
