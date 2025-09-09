@@ -19,7 +19,7 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -27,15 +27,12 @@ class StrategyConfig:
 
     # --- 买入参数 ---
     PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
+    SCORE_THRESHOLD: int = 75  # <<<<<<<<<<<<<<<< 新增：买入的最低质量分门槛
 
     # --- 双头形态检测参数 ---
     DOUBLE_TOP_CHECK_DAYS = 40  # 检测最近40日的双头形态
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
-
-    # ---  涨停日成交量校验参数 ---
-    LIMIT_UP_VOLUME_LOOKBACK_DAYS: int = 100  # 寻找前期高点以校验成交量的回看天数
-    LIMIT_UP_VOLUME_THRESHOLD: float = 0.9  # 涨停日成交量不得超过前高成交量的阈值
 
 
 @dataclass
@@ -91,6 +88,120 @@ def get_market_type(symbol: str) -> str:
     if symbol.startswith(("300", "301")):
         return "创业板"
     return "主板"
+
+
+def calculate_quality_score(stock_info: dict, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
+                            config: StrategyConfig) -> tuple[int, list[str]]:
+    """
+    计算给定买入机会的质量得分。
+    - 基准分100分。
+    - 根据积极信号加分，根据消极信号减分。
+    - 返回最终得分和评分原因列表。
+    """
+    score = 40
+    reasons = []
+    checker = ConditionChecker(df, limit_up_day_idx=limit_up_day_idx, offset=offset, stock_info=stock_info)
+
+    # --- 提取常用数据变量，保持代码清晰 ---
+    limit_up_day_data = df.iloc[limit_up_day_idx]
+    day_minus_1_data = df.iloc[limit_up_day_idx - 1]
+    day_plus_1_data = df.iloc[limit_up_day_idx + 1]
+
+    close_m1 = df.iloc[limit_up_day_idx - 1]['close']
+    ma30_m1 = df.iloc[limit_up_day_idx - 1]['ma30']
+
+    # --- 积极信号（加分项）---
+
+    # 1. 黄金趋势背景 (+10分)
+    # 总交易数: 369 ，胜率: 46.34%，均盈: 10.47% | 均亏: 3.20% | 均持: 2.15，盈亏比: 3.27:1，期望: 3.131
+    # ma5_p0, ma10_p0, ma20_p0, ma55_p0 = limit_up_day_data[['ma5', 'ma10', 'ma20', 'ma55']]
+    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
+    #     if limit_up_day_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+    #         score += 10
+    #         reasons.append("(+10) 黄金趋势背景")
+
+    # 总交易数: 103 ，胜率: 40.78%，均盈: 9.72% | 均亏: 2.96% | 均持: 2.08，盈亏比: 3.28:1，期望: 2.209
+    ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma55']]
+    if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
+        if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+            score += 10
+            reasons.append("(+10) 黄金趋势背景")
+    # #
+    # # 总交易数: 464 ，胜率: 46.98%，均盈: 10.10% | 均亏: 3.12% | 均持: 2.11，盈亏比: 3.24:1，期望: 3.090
+    # ma5_p0, ma10_p0, ma20_p0, ma60_p0 = day_plus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
+    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma60_p0])):
+    #     if limit_up_day_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma60_p0:
+    #         score += 10
+    #         reasons.append("(+10) 黄金趋势背景")
+
+    # if offset == 4:
+    #     day_plus_2_data = df.iloc[limit_up_day_idx + 2]
+    #     day_plus_3_data = df.iloc[limit_up_day_idx + 3]
+    #     ma5_p0, ma10_p0, ma20_p0, ma60_p0 = day_plus_2_data[['ma5', 'ma10', 'ma20', 'ma60']]
+    #     if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma60_p0])):
+    #         if day_plus_2_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma60_p0:
+    #             score += 10
+    #             reasons.append("(+10) 黄金趋势背景")
+
+    # 2. 缩量精巧回调 (+20分)
+    # if offset == 2:
+    #     is_volume_shrinking = day_plus_1_data['volume'] < limit_up_day_data['volume'] * 0.6
+    #     is_small_body = abs(day_plus_1_data['open'] - day_plus_1_data['close']) / limit_up_day_data['close'] < 0.02
+    #     is_support_held = day_plus_1_data['low'] > limit_up_day_data['open']
+    #     if is_volume_shrinking and is_small_body and is_support_held:
+    #         score += 20
+    #         reasons.append("(+20) 缩量精巧回调")
+    #
+    # # 3. 基石放量突破 (+15分)
+    # avg_vol_20d = df['volume'].iloc[limit_up_day_idx - 20: limit_up_day_idx].mean()
+    # if avg_vol_20d > 0 and limit_up_day_data['volume'] > avg_vol_20d * 5:
+    #     score += 15
+    #     reasons.append("(+15) 基石放量突破")
+    #
+    # # --- 消极信号（减分项，精选核心规则作为示范）---
+    #
+    # if offset == 2 or offset == 4:
+    #     # 1. 趋势冲突 (-30分，重大减分项)
+    #     if limit_up_day_idx > 65:
+    #         ma10_p1 = day_plus_1_data['ma10']
+    #         ma60_p1 = day_plus_1_data['ma60']
+    #         ma10_m4 = df.iloc[limit_up_day_idx - 4]['ma10']
+    #         ma60_m4 = df.iloc[limit_up_day_idx - 4]['ma60']
+    #         if all(pd.notna([ma60_p1, ma10_m4, ma60_m4])) and (ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4):
+    #             score -= 30
+    #             reasons.append("(-30) 趋势冲突")
+    #
+    #     # 2. 巨量避雷针 (-40分，重大减分项)
+    #     upper_shadow_ratio_p1 = (day_plus_1_data['high'] - max(day_plus_1_data['open'], day_plus_1_data['close'])) / \
+    #                             limit_up_day_data['close'] if limit_up_day_data['close'] > 0 else 0
+    #     is_long_upper_shadow = upper_shadow_ratio_p1 > 0.04
+    #     is_huge_volume = day_plus_1_data['volume'] > limit_up_day_data['volume'] * 1.8
+    #     is_red_candle = day_plus_1_data['close'] < day_plus_1_data['open']
+    #     if is_huge_volume and is_long_upper_shadow and is_red_candle:
+    #         score -= 40
+    #         reasons.append("(-40) 巨量避雷针")
+    #
+    #     # 3. 根基不稳 (-25分)
+    #     is_weak_background = close_m1 < ma30_m1
+    #     is_weak_follow_through = day_plus_1_data['high'] < limit_up_day_data['high'] and day_plus_1_data['close'] < \
+    #                              day_plus_1_data['open']
+    #     if is_weak_background and is_weak_follow_through and limit_up_day_data['volume'] < avg_vol_20d * 3:
+    #         score -= 25
+    #         reasons.append("(-25) 根基不稳")
+    #
+    #     # 4. 涨停前已有巨大短期涨幅 (-20分)
+    #     if limit_up_day_idx > 10:
+    #         ten_days_ago_close = df.iloc[limit_up_day_idx - 10]['close']
+    #         if ten_days_ago_close > 0:
+    #             prior_gain = (close_m1 - ten_days_ago_close) / ten_days_ago_close
+    #             if prior_gain > 0.30 and is_red_candle:
+    #                 score -= 20
+    #                 reasons.append("(-20) 涨停前短期暴涨")
+
+    # 也可以加入其它您认为重要的减分项...
+    # 例如： if some_bad_condition: score -= 15; reasons.append("(-15) some reason")
+
+    return score, reasons
 
 
 def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.DataFrame:
@@ -151,7 +262,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     limit_up_day_low = limit_up_day_data['low']
     limit_up_day_volume = limit_up_day_data['volume']
 
-    day_minus_1_idx = limit_up_day_idx - 1  # 涨停前一日
+    day_minus_1_idx = limit_up_day_idx - 1
     day_minus_1_day_date = df.index[day_minus_1_idx]
     day_minus_1_data = df.iloc[day_minus_1_idx]
     open_m1 = day_minus_1_data['open']
@@ -178,7 +289,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     day_minus_3_idx = limit_up_day_idx - 3
     day_minus_3_day_date = df.index[day_minus_3_idx]
     day_minus_3_data = df.iloc[limit_up_day_idx - 3]
-    day_plus_1_idx = limit_up_day_idx + 1  # 涨停后一日
+    day_plus_1_idx = limit_up_day_idx + 1
     day_plus_1_day_date = df.index[day_plus_1_idx]
     day_plus_1_data = df.iloc[day_plus_1_idx]
     open_p1 = day_plus_1_data['open']
@@ -203,6 +314,12 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     if (volume_p1 >= limit_up_day_volume * 3.6) and not is_red_candle_p1:
         return RuleEnum.P1_HUGE_VOLUME_GREEN_CANDLE
 
+    # 条件4：排除10日内涨停超过4次的股票
+    pre_window_10d = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
+    limit_up_count = (pre_window_10d['close'] >= pre_window_10d['limit_price']).sum()
+    if limit_up_count >= 4:
+        return RuleEnum.FREQUENT_LIMIT_UPS_RECENTLY
+
     # 条件5：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
     pre5_start = df.index[df.index.get_loc(day) - 5]
     pre5_close = df.loc[pre5_start, 'close']
@@ -211,8 +328,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
         if total_change >= 15:
             return RuleEnum.LARGE_GAIN_BEFORE_LIMIT_UP
 
-    # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），
-    # 同时日内总振幅又比较大（如超过当天开盘价的5%）
+    # 条件6：涨停前的“高波动/长影线”混乱形态，K线实体长度占总振幅的比例极小（如小于30%），同时日内总振幅又比较大（如超过当天开盘价的5%）
     range_m1 = high_m1 - low_m1
     is_chaotic_m1 = False
     if range_m1 > 0 and (range_m1 / open_m1 > 0.05):
@@ -227,13 +343,20 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
             and not checker.is_10_m1m2m3_support_only_close()):
         return RuleEnum.PRE_LIMIT_UP_CHAOTIC_PATTERN
 
-    # 条件4：排除10日内涨停超过4次的股票
-    pre_window_10d = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]
-    limit_up_count = (pre_window_10d['close'] >= pre_window_10d['limit_price']).sum()
-    if limit_up_count >= 4:
-        return RuleEnum.FREQUENT_LIMIT_UPS_RECENTLY
+    # 条件9：排除4日内存在跌破一半的涨停
+    pre_window_4d = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]
+    recent_limit_ups = pre_window_4d[pre_window_4d['close'] >= pre_window_4d['limit_price']]
+    if not recent_limit_ups.empty:
+        last_limit_up_day = recent_limit_ups.index[-1]
+        price_floor = close_m1 * 1.035
+        intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, limit_up_day_idx)
+        intermediate_days = df.iloc[intermediate_days_loc]
+        if not intermediate_days.empty:
+            min_low_in_between = intermediate_days['low'].min()
+            if min_low_in_between < price_floor:
+                return RuleEnum.RECENT_LIMIT_UP_FAILURE
 
-    # 条件13: 排除涨停前10日内，先出现至少2连板后又出现至少2连跌停的极端走势
+    # 条件12: 排除涨停前10日内，先出现至少2连板后又出现至少2连跌停的极端走势
     # 检查窗口内是否存在2连板,找出所有2连板结束的位置
     up_streaks = pre_window_10d['is_limit'].rolling(window=2).sum()
     up_streak_end_indices = up_streaks[up_streaks >= 2].index
@@ -247,7 +370,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                     print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
                     return RuleEnum.EXTREME_VOLATILITY_UP_DOWN
 
-    # 条件12: 排除前期高位连板后，出现的缩量反抽形态，如果回调期最低点高于起涨的最低点，排除说明的确是在反抽，不过是缩量反抽，不需要参与
+    # 条件13: 排除前期高位连板后，出现的缩量反抽形态，如果回调期最低点高于起涨的最低点，排除说明的确是在反抽，不过是缩量反抽，不需要参与
     limit_up_days = pre_window_10d[pre_window_10d['is_limit']]
     if not limit_up_days.empty:
         limit_up_indices = [df.index.get_loc(d) for d in limit_up_days.index]
@@ -294,19 +417,6 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     if limit_up_day_low == limit_up_day_price and breakdown_count > 1 and is_m2_day_below_ma5:
         print("排除首板是一字板的")
         return RuleEnum.ONE_WORD_LIMIT_UP_WITH_WEAK_TREND
-
-    # 条件9：排除4日内存在跌破一半的涨停
-    pre_window_4d = df.iloc[limit_up_day_idx - 4: limit_up_day_idx]
-    recent_limit_ups = pre_window_4d[pre_window_4d['close'] >= pre_window_4d['limit_price']]
-    if not recent_limit_ups.empty:
-        last_limit_up_day = recent_limit_ups.index[-1]
-        price_floor = close_m1 * 1.035
-        intermediate_days_loc = slice(df.index.get_loc(last_limit_up_day) + 1, limit_up_day_idx)
-        intermediate_days = df.iloc[intermediate_days_loc]
-        if not intermediate_days.empty:
-            min_low_in_between = intermediate_days['low'].min()
-            if min_low_in_between < price_floor:
-                return RuleEnum.RECENT_LIMIT_UP_FAILURE
 
     if limit_up_day_idx > 60:
         pre_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
@@ -356,7 +466,7 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
                 and not checker.is_stable_platform_to_new_low()):
             return RuleEnum.WEAK_FOLLOW_THROUGH_VOLUME
 
-        # 条件55：“力不从心”——OBV顶背离
+        # 条件11：“力不从心”——OBV顶背离
         peaks, _ = find_peaks(pre_window_60d['high'], prominence=pre_window_60d['high'].std())
         if len(peaks) > 0:
             # 取最近的前高点
@@ -550,7 +660,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     and not checker.is_30_p0m1m2_support()):
                 return RuleEnum.T1_GAP_DOWN_WEAK_REBOUND
 
-        # 条件5：前高压制条件
+        # 买前条件5：前高压制条件
         historical_high = df.iloc[limit_up_day_idx - 20:limit_up_day_idx]['high'].max()
         # 检查前3日最高价是否触及前高的99%
         recent_3day_high = df.iloc[limit_up_day_idx - 3:limit_up_day_idx]['high'].max()
@@ -558,7 +668,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 and not checker.is_51020_m1_nian_he(0.02)):
             return RuleEnum.STALLED_BELOW_PRIOR_HIGH
 
-        # 条件11：涨停“撞线”前期关键高点
+        # 买前条件11：涨停“撞线”前期关键高点
         if limit_up_day_idx > 90:
             hist_window_90d = df.iloc[limit_up_day_idx - 90: limit_up_day_idx]
             prev_major_high = hist_window_90d['high'].max()
@@ -571,7 +681,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
         if limit_up_day_idx > 60:
             pre_window_60d = df.iloc[limit_up_day_idx - 60: limit_up_day_idx]
 
-            # 条件26：中短期均线“趋势冲突” --- 好评,短期趋势向上，而中期趋势向下，重点
+            # 买前条件26：中短期均线“趋势冲突” --- 好评,短期趋势向上，而中期趋势向下，重点
             if limit_up_day_idx > 65:
                 ma10_p1 = day_plus_1_data['ma10']
                 ma60_p1 = day_plus_1_data['ma60']
@@ -590,7 +700,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                             and not checker.is_120_p0m1m2_support()):
                         return RuleEnum.TREND_CONFLICT
 
-            # 条件68：“下降趋势线”的精准“狙击”
+            # 买前条件68：“下降趋势线”的精准“狙击”
             peaks, _ = find_peaks(pre_window_60d['high'], prominence=pre_window_60d['high'].std() * 0.8,
                                   distance=5)
             if len(peaks) >= 2:
@@ -621,6 +731,47 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                             and not checker.is_120_p0m1m2_support()
                             and not checker.is_stable_platform_to_new_low()):
                         return RuleEnum.REJECTED_BY_DOWNTREND_LINE
+
+        # 买入条件5: “高位滞涨”形态 — T+1日缩量/平量横盘收十字星
+        is_doji_candle = abs(open_p1 - close_p1) / limit_up_day_price < 0.01
+        is_not_breakthrough_volume = volume_p1 < limit_up_day_volume * 1.2
+        is_stagnated = high_p1 < limit_up_day_high * 1.02
+        if (is_doji_candle and is_not_breakthrough_volume and is_stagnated
+                and not checker.is_51020_m1_nian_he()
+                and not checker.is_102030_m1_nian_he(0.01)):
+            return RuleEnum.STAGNATION_AT_PEAK
+
+        # 买入条件6：“微型通道”加速后的力竭涨停
+        is_climbing_m1 = close_m1 > open_m1
+        is_climbing_m3 = day_minus_3_data['close'] > day_minus_3_data['open']
+        if is_climbing_m1 and is_climbing_m3:
+            # 检查最近两天是否明显脱离5日线，没有回踩
+            ma5_m1 = day_minus_1_data['ma5']
+            ma5_m2 = day_minus_2_data['ma5']
+            is_detached_m1 = low_m1 > ma5_m1
+            is_detached_m2 = low_m2 > ma5_m2
+            if is_detached_m1 and is_detached_m2:
+                return RuleEnum.PARABOLIC_CLIMB_EXHAUSTION
+
+        # 买前条件10：“僵尸股”突兀涨停
+        pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+        daily_change_pct = (pre_window_20d['close'].pct_change().abs())
+        # 如果在过去20天里，有超过11天（50%）的日收盘价变动小于1%，则认为是极端沉寂
+        stagnant_days_count = (daily_change_pct < 0.01).sum()
+        if stagnant_days_count > 11 and not checker.is_10120_m1_nian_he() and not checker.is_stable_platform_to_new_low():
+            return RuleEnum.BREAKOUT_FROM_EXTREME_STAGNATION
+
+        # 买前条件11：涨停前20日内从最低点上涨超过35%
+        pre_limit_up_window = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+        lowest_low_30d = pre_limit_up_window['close'].min()
+        price_before_limit_up = close_m1
+        if lowest_low_30d > 0:
+            gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
+            if 0.4 > gain_from_low > 0.35:
+                return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
+
+        # 新策略开头对齐位置---------------------------------------------------
+    # 二日专有策略结束 --------------------------------------------------------
 
     # 第四日买入专有策略
     if offset == 4:
@@ -759,7 +910,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 and not checker.is_51020_m1_nian_he(0.005)):
             return RuleEnum.GAP_UP_STRENGTH_INVALIDATED
 
-        # 买前条件10：p1最高价大于55日线，p2和p3收盘价低于55日线。副条件：三天都不被20日线和30日线支撑
+        # 买前条件14：p1最高价大于55日线，p2和p3收盘价低于55日线。副条件：三天都不被20日线和30日线支撑
         ma55_t0 = limit_up_day_data['ma55']
         ma55_t1 = day_plus_1_data['ma55']
         ma55_t2 = day_plus_2_data['ma55']
@@ -776,7 +927,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 # print(f"[{code}] 触发MA55假突破回落形态，排除。")
                 return RuleEnum.FAILED_MA55_BREAKOUT
 
-        # 买前条件11：p1阴线，p2红柱，p3十字星并且p3收盘价小于p2实体的一半。副条件：三天都不被十日线支撑，并且五日十日二十日不粘和
+        # 买前条件15：p1阴线，p2红柱，p3十字星并且p3收盘价小于p2实体的一半。副条件：三天都不被十日线支撑，并且五日十日二十日不粘和
         if not is_red_candle_p1:
             midpoint_p1_body = (open_p1 + close_p1) / 2
             if close_p2 <= midpoint_p1_body:
@@ -794,7 +945,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                         # print(f"[{code}] 触发上涨乏力形态 (T+3跌破T+2阳线一半)，排除。")
                         return RuleEnum.FAILED_REBOUND_PATTERN
 
-        # 买前条件12：涨停后三天的最高值差不多相等，p1p2存在上影线长度占K线总长度的20%以上
+        # 买前条件16：涨停后三天的最高值差不多相等，p1p2存在上影线长度占K线总长度的20%以上
         highs = [day_plus_1_data['high'], day_plus_2_data['high'], day_plus_3_data['high']]
         max_h, min_h = max(highs), min(highs)
         if max_h > 0 and (max_h - min_h) / max_h < 0.01:
@@ -821,7 +972,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     and not checker.is_51020_m1_nian_he(0.005)):
                 return RuleEnum.FLAT_TOP_REJECTION
 
-        # 买前条件15：如果是第四天买入，排除第三天在预计1.04时可能买入的股票，同时保留0.98时候可能买入的股票。最后的结果再排除被20日线和30日线支撑的股票
+        # 买前条件17：如果是第四天买入，排除第三天在预计1.04时可能买入的股票，同时保留0.98时候可能买入的股票。结果再排除被20日线和30日线支撑的股票
         day_3_104_price = simulate_ma5_order_prices(df, day_plus_3_day_date, 1.04)
         day_3_098_price = simulate_ma5_order_prices(df, day_plus_3_day_date, 0.98)
         if day_3_104_price is not None and day_3_098_price is not None:
@@ -832,7 +983,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     and not checker.is_30_p1p2p3_support_only_close()):
                 return RuleEnum.UNSUPPORTED_PULLBACK_ON_T3
 
-        # 条件15：涨停后第一日高点高于涨停后第二日和第三日。涨停后第一日的低点高于涨停后第二日和第三日的低点。19年的数据还要优化，期望0.78
+        # 买前条件18：涨停后第一日高点高于涨停后第二日和第三日。涨停后第一日的低点高于涨停后第二日和第三日的低点。19年的数据还要优化，期望0.78
         if high_p2 < high_p1 and high_p3 < high_p1:
             if (low_p2 < low_p1 and low_p3 < low_p1
                     and not checker.is_51020_m1_nian_he()
@@ -840,7 +991,7 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                     and not checker.is_stable_platform_to_new_low()):
                 return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
-        # 买前条件16：整理期持续阴跌且缺乏支撑
+        # 买前条件19：整理期持续阴跌且缺乏支撑
         is_yin_p1 = close_p1 < open_p1
         is_yin_p3 = close_p3 < open_p3
         if (is_yin_p1 and is_yin_p3
@@ -851,15 +1002,12 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 and not checker.is_stable_platform()):
             return RuleEnum.UNSUPPORTED_WEAK_CONSOLIDATION
 
-        # 买前条件 : 排除T+3日出现高波动长影十字星，显示多空激战/力竭
+        # 买前条件20 : 排除T+3日出现高波动长影十字星，显示多空激战/力竭
         p3_range = high_p3 - low_p3
         p3_body = abs(open_p3 - close_p3)
         if p3_range > 0:
-            # T+3日振幅超过前一日收盘价的5%，视为高波动
             is_wide_range = p3_range / close_p2 > 0.05
-            # K线实体长度不足总振幅的20%，视为十字星形态
             is_small_body = p3_body / p3_range < 0.2
-            # 成交量并未显著萎缩，说明分歧是放量的
             is_volume_not_shrinking = volume_p3 > (limit_up_day_volume * 0.8)
             if (is_wide_range and is_small_body and is_volume_not_shrinking
                     and not checker.is_51020_m1_nian_he()
@@ -870,66 +1018,25 @@ def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_id
                 # print(f"[{code}] 在 {day_plus_3_day_date.date()} 出现高波动十字星，排除。")
                 return RuleEnum.EXHAUSTION_CANDLE_ON_T3
 
-    if offset == 2:
-        # 新增买入条件 5: “高位滞涨”形态 — T+1日缩量/平量横盘收十字星
-        # 核心逻辑：在经历涨停后，股价在次日维持高位，但K线实体极小（振幅可能不小），收出十字星或纺锤线。
-        # 这代表多空双方在高位达成短暂平衡，上涨动力停滞。如果成交量相比涨停日没有有效放大，
-        # 则说明没有新的增量资金愿意追高，是一种上涨中继乏力的信号。
-        is_doji_candle = abs(open_p1 - close_p1) / limit_up_day_price < 0.01  # K线实体小于1%
-        is_not_breakthrough_volume = volume_p1 < limit_up_day_volume * 1.2  # 成交量未显著放大
-        is_stagnated = high_p1 < limit_up_day_high * 1.02  # 且并未向上突破
-        if (is_doji_candle and is_not_breakthrough_volume and is_stagnated
-                and not checker.is_51020_m1_nian_he()
-                and not checker.is_102030_m1_nian_he(0.01)):
-            return RuleEnum.STAGNATION_AT_PEAK
-        # 新增条件6：“微型通道”加速后的力竭涨停 (Parabolic Climb Exhaustion)
-        # 逻辑：股价在涨停前沿着5日线形成一个陡峭的上升通道，连续多日（如3天以上）小阳线上涨，
-        # 且每日最低价从未有效回踩5日均线，股价与均线乖离率逐渐拉大。这种无修正的加速上涨本身
-        # 积聚了大量短线获利盘。此时出现的涨停，很可能不是新一轮行情的开始，而是这段加速行情的
-        # “终极冲刺”或“烟火式”结尾，极易在次日引发获利盘的集中抛售。
-        # 检查M-1, M-2, M-3是否连续阳线爬升
-        is_climbing_m1 = close_m1 > open_m1
-        is_climbing_m3 = day_minus_3_data['close'] > day_minus_3_data['open']
-        if is_climbing_m1 and is_climbing_m3:
-            # 检查最近两天是否明显脱离5日线，没有回踩
-            ma5_m1 = day_minus_1_data['ma5']
-            ma5_m2 = day_minus_2_data['ma5']
-            is_detached_m1 = low_m1 > ma5_m1
-            is_detached_m2 = low_m2 > ma5_m2
-            if is_detached_m1 and is_detached_m2:
-                return RuleEnum.PARABOLIC_CLIMB_EXHAUSTION
-
-        # 新增条件10：“僵尸股”突兀涨停 (Breakout from Extreme Stagnation)
-        # 逻辑：一个健康的底部或平台，应该是有“呼吸”的，即存在一定程度的、良性的日内波动。
-        # 如果一只股票在涨停前的相当长一段时间里（如15-20天），K线形态如同“心电图走成一条直线”，
-        # 每日价格变动极小，成交极其低迷。这种“僵尸”状态下的突然涨停，往往缺乏坚实的逻辑支撑，
-        # 可能是由单个主体的突袭式拉升或未经验证的消息刺激所致，其持续性存疑。我们偏爱那些
-        pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
-        # 计算每日收盘价变化率的绝对值
-        daily_change_pct = (pre_window_20d['close'].pct_change().abs())
-        # 如果在过去20天里，有超过10天（50%）的日收盘价变动小于0.5%，则认为是极端沉寂
-        stagnant_days_count = (daily_change_pct < 0.01).sum()
-        if stagnant_days_count > 11 and not checker.is_10120_m1_nian_he() and not checker.is_stable_platform_to_new_low():
-            return RuleEnum.BREAKOUT_FROM_EXTREME_STAGNATION
-
-    if offset == 4:
-        num=30
-        if limit_up_day_idx >= num:  # 确保有足够的数据进行回看
-            # 定位到30个交易日之前的那一天
-            pre_limit_up_window = df.iloc[limit_up_day_idx - num: limit_up_day_idx]
-            # 2. 找到这个窗口内的最低价 (使用.low.min()来获取最低点)
+        # 买前条件21：30日最低点在T+1日收阳线中
+        if limit_up_day_idx >= 30:
+            pre_limit_up_window = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
             lowest_low_30d = pre_limit_up_window['close'].min()
-            # 3. 获取涨停前一日的收盘价 (变量 close_m1 已在函数外部定义)
             price_before_limit_up = close_m1
-            # 4. 计算从最低点到涨停前的涨幅，并进行判断
-            if lowest_low_30d > 0:  # 避免除以零的错误
+            if lowest_low_30d > 0:
                 gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
-                if 0.7>gain_from_low > 0.3:
-                    return None
+                if (0.7 > gain_from_low > 0.3
+                        and not checker.is_120_p0m1m2_support()
+                        and not checker.is_10_p1p2p3_support()
+                        and not checker.is_120250_m1_nian_he()
+                        and not checker.is_55120_m1_nian_he()):
+                    return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
 
-        # return RuleEnum.DISTRIBUTION_VOLUME_SIGNATURE
-    # return None  # 所有检查通过
-    return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
+        # 新策略开头对齐位置---------------------------------------------------
+    # 四日专有策略结束 --------------------------------------------------------
+
+    return None  # 所有检查通过
+    # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
@@ -1050,7 +1157,7 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
     if (start_idx + 1) >= len(df):
         return signals
 
-    def _create_record_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price,
+    def _create_record_dict(buy_data, sell_day, sell_price, sell_reason_str, hold_days_val, actual_price, score,
                             rejection_rule=None):
         # 确保价格非空，避免计算错误
         actual_price = actual_price if actual_price is not None else 0
@@ -1063,6 +1170,7 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
             '首板日': first_limit_day.strftime('%Y-%m-%d'),
             '买入日': buy_data.name.strftime('%Y-%m-%d'),
             '卖出日': sell_day.strftime('%Y-%m-%d'),
+            '评分': score,
             '涨停后天数': (buy_data.name - first_limit_timestamp).days,
             '持有天数': hold_days_val,
             '买入价': round(actual_price, 2),
@@ -1091,10 +1199,8 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
         current_day = df.index[start_idx + offset]
         current_data = df.iloc[start_idx + offset]
 
-        # 计算挂单价格
         price_ma5 = simulate_ma5_order_prices(df, current_day, config.PREDICT_PRICE_INCREASE_RATIO)
-        if price_ma5 is None:
-            continue
+        if price_ma5 is None: continue
 
         # 获取当日价格数据
         day_open = current_data['open']
@@ -1110,6 +1216,8 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
         actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
         rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
+
+        score, reasons = calculate_quality_score(stock_info, df, start_idx, offset, config)
 
         # 持有期卖出逻辑
         hold_days = 0
@@ -1163,7 +1271,7 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
             # 如果被排除，创建一条完整的排除记录
             rejection_record = _create_record_dict(
                 current_data, final_sell_day, final_sell_price,
-                final_reason, hold_days, actual_price,
+                final_reason, hold_days, actual_price, score,
                 rejection_rule=rejection_rule
             )
             rejection_log.append(rejection_record)
@@ -1171,7 +1279,7 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
             # 如果未被排除，创建一条成功的交易信号
             signal = _create_record_dict(
                 current_data, final_sell_day, final_sell_price,
-                final_reason, hold_days, actual_price
+                final_reason, hold_days, actual_price, score
             )
             signals.append(signal)
             # 找到一个买点后就终止对该首板信号的后续检查
@@ -1252,7 +1360,7 @@ def save_trades_excel(result_df, rejections_df):
 
         # --- 写入交易明细 ---
         if not result_df.empty:
-            column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '涨停后天数',
+            column_order = ['股票代码', '股票名称', '首板日', '买入日', '卖出日', '评分', '涨停后天数',
                             '持有天数', '买入价', '卖出价', '涨停后第二日涨幅(%)', '收益率(%)', '卖出原因']
             result_df = result_df[column_order]
             # 按买入日降序排序
@@ -1267,7 +1375,7 @@ def save_trades_excel(result_df, rejections_df):
             rejections_df = rejections_df[rejections_df['阶段'] != '首板筛选'].copy()
             if not rejections_df.empty:
                 rejection_columns = [
-                    '股票代码', '股票名称', '首板日', '买入日', '卖出日',
+                    '股票代码', '股票名称', '首板日', '买入日', '卖出日', '评分',
                     '持有天数', '买入价', '卖出价', '收益率(%)', '卖出原因',
                     '阶段', '规则名称', '规则描述', '规则类型'
                 ]
@@ -1535,9 +1643,44 @@ if __name__ == '__main__':
                 f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
             print(f"近三月收益：{monthly_str}")
 
-            # 示例输出
-            # print("\n\033[1m最近5笔交易记录:\033[0m")
-            # print(result_df.tail(5).to_string(index=False))
+            print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
+
+            score_groups = {
+                "评分 >= 150": result_df[result_df['评分'] >= 150],
+                "100 <= 评分 < 150": result_df[(result_df['评分'] >= 100) & (result_df['评分'] < 150)],
+                "50 <= 评分 < 100": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 100)],
+                "评分 < 50": result_df[result_df['评分'] < 50]
+            }
+
+            for label, df_group in score_groups.items():
+                if len(df_group) == 0:
+                    print(f"{label:<18}: 无交易记录")
+                    continue
+
+                win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
+                avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
+                avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
+                # 处理可能不存在亏损交易的情况
+                if np.isnan(avg_loss_group): avg_loss_group = 0
+
+                profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
+                avg_hold_days_group = df_group['持有天数'].mean()
+
+                # 处理可能不存在盈利交易的情况
+                if np.isnan(avg_win_group): avg_win_group = 0
+
+                expectancy_group = (win_rate_group / 100) * avg_win_group - (1 - win_rate_group / 100) * avg_loss_group
+
+                print(
+                    f"{label:<18}: "
+                    f"总交易数: {len(df_group):<4}，"
+                    f"胜率: {win_rate_group:.2f}%，"
+                    f"均盈: {avg_win_group:.2f}% | "
+                    f"均亏: {avg_loss_group:.2f}% | "
+                    f"均持: {avg_hold_days_group:.2f}，"
+                    f"盈亏比: {profit_ratio_group:.2f}:1，"
+                    f"期望: {expectancy_group:.3f}"
+                )
         else:
             print("未产生有效交易信号")
 
