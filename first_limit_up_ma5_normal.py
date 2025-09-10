@@ -1,7 +1,7 @@
 import concurrent.futures
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -20,6 +20,11 @@ class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
     USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+
+    # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
+    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
+    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [4])
+    BUY_OFFSETS: list[int] = field(default_factory=lambda: [2, 4])
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -98,108 +103,68 @@ def calculate_quality_score(stock_info: dict, df: pd.DataFrame, limit_up_day_idx
     - 根据积极信号加分，根据消极信号减分。
     - 返回最终得分和评分原因列表。
     """
-    score = 40
+    score = 0
     reasons = []
     checker = ConditionChecker(df, limit_up_day_idx=limit_up_day_idx, offset=offset, stock_info=stock_info)
 
     # --- 提取常用数据变量，保持代码清晰 ---
     limit_up_day_data = df.iloc[limit_up_day_idx]
+    limit_up_day_price = limit_up_day_data['close']
+    limit_up_day_volume = limit_up_day_data['volume']
     day_minus_1_data = df.iloc[limit_up_day_idx - 1]
     day_plus_1_data = df.iloc[limit_up_day_idx + 1]
-
+    volume_p1 = day_plus_1_data['volume']
     close_m1 = df.iloc[limit_up_day_idx - 1]['close']
     ma30_m1 = df.iloc[limit_up_day_idx - 1]['ma30']
 
     # --- 积极信号（加分项）---
 
-    # 1. 黄金趋势背景 (+10分)
-    # 总交易数: 369 ，胜率: 46.34%，均盈: 10.47% | 均亏: 3.20% | 均持: 2.15，盈亏比: 3.27:1，期望: 3.131
-    # ma5_p0, ma10_p0, ma20_p0, ma55_p0 = limit_up_day_data[['ma5', 'ma10', 'ma20', 'ma55']]
-    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
-    #     if limit_up_day_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
-    #         score += 10
-    #         reasons.append("(+10) 黄金趋势背景")
-
-    # 总交易数: 103 ，胜率: 40.78%，均盈: 9.72% | 均亏: 2.96% | 均持: 2.08，盈亏比: 3.28:1，期望: 2.209
-    ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma55']]
+    # 总交易数: 101 ，胜率: 40.59%，均盈: 9.76% | 均亏: 3.06% | 均持: 2.06，盈亏比: 3.19:1，期望: 2.147
+    # 总交易数: 280 ，胜率: 40.71%，均盈: 6.90% | 均亏: 4.33% | 均持: 1.75，盈亏比: 1.59:1，期望: 0.244
+    ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
     if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
         if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+            score -= 10
+            reasons.append("(-10) 黄金趋势背景")
+
+    # 前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
+    pre5_start = df.index[limit_up_day_idx - 5]
+    pre5_close = df.loc[pre5_start, 'close']
+    if pre5_close != 0:
+        total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
+        # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
+        if total_change <1:
+          score += 10
+          reasons.append("(+10) 四天累计只能涨1%")
+        # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
+        if 3<=total_change <6:
             score += 10
-            reasons.append("(+10) 黄金趋势背景")
-    # #
-    # # 总交易数: 464 ，胜率: 46.98%，均盈: 10.10% | 均亏: 3.12% | 均持: 2.11，盈亏比: 3.24:1，期望: 3.090
-    # ma5_p0, ma10_p0, ma20_p0, ma60_p0 = day_plus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
-    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma60_p0])):
-    #     if limit_up_day_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma60_p0:
-    #         score += 10
-    #         reasons.append("(+10) 黄金趋势背景")
+            reasons.append("(+10) 四天累计涨幅在3-5%内")
 
-    # if offset == 4:
-    #     day_plus_2_data = df.iloc[limit_up_day_idx + 2]
-    #     day_plus_3_data = df.iloc[limit_up_day_idx + 3]
-    #     ma5_p0, ma10_p0, ma20_p0, ma60_p0 = day_plus_2_data[['ma5', 'ma10', 'ma20', 'ma60']]
-    #     if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma60_p0])):
-    #         if day_plus_2_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma60_p0:
-    #             score += 10
-    #             reasons.append("(+10) 黄金趋势背景")
+    # 涨停后第一天和涨停当日成交量关系
+    if volume_p1 <= limit_up_day_volume * 1.3:
+        # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
+        score += 10
+        reasons.append("(+10) 成交量占比小于1.3")
+    if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
+        # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
+        score += 10
+        reasons.append("(+10) 成交量占比在1.5-1.8内")
 
-    # 2. 缩量精巧回调 (+20分)
-    # if offset == 2:
-    #     is_volume_shrinking = day_plus_1_data['volume'] < limit_up_day_data['volume'] * 0.6
-    #     is_small_body = abs(day_plus_1_data['open'] - day_plus_1_data['close']) / limit_up_day_data['close'] < 0.02
-    #     is_support_held = day_plus_1_data['low'] > limit_up_day_data['open']
-    #     if is_volume_shrinking and is_small_body and is_support_held:
-    #         score += 20
-    #         reasons.append("(+20) 缩量精巧回调")
-    #
-    # # 3. 基石放量突破 (+15分)
-    # avg_vol_20d = df['volume'].iloc[limit_up_day_idx - 20: limit_up_day_idx].mean()
-    # if avg_vol_20d > 0 and limit_up_day_data['volume'] > avg_vol_20d * 5:
-    #     score += 15
-    #     reasons.append("(+15) 基石放量突破")
-    #
-    # # --- 消极信号（减分项，精选核心规则作为示范）---
-    #
-    # if offset == 2 or offset == 4:
-    #     # 1. 趋势冲突 (-30分，重大减分项)
-    #     if limit_up_day_idx > 65:
-    #         ma10_p1 = day_plus_1_data['ma10']
-    #         ma60_p1 = day_plus_1_data['ma60']
-    #         ma10_m4 = df.iloc[limit_up_day_idx - 4]['ma10']
-    #         ma60_m4 = df.iloc[limit_up_day_idx - 4]['ma60']
-    #         if all(pd.notna([ma60_p1, ma10_m4, ma60_m4])) and (ma10_p1 > ma10_m4 and ma60_p1 < ma60_m4):
-    #             score -= 30
-    #             reasons.append("(-30) 趋势冲突")
-    #
-    #     # 2. 巨量避雷针 (-40分，重大减分项)
-    #     upper_shadow_ratio_p1 = (day_plus_1_data['high'] - max(day_plus_1_data['open'], day_plus_1_data['close'])) / \
-    #                             limit_up_day_data['close'] if limit_up_day_data['close'] > 0 else 0
-    #     is_long_upper_shadow = upper_shadow_ratio_p1 > 0.04
-    #     is_huge_volume = day_plus_1_data['volume'] > limit_up_day_data['volume'] * 1.8
-    #     is_red_candle = day_plus_1_data['close'] < day_plus_1_data['open']
-    #     if is_huge_volume and is_long_upper_shadow and is_red_candle:
-    #         score -= 40
-    #         reasons.append("(-40) 巨量避雷针")
-    #
-    #     # 3. 根基不稳 (-25分)
-    #     is_weak_background = close_m1 < ma30_m1
-    #     is_weak_follow_through = day_plus_1_data['high'] < limit_up_day_data['high'] and day_plus_1_data['close'] < \
-    #                              day_plus_1_data['open']
-    #     if is_weak_background and is_weak_follow_through and limit_up_day_data['volume'] < avg_vol_20d * 3:
-    #         score -= 25
-    #         reasons.append("(-25) 根基不稳")
-    #
-    #     # 4. 涨停前已有巨大短期涨幅 (-20分)
-    #     if limit_up_day_idx > 10:
-    #         ten_days_ago_close = df.iloc[limit_up_day_idx - 10]['close']
-    #         if ten_days_ago_close > 0:
-    #             prior_gain = (close_m1 - ten_days_ago_close) / ten_days_ago_close
-    #             if prior_gain > 0.30 and is_red_candle:
-    #                 score -= 20
-    #                 reasons.append("(-20) 涨停前短期暴涨")
+    if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
+        # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
+        score -= 10
+        reasons.append("(-10) 成交量占比在3-4.5内")
+    if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
+        # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
+        score -= 10
+        reasons.append("(-10) 成交量占比在1.3-1.5内")
 
-    # 也可以加入其它您认为重要的减分项...
-    # 例如： if some_bad_condition: score -= 15; reasons.append("(-15) some reason")
+
+    if offset == 4:
+        day_plus_2_data = df.iloc[limit_up_day_idx + 2]
+        day_plus_3_data = df.iloc[limit_up_day_idx + 3]
+
 
     return score, reasons
 
@@ -1190,8 +1155,9 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
             })
         return record
 
-    # for offset in range(4, 5):  # 检查涨停后第2、3、4、5天
-    for offset in [2, 4]:  # 检查涨停后第2、3、4、5天
+    # for offset in range(4, 5):  # 检查涨停后第2或4天
+    # for offset in [2, 4]:  # 检查涨停后第2和4天
+    for offset in config.BUY_OFFSETS:
         if start_idx + offset >= len(df):
             break
 
@@ -1646,10 +1612,12 @@ if __name__ == '__main__':
             print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
 
             score_groups = {
-                "评分 >= 150": result_df[result_df['评分'] >= 150],
-                "100 <= 评分 < 150": result_df[(result_df['评分'] >= 100) & (result_df['评分'] < 150)],
-                "50 <= 评分 < 100": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 100)],
-                "评分 < 50": result_df[result_df['评分'] < 50]
+                "评分 >= 250": result_df[result_df['评分'] >= 50],
+                "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
+                "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
+                "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
+                "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
+                "评分 < 10": result_df[result_df['评分'] < 10]
             }
 
             for label, df_group in score_groups.items():

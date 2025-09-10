@@ -164,13 +164,14 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
             rejection_rule = normal.is_valid_buy_opportunity(stock_info, df, base_day_idx, offset, StrategyConfig())
             if not rejection_rule:
+                score, reasons = normal.calculate_quality_score(stock_info, df, base_day_idx, offset, config)
                 theme = query_tool.get_theme_by_code(code)
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme))
+                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme, score))
 
     days_groups = {}
     if isNeedLog: print(f"\n总计发现 {len(limit_up_stocks)} 只符合初步要求的股票")
 
-    for code, name, limit_date_str, theme in limit_up_stocks:
+    for code, name, limit_date_str, theme, score in limit_up_stocks:
         # 排除特定板块和股票
         if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
@@ -183,14 +184,14 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             continue
         limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
         delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
-        days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme))
+        days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme, score))
 
     target_stocks_set, fourth_day_stocks_set = set(), set()
     for delta, stocks in sorted(days_groups.items()):
         for stock_data in stocks:
             code = getAllStockCsv.convert_to_standard_format(stock_data[0])
             target_stocks_set.add(code)
-            if isNeedLog: print("  " + "   ".join(stock_data) + "  ")
+            if isNeedLog: print("  " + "   ".join(map(str, stock_data)) + "  ")
 
     # ===== 提取涨停后第四天的股票(delta_days=3) =====
     if 4 in days_groups:
