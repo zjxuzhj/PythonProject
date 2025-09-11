@@ -14,13 +14,14 @@ from xtquant.xttype import StockAccount
 import first_limit_up_ma5_normal as normal
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
-from common_sell_logic import get_sell_decision, MarketDataContext
+from common_sell_logic import get_sell_decision, MarketDataContext, SellStrategyConfig
 from first_limit_up_ma5_normal import StrategyConfig
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
 from miniqmt_logging_utils import setup_logger
 from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
     load_force_sell_list, save_force_sell_list
+from stock_info import StockInfo
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
@@ -115,7 +116,16 @@ def sell_breached_stocks():
                     prev_up_limit_price=t1_limit_price,
                     prev_down_limit_price=t1_down_limit_price
                 )
-                should_sell, reason = get_sell_decision(position_info, market_data)
+                stock_info = StockInfo(
+                    code=stock_code,
+                    name=query_tool.get_name_by_code(stock_code),
+                    market_value=query_tool.get_stock_market_value(stock_code),
+                    theme=query_tool.get_theme_by_code(stock_code),
+                )
+                sell_config = SellStrategyConfig(
+                    manual_override_stocks={'603863.SH'}
+                )
+                should_sell, reason = get_sell_decision(stock_info, position_info, market_data, sell_config)
                 if 'force_sell_next_day' in position_info and not persistent_states.get(stock_code, {}).get(
                         'force_sell_next_day'):
                     print(f"状态更新: {stock_code} 已被标记为次日强制卖出。")

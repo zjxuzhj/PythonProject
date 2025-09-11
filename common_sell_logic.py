@@ -1,5 +1,8 @@
-from dataclasses import dataclass
-from typing import Dict, Any, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Any, Tuple, Set
+
+from stock_info import StockInfo
+
 
 @dataclass
 class SellStrategyConfig:
@@ -8,6 +11,7 @@ class SellStrategyConfig:
     ma_breakdown_threshold: float = -0.004  # 跌破MA5卖出阈值: (收盘价 - MA5) / MA5 <= -0.4%
     postpone_sell_lower_bound: float = -0.09  # 延迟卖出的跌幅下限 (例如, -9%)
     postpone_sell_upper_bound: float = -0.08  # 延迟卖出的跌幅上限 (例如, -8%)
+    manual_override_stocks: Set[str] = field(default_factory=set)
 
 @dataclass
 class MarketDataContext:
@@ -25,6 +29,7 @@ class MarketDataContext:
 
 
 def get_sell_decision(
+    stock_info: StockInfo,
     position_info: Dict[str, Any],
     market_data: MarketDataContext,
     config: SellStrategyConfig = SellStrategyConfig()
@@ -40,6 +45,9 @@ def get_sell_decision(
              - should_sell (bool): True表示应该卖出，False则不卖。
              - reason (str): 卖出原因，如果不卖出则为 None。
     """
+    if stock_info.code in config.manual_override_stocks:
+        return False, '手动操作'
+
     # 按优先级顺序检查卖出条件
 
     # 卖出条件1: 最大持有天数限制 ---

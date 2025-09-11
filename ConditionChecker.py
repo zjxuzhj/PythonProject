@@ -3,6 +3,8 @@ from typing import Optional
 
 import pandas as pd
 
+from stock_info import StockInfo
+
 
 @dataclass
 class RuleEnumConfig:
@@ -24,7 +26,7 @@ class RuleEnumConfig:
 
 
 class ConditionChecker:
-    def __init__(self, df: pd.DataFrame, limit_up_day_idx: int, offset: int, stock_info: dict):
+    def __init__(self, df: pd.DataFrame, limit_up_day_idx: int, offset: int, stock_info: StockInfo):
         """
         最终统一版初始化方法。
         :param df: DataFrame
@@ -353,6 +355,8 @@ class ConditionChecker:
         # and not checker.is_51020_m1_nian_he(0.015)
         # and not checker.is_51020_m1_nian_he(0.02)
         # and not checker.is_102030_m1_nian_he()
+        # and not checker.is_102030_m1_nian_he(0.01)
+        # and not checker.is_102030_m1_nian_he(0.012)
         # and not checker.is_203055_m1_nian_he()
         # and not checker.is_55120250_m1_nian_he(0.012)
         # and not checker.is_55120250_m1_nian_he()

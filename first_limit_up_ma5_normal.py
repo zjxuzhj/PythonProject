@@ -12,6 +12,7 @@ from scipy.signal import find_peaks
 import getAllStockCsv
 from ConditionChecker import ConditionChecker
 from common_sell_logic import get_sell_decision, MarketDataContext
+from stock_info import StockInfo
 from strategy_rules import RuleEnum
 
 
@@ -95,7 +96,7 @@ def get_market_type(symbol: str) -> str:
     return "主板"
 
 
-def calculate_quality_score(stock_info: dict, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
+def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
                             config: StrategyConfig) -> tuple[int, list[str]]:
     """
     计算给定买入机会的质量得分。
@@ -103,7 +104,7 @@ def calculate_quality_score(stock_info: dict, df: pd.DataFrame, limit_up_day_idx
     - 根据积极信号加分，根据消极信号减分。
     - 返回最终得分和评分原因列表。
     """
-    score = 0
+    score = 20
     reasons = []
     checker = ConditionChecker(df, limit_up_day_idx=limit_up_day_idx, offset=offset, stock_info=stock_info)
 
@@ -111,60 +112,82 @@ def calculate_quality_score(stock_info: dict, df: pd.DataFrame, limit_up_day_idx
     limit_up_day_data = df.iloc[limit_up_day_idx]
     limit_up_day_price = limit_up_day_data['close']
     limit_up_day_volume = limit_up_day_data['volume']
+    limit_up_day_low = limit_up_day_data['low']
     day_minus_1_data = df.iloc[limit_up_day_idx - 1]
     day_plus_1_data = df.iloc[limit_up_day_idx + 1]
     volume_p1 = day_plus_1_data['volume']
     close_m1 = df.iloc[limit_up_day_idx - 1]['close']
     ma30_m1 = df.iloc[limit_up_day_idx - 1]['ma30']
+    day_minus_2_data = df.iloc[limit_up_day_idx - 2]
+    open_m2 = day_minus_2_data['open']
+    high_m2 = day_minus_2_data['high']
+    low_m2 = day_minus_2_data['low']
+    close_m2 = day_minus_2_data['close']
 
     # --- 积极信号（加分项）---
 
+    # if checker.is_51020_m1_nian_he():
+    #     score += 10
+    #     reasons.append("(+10) 10日ema支持")
+    if checker.is_20_p1p2p3_support():
+        score += 10
+        reasons.append("(+10) 10日ema支持")
+    # 检查涨停日最低价是否大幅高于前一日收盘价，这通常意味着非常强势的跳空高开且未回补缺口
+    # if (close_m1 * 1.02) < limit_up_day_low <= (close_m1 * 1.05):
+    #     # 总交易数: 144 ，胜率: 46.53%，均盈: 7.16% | 均亏: 3.13% | 均持: 2.62，盈亏比: 2.28:1，期望: 1.655
+    #     # 总交易数: 507 ，胜率: 40.63%，均盈: 6.83% | 均亏: 3.03% | 均持: 2.41，盈亏比: 2.25:1，期望: 0.973
+    #     score -= 10
+    #     reasons.append("(-10) 涨停日最低价>昨收1.020<昨收1.050")
+    # if (close_m1 * 0.985) < limit_up_day_low <= (close_m1 * 0.990):
+    #     # 总交易数: 113 ，胜率: 51.33 %，均盈: 9.51 % | 均亏: 2.83 % | 均持: 2.26，盈亏比: 3.36:1，期望: 3.501
+    #     # 总交易数: 468 ，胜率: 43.38%，均盈: 7.18% | 均亏: 3.19% | 均持: 2.19，盈亏比: 2.25:1，期望: 1.311
+    #     score += 10
+    #     reasons.append("(+10) 涨停日最低价>昨收0.985<昨收0.990")
+
     # 总交易数: 101 ，胜率: 40.59%，均盈: 9.76% | 均亏: 3.06% | 均持: 2.06，盈亏比: 3.19:1，期望: 2.147
     # 总交易数: 280 ，胜率: 40.71%，均盈: 6.90% | 均亏: 4.33% | 均持: 1.75，盈亏比: 1.59:1，期望: 0.244
-    ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
-    if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
-        if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
-            score -= 10
-            reasons.append("(-10) 黄金趋势背景")
+    # ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
+    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
+    #     if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+    #         score -= 10
+    #         reasons.append("(-10) 黄金趋势背景")
 
     # 前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-    pre5_start = df.index[limit_up_day_idx - 5]
-    pre5_close = df.loc[pre5_start, 'close']
-    if pre5_close != 0:
-        total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
-        # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
-        if total_change <1:
-          score += 10
-          reasons.append("(+10) 四天累计只能涨1%")
-        # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
-        if 3<=total_change <6:
-            score += 10
-            reasons.append("(+10) 四天累计涨幅在3-5%内")
+    # pre5_start = df.index[limit_up_day_idx - 5]
+    # pre5_close = df.loc[pre5_start, 'close']
+    # if pre5_close != 0:
+    #     total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
+    #     # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
+    #     if total_change <1:
+    #       score += 10
+    #       reasons.append("(+10) 四天累计只能涨1%")
+    #     # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
+    #     if 3<=total_change <6:
+    #         score += 10
+    #         reasons.append("(+10) 四天累计涨幅在3-5%内")
 
     # 涨停后第一天和涨停当日成交量关系
-    if volume_p1 <= limit_up_day_volume * 1.3:
-        # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
-        score += 10
-        reasons.append("(+10) 成交量占比小于1.3")
-    if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
-        # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
-        score += 10
-        reasons.append("(+10) 成交量占比在1.5-1.8内")
-
-    if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
-        # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
-        score -= 10
-        reasons.append("(-10) 成交量占比在3-4.5内")
-    if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
-        # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
-        score -= 10
-        reasons.append("(-10) 成交量占比在1.3-1.5内")
-
+    # if volume_p1 <= limit_up_day_volume * 1.3:
+    #     # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
+    #     score += 10
+    #     reasons.append("(+10) 成交量占比小于1.3")
+    # if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
+    #     # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
+    #     score += 10
+    #     reasons.append("(+10) 成交量占比在1.5-1.8内")
+    #
+    # if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
+    #     # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
+    #     score -= 10
+    #     reasons.append("(-10) 成交量占比在3-4.5内")
+    # if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
+    #     # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
+    #     score -= 10
+    #     reasons.append("(-10) 成交量占比在1.3-1.5内")
 
     if offset == 4:
         day_plus_2_data = df.iloc[limit_up_day_idx + 2]
         day_plus_3_data = df.iloc[limit_up_day_idx + 3]
-
 
     return score, reasons
 
@@ -199,16 +222,16 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
     return df
 
 
-def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Timestamp, config: StrategyConfig) -> \
+def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd.Timestamp, config: StrategyConfig) -> \
         Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
     """
-    code = stock_info['code']
-    name = stock_info['name']
-    theme = stock_info['theme']
-    market_value = stock_info['market_value']
+    code = stock_info.code
+    name = stock_info.name
+    theme = stock_info.theme
+    market_value = stock_info.market_value
     day_idx = df.index.get_loc(day)
 
     if df.index.get_loc(day) + 1 >= len(df):
@@ -522,12 +545,12 @@ def is_valid_first_limit_up_day(stock_info: dict, df: pd.DataFrame, day: pd.Time
     # return RuleEnum.ISLAND_REVERSAL_PATTERN
 
 
-def is_valid_buy_opportunity(stock_info: dict, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
+def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
                              config: StrategyConfig) -> Optional[RuleEnum]:
     """
     检查从首板日到潜在买入日之间，是否满足所有的买入前置条件。
     """
-    code = stock_info['code']
+    code = stock_info.code
     checker = ConditionChecker(df, limit_up_day_idx=limit_up_day_idx, offset=offset, stock_info=stock_info)
 
     limit_up_day_date = df.index[limit_up_day_idx]
@@ -1015,11 +1038,11 @@ def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, co
     return False
 
 
-def find_first_limit_up(stock_info: dict, df, config: StrategyConfig, rejection_log):
+def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, rejection_log):
     """识别首板涨停日并排除连板"""
     limit_days = df[df['is_limit']].index.tolist()
-    code = stock_info['code']
-    name = stock_info['name']
+    code = stock_info.code
+    name = stock_info.name
     valid_days = []
     for day in limit_days:
         # 日期过滤条件（方便回测）
@@ -1103,7 +1126,7 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
     return False, None
 
 
-def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConfig, rejection_log):
+def generate_signals(stock_info: StockInfo, df, first_limit_day, config: StrategyConfig, rejection_log):
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
@@ -1130,8 +1153,8 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
         # 计算收益率
         profit_rate = ((sell_price - actual_price) / actual_price * 100) if actual_price > 0 else 0
         record = {
-            '股票代码': stock_info['code'],
-            '股票名称': stock_info['name'],
+            '股票代码': stock_info.code,
+            '股票名称': stock_info.name,
             '首板日': first_limit_day.strftime('%Y-%m-%d'),
             '买入日': buy_data.name.strftime('%Y-%m-%d'),
             '卖出日': sell_day.strftime('%Y-%m-%d'),
@@ -1211,7 +1234,7 @@ def generate_signals(stock_info: dict, df, first_limit_day, config: StrategyConf
                     prev_up_limit_price=prev_sell_data['limit_price'],
                     prev_down_limit_price=prev_sell_data['down_limit_price']
                 )
-                should_sell, reason = get_sell_decision(position_info, market_data)
+                should_sell, reason = get_sell_decision(stock_info, position_info, market_data)
                 if should_sell:
                     final_sell_day = sell_day
                     final_sell_price = current_sell_data['close']
@@ -1533,14 +1556,12 @@ def process_single_stock(stock_info_task):
     if df is None or df.empty:
         return []  # 如果没有数据，返回空列表
     df = prepare_data(df, code, config)
-    stock_info = {
-        'code': code,
-        'name': name,
-        'market_value': query_tool.get_stock_market_value(code),
-        'theme': query_tool.get_theme_by_code(code)
-        # 如果未来有其他信息，比如'所属行业'，也在这里添加
-        # 'industry': query_tool.get_industry_by_code(code)
-    }
+    stock_info = StockInfo(
+        code=code,
+        name=name,
+        market_value=query_tool.get_stock_market_value(code),
+        theme=query_tool.get_theme_by_code(code),
+    )
     first_limit_days = find_first_limit_up(stock_info, df, config, rejection_log)
 
     all_signals = []
@@ -1612,12 +1633,13 @@ if __name__ == '__main__':
             print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
 
             score_groups = {
-                "评分 >= 250": result_df[result_df['评分'] >= 50],
+                "评分 >= 50": result_df[result_df['评分'] >= 50],
                 "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
                 "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
                 "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
                 "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
-                "评分 < 10": result_df[result_df['评分'] < 10]
+                "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
+                "评分 < 0": result_df[result_df['评分'] < 0]
             }
 
             for label, df_group in score_groups.items():

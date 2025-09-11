@@ -7,6 +7,7 @@ import numpy as np
 import first_limit_up_ma5_normal as normal
 import getAllStockCsv
 from first_limit_up_ma5_normal import StrategyConfig
+from stock_info import StockInfo
 
 query_tool = getAllStockCsv.StockQuery()
 
@@ -26,7 +27,7 @@ def get_stock_data(symbol, isNeedLog):
     return pd.DataFrame()
 
 
-def find_recent_first_limit_up(stock_info: dict, df):
+def find_recent_first_limit_up(stock_info: StockInfo, df):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     config = StrategyConfig()
 
@@ -150,12 +151,12 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         df = normal.prepare_data(df, code, config)
 
         # 2. 一次性查询静态数据
-        stock_info = {
-            'code': code,
-            'name': name,
-            'theme': query_tool.get_theme_by_code(code),
-            'market_value': query_tool.get_stock_market_value(code)
-        }
+        stock_info = StockInfo(
+            code=code,
+            name=name,
+            market_value=query_tool.get_stock_market_value(code),
+            theme=query_tool.get_theme_by_code(code),
+        )
         first_limit_days = find_recent_first_limit_up(stock_info, df)
 
         for day in first_limit_days:

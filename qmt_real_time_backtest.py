@@ -9,6 +9,7 @@ import xtquant.xtdata as xtdata
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv
 from common_sell_logic import get_sell_decision, MarketDataContext
+from stock_info import StockInfo
 
 query_tool = getAllStockCsv.StockQuery()
 
@@ -253,7 +254,13 @@ class Backtester:
             prev_up_limit_price=prev_day_data['limit_price'],
             prev_down_limit_price=prev_day_data['down_limit_price']
         )
-        should_sell, reason = get_sell_decision(position_info, market_data)
+        stock_info = StockInfo(
+            code=stock_code,
+            name=query_tool.get_name_by_code(stock_code),
+            market_value=query_tool.get_stock_market_value(stock_code),
+            theme=query_tool.get_theme_by_code(stock_code),
+        )
+        should_sell, reason = get_sell_decision(stock_info, position_info, market_data)
         if should_sell:
             return today_data['close'], reason
         else:
