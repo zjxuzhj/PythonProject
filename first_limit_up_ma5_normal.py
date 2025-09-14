@@ -20,7 +20,7 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -113,77 +113,193 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     limit_up_day_price = limit_up_day_data['close']
     limit_up_day_volume = limit_up_day_data['volume']
     limit_up_day_low = limit_up_day_data['low']
+    limit_up_close = limit_up_day_data['close']
     day_minus_1_data = df.iloc[limit_up_day_idx - 1]
     day_plus_1_data = df.iloc[limit_up_day_idx + 1]
+    day_minus_1_idx = limit_up_day_idx - 1
+    day_minus_1_day_date = df.index[day_minus_1_idx]
+    day_minus_1_data = df.iloc[day_minus_1_idx]
+    open_m1 = day_minus_1_data['open']
+    high_m1 = day_minus_1_data['high']
+    low_m1 = day_minus_1_data['low']
+    close_m1 = day_minus_1_data['close']
+    volume_m1 = day_minus_1_data['volume']
     volume_p1 = day_plus_1_data['volume']
     close_m1 = df.iloc[limit_up_day_idx - 1]['close']
     ma30_m1 = df.iloc[limit_up_day_idx - 1]['ma30']
+    ma60_m1 = df.iloc[limit_up_day_idx - 1]['ma60']
     day_minus_2_data = df.iloc[limit_up_day_idx - 2]
     open_m2 = day_minus_2_data['open']
     high_m2 = day_minus_2_data['high']
     low_m2 = day_minus_2_data['low']
     close_m2 = day_minus_2_data['close']
+    high_p1 = day_plus_1_data['high']
+    open_p1 = day_plus_1_data['open']
+    close_p1 = day_plus_1_data['close']
+    low_p1 = day_plus_1_data['low']
 
-    # --- 积极信号（加分项）---
+    if pd.notna(ma60_m1) and ma60_m1 > 0:
+        bias_ratio_60 = (close_m1 - ma60_m1) / ma60_m1
+        # 总交易数: 161 ，胜率: 51.55%，均盈: 14.28% | 均亏: 4.13% | 均持: 2.16，盈亏比: 3.46:1，期望: 5.359
+        # 总交易数: 440 ，胜率: 43.64%，均盈: 11.34% | 均亏: 4.59% | 均持: 1.89，盈亏比: 2.47:1，期望: 2.363
+        if 0.15 < bias_ratio_60:
+            score += 10
+        # 总交易数: 118 ，胜率: 38.98%，均盈: 8.44% | 均亏: 2.74% | 均持: 2.24，盈亏比: 3.08:1，期望: 1.621
+        # 总交易数: 364 ，胜率: 34.34%，均盈: 8.12% | 均亏: 3.63% | 均持: 1.82，盈亏比: 2.24:1，期望: 0.404
+        if 0.1 < bias_ratio_60<=0.15:
+            score -= 10
+        # 总交易数: 152 ，胜率: 45.39%，均盈: 5.34% | 均亏: 2.98% | 均持: 2.12，盈亏比: 1.79:1，期望: 0.796
+        # 总交易数: 707 ，胜率: 41.44%，均盈: 5.74% | 均亏: 2.64% | 均持: 2.22，盈亏比: 2.17:1，期望: 0.832
+        if -0.09 < bias_ratio_60<=-0.04:
+            score -= 10
 
-    # if checker.is_51020_m1_nian_he():
-    #     score += 10
-    #     reasons.append("(+10) 10日ema支持")
-    if checker.is_20_p1p2p3_support():
+    bias_ratio = (close_m1 - ma30_m1) / ma30_m1
+    # 总交易数: 129 ，胜率: 48.84%，均盈: 12.94% | 均亏: 3.79% | 均持: 2.02，盈亏比: 3.41:1，期望: 4.379
+    # 总交易数: 357 ，胜率: 43.42%，均盈: 10.88% | 均亏: 4.81% | 均持: 1.84，盈亏比: 2.26:1，期望: 2.004
+    if 0.1<bias_ratio:
         score += 10
-        reasons.append("(+10) 10日ema支持")
-    # 检查涨停日最低价是否大幅高于前一日收盘价，这通常意味着非常强势的跳空高开且未回补缺口
-    # if (close_m1 * 1.02) < limit_up_day_low <= (close_m1 * 1.05):
-    #     # 总交易数: 144 ，胜率: 46.53%，均盈: 7.16% | 均亏: 3.13% | 均持: 2.62，盈亏比: 2.28:1，期望: 1.655
-    #     # 总交易数: 507 ，胜率: 40.63%，均盈: 6.83% | 均亏: 3.03% | 均持: 2.41，盈亏比: 2.25:1，期望: 0.973
-    #     score -= 10
-    #     reasons.append("(-10) 涨停日最低价>昨收1.020<昨收1.050")
-    # if (close_m1 * 0.985) < limit_up_day_low <= (close_m1 * 0.990):
-    #     # 总交易数: 113 ，胜率: 51.33 %，均盈: 9.51 % | 均亏: 2.83 % | 均持: 2.26，盈亏比: 3.36:1，期望: 3.501
-    #     # 总交易数: 468 ，胜率: 43.38%，均盈: 7.18% | 均亏: 3.19% | 均持: 2.19，盈亏比: 2.25:1，期望: 1.311
-    #     score += 10
-    #     reasons.append("(+10) 涨停日最低价>昨收0.985<昨收0.990")
+    # 总交易数: 116 ，胜率: 49.14%，均盈: 10.01% | 均亏: 2.85% | 均持: 3.82，盈亏比: 3.51:1，期望: 3.469
+    # 总交易数: 512 ，胜率: 59.77%，均盈: 8.28% | 均亏: 3.00% | 均持: 3.77，盈亏比: 2.76:1，期望: 3.745
+    if bias_ratio <= -0.14:
+        score += 10
+    # 总交易数: 164 ，胜率: 45.12%，均盈: 7.17% | 均亏: 2.92% | 均持: 2.30，盈亏比: 2.46:1，期望: 1.636
+    # 总交易数: 742 ，胜率: 37.87%，均盈: 6.55% | 均亏: 3.01% | 均持: 2.24，盈亏比: 2.18:1，期望: 0.610
+    if -0.14<bias_ratio <= -0.07:
+        score -= 10
 
+    is_red_candle_m1 = close_m1 > open_m1
+    # 计算T-1之前的10日平均成交量
+    avg_volume_pre_10d = df.iloc[limit_up_day_idx - 11: limit_up_day_idx - 1]['volume'].mean()
+    if avg_volume_pre_10d > 0 and is_red_candle_m1:
+        # 总交易数: 168 ，胜率: 39.88%，均盈: 9.10% | 均亏: 3.03% | 均持: 1.89，盈亏比: 3.00:1，期望: 1.804
+        # 总交易数: 573 ，胜率: 39.62%，均盈: 6.61% | 均亏: 2.95% | 均持: 1.91，盈亏比: 2.24:1，期望: 0.839
+        if avg_volume_pre_10d *0.4 <volume_m1 <= (avg_volume_pre_10d * 0.7):
+            score -= 10
+
+    full_range = high_p1 - low_p1
+    if full_range > 1e-5:
+        upper_body = max(open_p1, close_p1)
+        upper_wick_length = high_p1 - upper_body
+        # 条件2: 定义长上影线为上影线长度占K线总长度的比例
+        rate=(upper_wick_length / full_range)
+        # 总交易数: 104 ，胜率: 34.62%，均盈: 8.40% | 均亏: 2.47% | 均持: 2.29，盈亏比: 3.40:1，期望: 1.292
+        # 总交易数: 451 ，胜率: 39.02%，均盈: 7.53% | 均亏: 2.97% | 均持: 2.33，盈亏比: 2.54:1，期望: 1.130
+        if 0.1<rate <= 0.2:
+            score -= 5
+        # 总交易数: 117 ，胜率: 47.01%，均盈: 6.68% | 均亏: 2.83% | 均持: 1.91，盈亏比: 2.36:1，期望: 1.639
+        # 总交易数: 494 ，胜率: 41.50%，均盈: 7.20% | 均亏: 3.10% | 均持: 2.10，盈亏比: 2.32:1，期望: 1.174
+        if 0.4<rate <= 0.45:
+            score -= 5
+
+    # 总交易数: 213 ，胜率: 48.83%，均盈: 10.37% | 均亏: 2.80% | 均持: 2.28，盈亏比: 3.71:1，期望: 3.633
+    # 总交易数: 822 ，胜率: 43.80%，均盈: 7.92% | 均亏: 3.33% | 均持: 2.23，盈亏比: 2.38:1，期望: 1.595
+    pre_window_30d = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
+    daily_change_pct = (pre_window_30d['close'].pct_change().abs())
+    # 如果在过去30天里，有超过11天（50%）的日收盘价变动小于1%，则认为是极端沉寂
+    stagnant_days_count = (daily_change_pct < 0.01).sum()
+    if 4 < stagnant_days_count <= 6:
+        score += 10
+
+    # 涨停后第一日低开幅度
+    # 总交易数: 320 ，胜率: 45.62 %，均盈: 10.29 % | 均亏: 2.86 % | 均持: 2.04，盈亏比: 3.60:1，期望: 3.141
+    # 总交易数: 1166，胜率: 43.83 %，均盈: 8.04 % | 均亏: 3.01 % | 均持: 2.30，盈亏比: 2.67:1，期望: 1.833
+    if (limit_up_close * 1.00) < low_p1 <= (limit_up_close * 1.02):
+         score += 10
+    # 总交易数: 125 ，胜率: 41.60 %，均盈: 9.02 % | 均亏: 2.69 % | 均持: 2.43，盈亏比: 3.35:1，期望: 2.178
+    # 总交易数: 465 ，胜率: 37.85 %，均盈: 6.90 % | 均亏: 3.03 % | 均持: 2.32，盈亏比: 2.28:1，期望: 0.731
+    if (limit_up_close * 0.980) < low_p1 <= (limit_up_close * 0.985):
+        score -= 10
+    # 总交易数: 123 ，胜率: 40.65 %，均盈: 9.27 % | 均亏: 3.24 % | 均持: 2.03，盈亏比: 2.86:1，期望: 1.848
+    # 总交易数: 442 ，胜率: 39.82 %，均盈: 6.39 % | 均亏: 3.55 % | 均持: 2.14，盈亏比: 1.80:1，期望: 0.407
+    if (limit_up_close * 0.96) < low_p1 <= (limit_up_close * 0.97):
+        score -= 10
+
+    # 涨停前30日内从最低点上涨幅度
+    pre_limit_up_window = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
+    lowest_low_30d = pre_limit_up_window['low'].min()
+    price_before_limit_up = close_m1
+    if lowest_low_30d > 0:
+        gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
+        # 总交易数: 164 ，胜率: 51.83%，均盈: 8.79% | 均亏: 3.04% | 均持: 3.51，盈亏比: 2.90:1，期望: 3.095
+        # 总交易数: 592 ，胜率: 47.97%，均盈: 7.79% | 均亏: 2.92% | 均持: 2.95，盈亏比: 2.66:1，期望: 2.215
+        if 0 < gain_from_low <= 0.025:
+            score += 5
+        # 总交易数: 124 ，胜率: 45.16%，均盈: 10.89% | 均亏: 2.57% | 均持: 2.27，盈亏比: 4.24:1，期望: 3.510
+        # 总交易数: 378 ，胜率: 44.71%，均盈: 7.49% | 均亏: 2.68% | 均持: 2.20，盈亏比: 2.80:1，期望: 1.869
+        if 0.10 < gain_from_low <= 0.125:
+            score += 5
+        # 总交易数: 168 ，胜率: 51.19%，均盈: 12.76% | 均亏: 4.21% | 均持: 2.01，盈亏比: 3.03:1，期望: 4.475
+        # 总交易数: 539 ，胜率: 43.78%，均盈: 9.82% | 均亏: 4.59% | 均持: 1.85，盈亏比: 2.14:1，期望: 1.722
+        if 0.29 < gain_from_low:
+            score += 10
+
+    # --- 均线粘合支撑相关---
+    # 总交易数: 83  ，胜率: 54.22 %，均盈: 8.03 % | 均亏: 1.95 % | 均持: 2.11，盈亏比: 4.11:1，期望: 3.460
+    # 总交易数: 381 ，胜率: 43.31 %，均盈: 7.12 % | 均亏: 2.78 % | 均持: 2.28，盈亏比: 2.56:1，期望: 1.505
+    if checker.is_555_m1_abs_nian_he():
+        score += 10
+        reasons.append("(+10) 涨停前一日五日五十五日线粘合")
+    # 总交易数: 54  ，胜率: 53.70%，均盈: 8.75% | 均亏: 2.26% | 均持: 2.04，盈亏比: 3.88:1，期望: 3.654
+    # 总交易数: 290 ，胜率: 40.00%，均盈: 7.49% | 均亏: 2.54% | 均持: 2.02，盈亏比: 2.95:1，期望: 1.473
+    if checker.is_120_p0m1m2_support():
+        score += 10
+        reasons.append("(+10) 涨停日以及前两日120日线支撑")
+
+    # --- 涨停日最低价 ---
+    # 检查涨停日最低价是否大幅高于前一日收盘价，这通常意味着非常强势的跳空高开且未回补缺口
+    # 总交易数: 144 ，胜率: 46.53%，均盈: 7.16% | 均亏: 3.13% | 均持: 2.62，盈亏比: 2.28:1，期望: 1.655
+    # 总交易数: 507 ，胜率: 40.63%，均盈: 6.83% | 均亏: 3.03% | 均持: 2.41，盈亏比: 2.25:1，期望: 0.973
+    if (close_m1 * 1.02) < limit_up_day_low <= (close_m1 * 1.05):
+        score -= 10
+        reasons.append("(-10) 涨停日最低价>昨收1.020<昨收1.050")
+
+    # 总交易数: 113 ，胜率: 51.33 %，均盈: 9.51 % | 均亏: 2.83 % | 均持: 2.26，盈亏比: 3.36:1，期望: 3.501
+    # 总交易数: 468 ，胜率: 43.38%，均盈: 7.18% | 均亏: 3.19% | 均持: 2.19，盈亏比: 2.25:1，期望: 1.311
+    if (close_m1 * 0.985) < limit_up_day_low <= (close_m1 * 0.990):
+        score += 10
+        reasons.append("(+10) 涨停日最低价>昨收0.985<昨收0.990")
+
+    # --- 均线趋势相关---
     # 总交易数: 101 ，胜率: 40.59%，均盈: 9.76% | 均亏: 3.06% | 均持: 2.06，盈亏比: 3.19:1，期望: 2.147
     # 总交易数: 280 ，胜率: 40.71%，均盈: 6.90% | 均亏: 4.33% | 均持: 1.75，盈亏比: 1.59:1，期望: 0.244
-    # ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
-    # if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
-    #     if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
-    #         score -= 10
-    #         reasons.append("(-10) 黄金趋势背景")
+    ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
+    if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
+        if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+            score -= 10
+            reasons.append("(-10) 黄金趋势背景")
 
+    # --- 前五日累计涨幅 ---
     # 前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-    # pre5_start = df.index[limit_up_day_idx - 5]
-    # pre5_close = df.loc[pre5_start, 'close']
-    # if pre5_close != 0:
-    #     total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
-    #     # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
-    #     if total_change <1:
-    #       score += 10
-    #       reasons.append("(+10) 四天累计只能涨1%")
-    #     # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
-    #     if 3<=total_change <6:
-    #         score += 10
-    #         reasons.append("(+10) 四天累计涨幅在3-5%内")
+    pre5_start = df.index[limit_up_day_idx - 5]
+    pre5_close = df.loc[pre5_start, 'close']
+    if pre5_close != 0:
+        total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
+        # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
+        if total_change <1:
+          score += 10
+          reasons.append("(+10) 四天累计只能涨1%")
+        # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
+        if 3<=total_change <6:
+            score += 10
+            reasons.append("(+10) 四天累计涨幅在3-5%内")
 
-    # 涨停后第一天和涨停当日成交量关系
-    # if volume_p1 <= limit_up_day_volume * 1.3:
-    #     # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
-    #     score += 10
-    #     reasons.append("(+10) 成交量占比小于1.3")
-    # if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
-    #     # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
-    #     score += 10
-    #     reasons.append("(+10) 成交量占比在1.5-1.8内")
-    #
-    # if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
-    #     # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
-    #     score -= 10
-    #     reasons.append("(-10) 成交量占比在3-4.5内")
-    # if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
-    #     # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
-    #     score -= 10
-    #     reasons.append("(-10) 成交量占比在1.3-1.5内")
+    # --- 涨停后第一天和涨停日的量能相关 ---
+    # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
+    if volume_p1 <= limit_up_day_volume * 1.3:
+        score += 10
+        reasons.append("(+10) 成交量占比小于1.3")
+    # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
+    if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
+        score += 10
+        reasons.append("(+10) 成交量占比在1.5-1.8内")
+    # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
+    if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
+        score -= 10
+        reasons.append("(-10) 成交量占比在3-4.5内")
+    # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
+    if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
+        score -= 10
+        reasons.append("(-10) 成交量占比在1.3-1.5内")
 
     if offset == 4:
         day_plus_2_data = df.iloc[limit_up_day_idx + 2]
@@ -1633,13 +1749,15 @@ if __name__ == '__main__':
             print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
 
             score_groups = {
-                "评分 >= 50": result_df[result_df['评分'] >= 50],
+                "评分 >= 60": result_df[result_df['评分'] >= 60],
+                "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
                 "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
                 "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
                 "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
                 "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
                 "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
-                "评分 < 0": result_df[result_df['评分'] < 0]
+                "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
+                "评分 < -10": result_df[result_df['评分'] < -10]
             }
 
             for label, df_group in score_groups.items():
