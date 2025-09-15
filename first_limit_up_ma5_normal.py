@@ -20,7 +20,7 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])

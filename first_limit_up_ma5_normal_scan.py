@@ -110,7 +110,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         print("--- 执行策略验证安全锁 ---")
         VALIDATION_DATE = "20250728"
         EXPECTED_STOCKS = {
-            "002889.SZ", "600114.SH","600410.SH", "603109.SH", "603630.SH"
+            "002889.SZ","600410.SH", "603109.SH"
         }
 
         # 以静默模式运行验证回测
@@ -174,7 +174,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme, score in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651"]:
+        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651","sz002548","sz002636","sz002815"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:
@@ -182,6 +182,10 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         if "地产" in theme or "地产" in name:
             continue
         if "酒店" in theme or "酒店" in name:
+            continue
+        # 排除分数小于或等于10的股票
+        # if score < 10:
+        if score < 10:
             continue
         limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
         delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
