@@ -174,7 +174,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     for code, name, limit_date_str, theme, score in limit_up_stocks:
         # 排除特定板块和股票
-        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651","sz002548","sz002636","sz002815"]:
+        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651","sz002548","sz002636","sz002815","sh605178","sz002418","sh603698"]:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         if "白酒" in theme or "光伏" in theme:
@@ -186,16 +186,22 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         # 排除分数小于或等于10的股票
         # if score < 10:
         if score < 10:
+            excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
         limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
         delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
         days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme, score))
 
+    target_stocks_list = []
+    fourth_day_stocks_list = []
     target_stocks_set, fourth_day_stocks_set = set(), set()
     for delta, stocks in sorted(days_groups.items()):
+        # 对当前日期的股票列表按分数（第5个元素，索引4）降序排序
+        stocks.sort(key=lambda x: x[4], reverse=True)
         for stock_data in stocks:
             code = getAllStockCsv.convert_to_standard_format(stock_data[0])
             target_stocks_set.add(code)
+            target_stocks_list.append(code)
             if isNeedLog: print("  " + "   ".join(map(str, stock_data)) + "  ")
 
     # ===== 提取涨停后第四天的股票(delta_days=3) =====
@@ -208,6 +214,12 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
     if not is_backtest:
         save_target_stocks(target_stocks_list, excluded_stocks, fourth_day_stocks_list)
+
+    excluded_str = ",".join(sorted(
+        excluded_stocks,
+        key=lambda x: int(''.join(filter(str.isdigit, x)))
+    )) if excluded_stocks else "无"
+    if isNeedLog: print(f"\n排除股票: {excluded_str}")
 
     return target_stocks_list, fourth_day_stocks_list
 

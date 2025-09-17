@@ -20,7 +20,7 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False   # False 使用2024年数据, True 使用2019年数据
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -138,6 +138,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     close_p1 = day_plus_1_data['close']
     low_p1 = day_plus_1_data['low']
 
+    # 和60日线距离
     if pd.notna(ma60_m1) and ma60_m1 > 0:
         bias_ratio_60 = (close_m1 - ma60_m1) / ma60_m1
         # 总交易数: 161 ，胜率: 51.55%，均盈: 14.28% | 均亏: 4.13% | 均持: 2.16，盈亏比: 3.46:1，期望: 5.359
@@ -146,17 +147,18 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
             score += 10
         # 总交易数: 118 ，胜率: 38.98%，均盈: 8.44% | 均亏: 2.74% | 均持: 2.24，盈亏比: 3.08:1，期望: 1.621
         # 总交易数: 364 ，胜率: 34.34%，均盈: 8.12% | 均亏: 3.63% | 均持: 1.82，盈亏比: 2.24:1，期望: 0.404
-        if 0.1 < bias_ratio_60<=0.15:
+        if 0.1 < bias_ratio_60 <= 0.15:
             score -= 10
         # 总交易数: 152 ，胜率: 45.39%，均盈: 5.34% | 均亏: 2.98% | 均持: 2.12，盈亏比: 1.79:1，期望: 0.796
         # 总交易数: 707 ，胜率: 41.44%，均盈: 5.74% | 均亏: 2.64% | 均持: 2.22，盈亏比: 2.17:1，期望: 0.832
-        if -0.09 < bias_ratio_60<=-0.04:
+        if -0.09 < bias_ratio_60 <= -0.04:
             score -= 10
 
+    # 和30日线距离
     bias_ratio = (close_m1 - ma30_m1) / ma30_m1
     # 总交易数: 129 ，胜率: 48.84%，均盈: 12.94% | 均亏: 3.79% | 均持: 2.02，盈亏比: 3.41:1，期望: 4.379
     # 总交易数: 357 ，胜率: 43.42%，均盈: 10.88% | 均亏: 4.81% | 均持: 1.84，盈亏比: 2.26:1，期望: 2.004
-    if 0.1<bias_ratio:
+    if 0.1 < bias_ratio:
         score += 10
     # 总交易数: 116 ，胜率: 49.14%，均盈: 10.01% | 均亏: 2.85% | 均持: 3.82，盈亏比: 3.51:1，期望: 3.469
     # 总交易数: 512 ，胜率: 59.77%，均盈: 8.28% | 均亏: 3.00% | 均持: 3.77，盈亏比: 2.76:1，期望: 3.745
@@ -164,7 +166,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
         score += 10
     # 总交易数: 164 ，胜率: 45.12%，均盈: 7.17% | 均亏: 2.92% | 均持: 2.30，盈亏比: 2.46:1，期望: 1.636
     # 总交易数: 742 ，胜率: 37.87%，均盈: 6.55% | 均亏: 3.01% | 均持: 2.24，盈亏比: 2.18:1，期望: 0.610
-    if -0.14<bias_ratio <= -0.07:
+    if -0.14 < bias_ratio <= -0.07:
         score -= 10
 
     is_red_candle_m1 = close_m1 > open_m1
@@ -173,7 +175,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     if avg_volume_pre_10d > 0 and is_red_candle_m1:
         # 总交易数: 168 ，胜率: 39.88%，均盈: 9.10% | 均亏: 3.03% | 均持: 1.89，盈亏比: 3.00:1，期望: 1.804
         # 总交易数: 573 ，胜率: 39.62%，均盈: 6.61% | 均亏: 2.95% | 均持: 1.91，盈亏比: 2.24:1，期望: 0.839
-        if avg_volume_pre_10d *0.4 <volume_m1 <= (avg_volume_pre_10d * 0.7):
+        if avg_volume_pre_10d * 0.4 < volume_m1 <= (avg_volume_pre_10d * 0.7):
             score -= 10
 
     full_range = high_p1 - low_p1
@@ -181,14 +183,14 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
         upper_body = max(open_p1, close_p1)
         upper_wick_length = high_p1 - upper_body
         # 条件2: 定义长上影线为上影线长度占K线总长度的比例
-        rate=(upper_wick_length / full_range)
+        rate = (upper_wick_length / full_range)
         # 总交易数: 104 ，胜率: 34.62%，均盈: 8.40% | 均亏: 2.47% | 均持: 2.29，盈亏比: 3.40:1，期望: 1.292
         # 总交易数: 451 ，胜率: 39.02%，均盈: 7.53% | 均亏: 2.97% | 均持: 2.33，盈亏比: 2.54:1，期望: 1.130
-        if 0.1<rate <= 0.2:
+        if 0.1 < rate <= 0.2:
             score -= 5
         # 总交易数: 117 ，胜率: 47.01%，均盈: 6.68% | 均亏: 2.83% | 均持: 1.91，盈亏比: 2.36:1，期望: 1.639
         # 总交易数: 494 ，胜率: 41.50%，均盈: 7.20% | 均亏: 3.10% | 均持: 2.10，盈亏比: 2.32:1，期望: 1.174
-        if 0.4<rate <= 0.45:
+        if 0.4 < rate <= 0.45:
             score -= 5
 
     # 总交易数: 213 ，胜率: 48.83%，均盈: 10.37% | 均亏: 2.80% | 均持: 2.28，盈亏比: 3.71:1，期望: 3.633
@@ -204,7 +206,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     # 总交易数: 320 ，胜率: 45.62 %，均盈: 10.29 % | 均亏: 2.86 % | 均持: 2.04，盈亏比: 3.60:1，期望: 3.141
     # 总交易数: 1166，胜率: 43.83 %，均盈: 8.04 % | 均亏: 3.01 % | 均持: 2.30，盈亏比: 2.67:1，期望: 1.833
     if (limit_up_close * 1.00) < low_p1 <= (limit_up_close * 1.02):
-         score += 10
+        score += 10
     # 总交易数: 125 ，胜率: 41.60 %，均盈: 9.02 % | 均亏: 2.69 % | 均持: 2.43，盈亏比: 3.35:1，期望: 2.178
     # 总交易数: 465 ，胜率: 37.85 %，均盈: 6.90 % | 均亏: 3.03 % | 均持: 2.32，盈亏比: 2.28:1，期望: 0.731
     if (limit_up_close * 0.980) < low_p1 <= (limit_up_close * 0.985):
@@ -275,11 +277,11 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     if pre5_close != 0:
         total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
         # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
-        if total_change <1:
-          score += 10
-          reasons.append("(+10) 四天累计只能涨1%")
+        if total_change < 1:
+            score += 10
+            reasons.append("(+10) 四天累计只能涨1%")
         # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
-        if 3<=total_change <6:
+        if 3 <= total_change < 6:
             score += 10
             reasons.append("(+10) 四天累计涨幅在3-5%内")
 
@@ -293,7 +295,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
         score += 10
         reasons.append("(+10) 成交量占比在1.5-1.8内")
     # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
-    if limit_up_day_volume * 3< volume_p1 <= limit_up_day_volume * 4.5:
+    if limit_up_day_volume * 3 < volume_p1 <= limit_up_day_volume * 4.5:
         score -= 10
         reasons.append("(-10) 成交量占比在3-4.5内")
     # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
@@ -1323,6 +1325,9 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
         rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
 
         score, reasons = calculate_quality_score(stock_info, df, start_idx, offset, config)
+
+        if score < 10:
+            rejection_rule = RuleEnum.SCORE_IS_SMALL_TEN
 
         # 持有期卖出逻辑
         hold_days = 0

@@ -45,6 +45,7 @@ class StockQuery:
 
     def filter_stocks(self, df):
         df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
+        # is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '68'))
         is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '30', '68'))
         is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
 
