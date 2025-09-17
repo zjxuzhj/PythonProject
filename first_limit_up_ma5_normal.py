@@ -20,7 +20,9 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False   # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+
+    USE_SELL_LOGIC: bool = False  # False 回测买入时的排除条件, True 回测卖出条件
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -1244,7 +1246,8 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
     return False, None
 
 
-def generate_signals(stock_info: StockInfo, df, first_limit_day, config: StrategyConfig, rejection_log):
+def generate_signals(stock_info: StockInfo, df, first_limit_day, config: StrategyConfig, rejection_log,
+                     use_optimized_sell_logic: bool = False):
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
@@ -1334,6 +1337,7 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
         final_sell_day = None
         final_sell_price = 0
         final_reason = '持有中'
+        first_limit_up_price = df.loc[first_limit_day, 'close']
 
         for sell_offset in range(1, 20):
             sell_day_idx = start_idx + offset + sell_offset
@@ -1344,9 +1348,10 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
                 prev_sell_data = df.iloc[sell_day_idx - 1]
                 hold_days += 1
 
-                position_info = {'hold_days': hold_days}
+                position_info = {'hold_days': hold_days, 'first_limit_up_price': first_limit_up_price}
                 market_data = MarketDataContext(
                     high=current_sell_data['high'],
+                    low=current_sell_data['low'],
                     close=current_sell_data['close'],
                     ma5=current_sell_data['ma5'],
                     up_limit_price=current_sell_data['limit_price'],
@@ -1355,7 +1360,8 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
                     prev_up_limit_price=prev_sell_data['limit_price'],
                     prev_down_limit_price=prev_sell_data['down_limit_price']
                 )
-                should_sell, reason = get_sell_decision(stock_info, position_info, market_data)
+                should_sell, reason = get_sell_decision(stock_info, position_info, market_data,
+                                                        use_optimized_logic=use_optimized_sell_logic)
                 if should_sell:
                     final_sell_day = sell_day
                     final_sell_price = current_sell_data['close']
@@ -1670,7 +1676,7 @@ def process_single_stock(stock_info_task):
     """
     处理单只股票的回测逻辑，用于并行计算。
     """
-    code, name, query_tool, config = stock_info_task  # 接收包含所有必需信息的元组
+    code, name, query_tool, config, use_optimized_sell_logic = stock_info_task  # 接收包含所有必需信息的元组
     rejection_log = []
 
     df, _ = get_stock_data(code, config)
@@ -1687,10 +1693,125 @@ def process_single_stock(stock_info_task):
 
     all_signals = []
     for day in first_limit_days:
-        signals = generate_signals(stock_info, df, day, config, rejection_log)
+        signals = generate_signals(stock_info, df, day, config, rejection_log, use_optimized_sell_logic)
         all_signals.extend(signals)
 
     return all_signals, rejection_log
+
+
+def run_backtest(config, query_tool, stock_list, use_optimized_sell_logic=False):
+    """
+    封装的回测执行函数。
+    :param use_optimized_sell_logic: 是否启用优化后的卖出逻辑。
+    :return: 包含所有交易信号的DataFrame。
+    """
+    print(f"\n--- 开始回测 (优化逻辑: {'开启' if use_optimized_sell_logic else '关闭'}) ---")
+    all_signals = []
+
+    # 注意：这里我们忽略了 rejections，因为对比时我们只关心成功交易的差异
+    all_rejections = []
+
+    tasks = [(code, name, query_tool, config, use_optimized_sell_logic) for code, name in stock_list]
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_single_stock, tasks))
+
+    for signals, rejections in results:
+        all_signals.extend(signals)
+        all_rejections.extend(rejections)
+
+    return pd.DataFrame(all_signals)
+
+
+class ComparisonRunner:
+    """
+    一个用于运行和比较不同策略版本回测结果的类。
+    """
+
+    def __init__(self, config, query_tool, stock_list):
+        self.config = config
+        self.query_tool = query_tool
+        self.stock_list = stock_list
+        self.original_trades = None
+        self.optimized_trades = None
+
+    def run(self):
+        """执行原始版本和优化版本的回测。"""
+        self.original_trades = run_backtest(self.config, self.query_tool, self.stock_list,
+                                            use_optimized_sell_logic=False)
+        self.optimized_trades = run_backtest(self.config, self.query_tool, self.stock_list,
+                                             use_optimized_sell_logic=True)
+
+    def _create_trade_key(self, row):
+        """为每一笔交易创建一个唯一的标识符。"""
+        return f"{row['股票代码']}_{row['首板日']}_{row['买入日']}"
+
+    def compare_and_display(self):
+        """比较两次回测的结果，并只显示有差异的交易。"""
+        if self.original_trades is None or self.optimized_trades is None:
+            print("请先运行 .run() 方法进行回测。")
+            return
+
+        print("\n\033[1m\033[94m=== 卖出逻辑优化效果对比 ===\033[0m")
+
+        # 使用唯一key创建字典以便快速查找
+        orig_dict = {self._create_trade_key(row): row for _, row in self.original_trades.iterrows()}
+        opt_dict = {self._create_trade_key(row): row for _, row in self.optimized_trades.iterrows()}
+
+        affected_trades = []
+
+        # 遍历优化后的结果，与原始结果进行对比
+        for key, opt_trade in opt_dict.items():
+            orig_trade = orig_dict.get(key)
+            if orig_trade is None:
+                # 这种情况理论上不应该发生，除非优化逻辑改变了买入行为
+                continue
+
+            # 核心对比逻辑：如果卖出日、卖出原因或收益率不同，则认为是受影响的交易
+            if (orig_trade['卖出日'] != opt_trade['卖出日'] or
+                    orig_trade['卖出原因'] != opt_trade['卖出原因'] or
+                    orig_trade['收益率(%)'] != opt_trade['收益率(%)']):
+                affected_trades.append({
+                    '股票': f"{opt_trade['股票名称']}({opt_trade['股票代码']})",
+                    '买入日': opt_trade['买入日'],
+                    '原始卖出日': orig_trade['卖出日'],
+                    '原始卖出原因': orig_trade['卖出原因'],
+                    '原始收益率(%)': orig_trade['收益率(%)'],
+                    '优化卖出日': opt_trade['卖出日'],
+                    '优化卖出原因': opt_trade['卖出原因'],
+                    '优化收益率(%)': opt_trade['收益率(%)'],
+                })
+
+        if not affected_trades:
+            print("\033[92m本次逻辑修改未对任何交易的卖出时点产生影响。\033[0m")
+            return
+
+        # 使用pandas来美观地展示结果
+        comparison_df = pd.DataFrame(affected_trades)
+
+        comparison_df['买入日'] = pd.to_datetime(comparison_df['买入日'])
+        # 按“买入日”降序排列
+        comparison_df = comparison_df.sort_values(by='买入日', ascending=False)
+
+        # 计算收益变化
+        comparison_df['收益变化(%)'] = comparison_df['优化收益率(%)'] - comparison_df['原始收益率(%)']
+
+        # 打印结果
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.width', 200)
+        print(f"\033[93m共找到 {len(comparison_df)} 笔受本次优化影响的交易：\033[0m")
+        print(comparison_df.to_string(index=False))
+
+        # 打印汇总统计
+        total_change = comparison_df['收益变化(%)'].sum()
+        avg_change = comparison_df['收益变化(%)'].mean()
+        positive_impacts = (comparison_df['收益变化(%)'] > 0).sum()
+        negative_impacts = (comparison_df['收益变化(%)'] < 0).sum()
+
+        print("\n\033[1m--- 影响汇总 ---\033[0m")
+        print(f"对受影响交易的平均收益影响: {avg_change:+.2f}%")
+        print(f"正向:负向  {positive_impacts}:{negative_impacts}")
+        print(f"优化对总收益率的净影响: {total_change:+.2f}%")
 
 
 if __name__ == '__main__':
@@ -1701,113 +1822,121 @@ if __name__ == '__main__':
     # 加载股票列表并过滤
     stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
 
-    all_signals = []
-    all_rejections = []
-    stock_process_start = time.perf_counter()
-    tasks = [(code, name, query_tool, config) for code, name in stock_list]
+    if config.USE_SELL_LOGIC:
+        # 新流程可以对比卖出条件的效果
+        runner = ComparisonRunner(config, query_tool, stock_list)
+        runner.run()
+        runner.compare_and_display()
+    else:
+        # 下面是老流程，主要是回测买入时的排除条件
+        all_signals = []
+        all_rejections = []
+        stock_process_start = time.perf_counter()
+        tasks = [(code, name, query_tool, config, False) for code, name in stock_list]
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        # executor.map 会自动将tasks列表中的每一项分配给一个进程，并收集结果
-        results = list(executor.map(process_single_stock, tasks))
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            # executor.map 会自动将tasks列表中的每一项分配给一个进程，并收集结果
+            results = list(executor.map(process_single_stock, tasks))
 
-    for signals, rejections in results:
-        all_signals.extend(signals)
-        all_rejections.extend(rejections)
+        for signals, rejections in results:
+            all_signals.extend(signals)
+            all_rejections.extend(rejections)
 
-    stock_process_duration = time.perf_counter() - stock_process_start
+        stock_process_duration = time.perf_counter() - stock_process_start
 
-    # 生成统计报表
-    result_df = pd.DataFrame(all_signals)
-    rejections_df = pd.DataFrame(all_rejections)
-    if not result_df.empty or not rejections_df.empty:
-        if not result_df.empty:
-            # 把原有的买入日从年月日类型转为年月日时分秒，确保买入日为日期类型
-            result_df['买入日'] = pd.to_datetime(result_df['买入日'])
-            # 获取最近三个月的截止日期（含当月）
-            current_date = datetime.now()
-            months_num = 27 if config.USE_2019_DATA else 17
-            three_months_ago = current_date - pd.DateOffset(months=months_num)
+        # 生成统计报表
+        result_df = pd.DataFrame(all_signals)
+        rejections_df = pd.DataFrame(all_rejections)
+        if not result_df.empty or not rejections_df.empty:
+            if not result_df.empty:
+                # 把原有的买入日从年月日类型转为年月日时分秒，确保买入日为日期类型
+                result_df['买入日'] = pd.to_datetime(result_df['买入日'])
+                # 获取最近三个月的截止日期（含当月）
+                current_date = datetime.now()
+                months_num = 27 if config.USE_2019_DATA else 17
+                three_months_ago = current_date - pd.DateOffset(months=months_num)
 
-            # 过滤最近三个月的交易记录
-            recent_trades = result_df[result_df['买入日'] >= three_months_ago]
+                # 过滤最近三个月的交易记录
+                recent_trades = result_df[result_df['买入日'] >= three_months_ago]
 
-            # 按月分组计算收益总和
-            monthly_returns = recent_trades.resample('ME', on='买入日')['收益率(%)'].sum()
-            monthly_returns = monthly_returns.round(2)  # 保留两位小数
-            monthly_summary = [f"{month.month}月 {ret}%" for month, ret in monthly_returns.items()]
-            monthly_str = "，".join(monthly_summary)  # 中文逗号分隔
+                # 按月分组计算收益总和
+                monthly_returns = recent_trades.resample('ME', on='买入日')['收益率(%)'].sum()
+                monthly_returns = monthly_returns.round(2)  # 保留两位小数
+                monthly_summary = [f"{month.month}月 {ret}%" for month, ret in monthly_returns.items()]
+                monthly_str = "，".join(monthly_summary)  # 中文逗号分隔
 
-            win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
-            avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
-            avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
-            profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
-            avg_hold_days = result_df['持有天数'].mean()
+                win_rate = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * 100
+                avg_win = result_df[result_df['收益率(%)'] > 0]['收益率(%)'].mean()
+                avg_loss = abs(result_df[result_df['收益率(%)'] <= 0]['收益率(%)'].mean())
+                profit_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
+                avg_hold_days = result_df['持有天数'].mean()
 
-            get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
-                    1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
+                get_money = len(result_df[result_df['收益率(%)'] > 0]) / len(result_df) * avg_win - (
+                        1 - len(result_df[result_df['收益率(%)'] > 0]) / len(result_df)) * avg_loss
 
-            print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
-            print(
-                f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
-            print(f"近三月收益：{monthly_str}")
-
-            print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
-
-            score_groups = {
-                "评分 >= 60": result_df[result_df['评分'] >= 60],
-                "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
-                "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
-                "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
-                "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
-                "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
-                "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
-                "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
-                "评分 < -10": result_df[result_df['评分'] < -10]
-            }
-
-            for label, df_group in score_groups.items():
-                if len(df_group) == 0:
-                    print(f"{label:<18}: 无交易记录")
-                    continue
-
-                win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
-                avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
-                avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
-                # 处理可能不存在亏损交易的情况
-                if np.isnan(avg_loss_group): avg_loss_group = 0
-
-                profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
-                avg_hold_days_group = df_group['持有天数'].mean()
-
-                # 处理可能不存在盈利交易的情况
-                if np.isnan(avg_win_group): avg_win_group = 0
-
-                expectancy_group = (win_rate_group / 100) * avg_win_group - (1 - win_rate_group / 100) * avg_loss_group
-
+                print(f"\n\033[1m=== 策略表现汇总 ===\033[0m")
                 print(
-                    f"{label:<18}: "
-                    f"总交易数: {len(df_group):<4}，"
-                    f"胜率: {win_rate_group:.2f}%，"
-                    f"均盈: {avg_win_group:.2f}% | "
-                    f"均亏: {avg_loss_group:.2f}% | "
-                    f"均持: {avg_hold_days_group:.2f}，"
-                    f"盈亏比: {profit_ratio_group:.2f}:1，"
-                    f"期望: {expectancy_group:.3f}"
-                )
-        else:
-            print("未产生有效交易信号")
+                    f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
+                print(f"近三月收益：{monthly_str}")
 
-        if not result_df.empty:
-            result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
-            save_start = time.perf_counter()  # 记录Excel保存开始时间
-            save_trades_excel(result_df, rejections_df)
-            save_duration = time.perf_counter() - save_start
-            print(f"Excel保存耗时: {save_duration:.4f}秒")
+                print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
 
-        # 程序总耗时统计
-        total_duration = time.perf_counter() - total_start
-        print(f"\n\033[1m=== 性能统计 ===\033[0m")
-        print(f"总运行时间: {total_duration:.2f}秒")
-        print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
-        print(f"Excel保存时间: {save_duration:.4f}秒")
-        print(f"平均每支股票处理时间: {stock_process_duration / len(stock_list) * 1000:.2f}毫秒")
+                score_groups = {
+                    "评分 >= 60": result_df[result_df['评分'] >= 60],
+                    "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
+                    "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
+                    "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
+                    "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
+                    "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
+                    "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
+                    "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
+                    "评分 < -10": result_df[result_df['评分'] < -10]
+                }
+
+                for label, df_group in score_groups.items():
+                    if len(df_group) == 0:
+                        print(f"{label:<18}: 无交易记录")
+                        continue
+
+                    win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
+                    avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
+                    avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
+                    # 处理可能不存在亏损交易的情况
+                    if np.isnan(avg_loss_group): avg_loss_group = 0
+
+                    profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
+                    avg_hold_days_group = df_group['持有天数'].mean()
+
+                    # 处理可能不存在盈利交易的情况
+                    if np.isnan(avg_win_group): avg_win_group = 0
+
+                    expectancy_group = (win_rate_group / 100) * avg_win_group - (
+                            1 - win_rate_group / 100) * avg_loss_group
+
+                    print(
+                        f"{label:<18}: "
+                        f"总交易数: {len(df_group):<4}，"
+                        f"胜率: {win_rate_group:.2f}%，"
+                        f"均盈: {avg_win_group:.2f}% | "
+                        f"均亏: {avg_loss_group:.2f}% | "
+                        f"均持: {avg_hold_days_group:.2f}，"
+                        f"盈亏比: {profit_ratio_group:.2f}:1，"
+                        f"期望: {expectancy_group:.3f}"
+                    )
+            else:
+                print("未产生有效交易信号")
+
+            if not result_df.empty:
+                result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
+                save_start = time.perf_counter()  # 记录Excel保存开始时间
+                save_trades_excel(result_df, rejections_df)
+                save_duration = time.perf_counter() - save_start
+                print(f"Excel保存耗时: {save_duration:.4f}秒")
+
+            # 程序总耗时统计
+            total_duration = time.perf_counter() - total_start
+            print(f"\n\033[1m=== 性能统计 ===\033[0m")
+            print(f"总运行时间: {total_duration:.2f}秒")
+            print(f"股票数据处理时间: {stock_process_duration:.2f}秒")
+            print(f"Excel保存时间: {save_duration:.4f}秒")
+            print(f"平均每支股票处理时间: {stock_process_duration / len(stock_list) * 1000:.2f}毫秒")

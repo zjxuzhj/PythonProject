@@ -17,6 +17,7 @@ class SellStrategyConfig:
 class MarketDataContext:
     # --- 当日或实时数据 ---
     high: float
+    low: float
     close: float
     ma5: float
     up_limit_price: float
@@ -32,7 +33,8 @@ def get_sell_decision(
     stock_info: StockInfo,
     position_info: Dict[str, Any],
     market_data: MarketDataContext,
-    config: SellStrategyConfig = SellStrategyConfig()
+    config: SellStrategyConfig = SellStrategyConfig(),
+    use_optimized_logic: bool = False
 ) -> Tuple[bool, str]:
     """
     通用的卖出决策函数。
@@ -83,6 +85,19 @@ def get_sell_decision(
     if market_data.ma5 and market_data.ma5 > 0:
         deviation = (market_data.close - market_data.ma5) / market_data.ma5
         if deviation <= config.ma_breakdown_threshold:
+            if use_optimized_logic and position_info.get('hold_days') == 2:
+                first_limit_up_price = position_info.get('first_limit_up_price')
+                if first_limit_up_price is not None:
+                    # 检查新规则：当天最低价低于首板涨停价，但收盘价高于首板涨停价
+                    cond_low_below = market_data.low < first_limit_up_price
+                    cond_close_above = market_data.close > first_limit_up_price
+
+                    if cond_low_below and cond_close_above:
+                        # 满足条件，今天不卖，标记为第二天强制卖出
+                        position_info['force_sell_next_day'] = True
+                        position_info['postponed_reason'] = '首板价支撑次日卖'
+                        return False, ''  # 返回False，表示今天不卖
+
             # 检查当天是否出现大幅下跌
             daily_change = (market_data.close - market_data.prev_close) / market_data.prev_close
             if config.postpone_sell_lower_bound < daily_change <= config.postpone_sell_upper_bound:
