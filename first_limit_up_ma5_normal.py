@@ -42,22 +42,6 @@ class StrategyConfig:
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
 
-
-@dataclass
-class StockDataContext:
-    # --- 当日或实时数据 ---
-    high: float
-    close: float
-    ma5: float
-    up_limit_price: float
-    down_limit_price: float
-
-    # --- 前一交易日数据 ---
-    prev_close: float
-    prev_up_limit_price: float
-    prev_down_limit_price: float
-
-
 def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
     """模拟预测买入日MA5值，然后计算挂单价格"""
     current_idx = df.index.get_loc(current_day)
@@ -198,7 +182,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     # 总交易数: 213 ，胜率: 48.83%，均盈: 10.37% | 均亏: 2.80% | 均持: 2.28，盈亏比: 3.71:1，期望: 3.633
     # 总交易数: 822 ，胜率: 43.80%，均盈: 7.92% | 均亏: 3.33% | 均持: 2.23，盈亏比: 2.38:1，期望: 1.595
     pre_window_30d = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
-    daily_change_pct = (pre_window_30d['close'].pct_change().abs())
+    daily_change_pct = (pre_window_30d['close'].pct_change(fill_method=None).abs())
     # 如果在过去30天里，有超过11天（50%）的日收盘价变动小于1%，则认为是极端沉寂
     stagnant_days_count = (daily_change_pct < 0.01).sum()
     if 4 < stagnant_days_count <= 6:
@@ -863,7 +847,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
 
         # 买前条件10：“僵尸股”突兀涨停
         pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
-        daily_change_pct = (pre_window_20d['close'].pct_change().abs())
+        daily_change_pct = (pre_window_20d['close'].pct_change(fill_method=None).abs())
         # 如果在过去20天里，有超过11天（50%）的日收盘价变动小于1%，则认为是极端沉寂
         stagnant_days_count = (daily_change_pct < 0.01).sum()
         if stagnant_days_count > 11 and not checker.is_10120_m1_nian_he() and not checker.is_stable_platform_to_new_low():
@@ -1352,13 +1336,15 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
                 market_data = MarketDataContext(
                     high=current_sell_data['high'],
                     low=current_sell_data['low'],
+                    open=current_sell_data['open'],
                     close=current_sell_data['close'],
                     ma5=current_sell_data['ma5'],
                     up_limit_price=current_sell_data['limit_price'],
                     down_limit_price=current_sell_data['down_limit_price'],
                     prev_close=prev_sell_data['close'],
                     prev_up_limit_price=prev_sell_data['limit_price'],
-                    prev_down_limit_price=prev_sell_data['down_limit_price']
+                    prev_down_limit_price=prev_sell_data['down_limit_price'],
+                    today_df=df.iloc[:sell_day_idx + 1],
                 )
                 should_sell, reason = get_sell_decision(stock_info, position_info, market_data,
                                                         use_optimized_logic=use_optimized_sell_logic)

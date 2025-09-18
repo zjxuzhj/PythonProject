@@ -237,12 +237,15 @@ class StockQuery:
             raise
 
     # 给财报数据列新增或更新市值
-    def update_stock_market_value(self):
+    def update_stock_market_value(self, spot_data=None):
         # 步骤1：读取CSV时指定列名，避免列名冲突
         df_csv = pd.read_csv(self.REPORT_CSV_PATH)
 
         # 2. 获取全市场实时数据（含动态市盈率、市净率、总市值、流通市值）
-        spot_data = ak.stock_zh_a_spot_em()
+        if spot_data is None:
+            print("提示：实时行情数据未传入，正在从接口重新获取...")
+            spot_data = ak.stock_zh_a_spot_em()
+            print("实时行情数据获取完毕。")
 
         # 步骤2：若原始列存在，先删除
         for col in ['市盈率-动态', '市净率', '总市值', '流通市值']:

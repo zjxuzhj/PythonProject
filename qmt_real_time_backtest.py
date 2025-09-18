@@ -246,6 +246,8 @@ class Backtester:
         position_info = {'hold_days': position['hold_days']}
         market_data = MarketDataContext(
             high=today_data['high'],
+            low=today_data['low'],
+            open=today_data['open'],
             close=today_data['close'],
             ma5=today_data['ma5'],
             up_limit_price=today_data['limit_price'],

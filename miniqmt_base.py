@@ -17,7 +17,7 @@ import getAllStockCsv as tools
 from common_sell_logic import get_sell_decision, MarketDataContext, SellStrategyConfig
 from first_limit_up_ma5_normal import StrategyConfig
 from miniqmt_callback import MyXtQuantTraderCallback
-from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5
+from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5, get_stock_data_not_today
 from miniqmt_logging_utils import setup_logger
 from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
     load_force_sell_list, save_force_sell_list
@@ -82,8 +82,8 @@ def sell_breached_stocks():
             stock_code = pos.stock_code
             try:
                 tick = xtdata.get_full_tick([stock_code])[stock_code]
-                hist_df, _ = get_stock_data(tools.convert_stock_code(stock_code), False)
-                if tick is None or hist_df.empty or len(hist_df) < 2:
+                hist_df, success = get_stock_data_not_today(tools.convert_stock_code(stock_code), False)
+                if not success or tick is None or hist_df.empty or len(hist_df) < 2:
                     print(f"数据不足，跳过 {stock_code} 的卖出检测。")
                     continue
 
@@ -95,6 +95,8 @@ def sell_breached_stocks():
                 limit_rate = config.MARKET_LIMIT_RATES[normal.get_market_type(stock_code)]
 
                 high_price = tick.get('high')  # 今天的最高价
+                low_price = tick.get('low')  # 今天的最高价
+                open_price = tick.get('open')  # 今天的最高价
                 last_close = tick.get('lastClose')  # 昨天的收盘价
                 current_price = tick.get('lastPrice')  # 最新成交价
                 today_up_limit_price = round(last_close * (1 + limit_rate), 2)
@@ -106,15 +108,33 @@ def sell_breached_stocks():
                 t2_close = hist_df['close'].iloc[-2]
                 t1_limit_price = round(t2_close * (1 + limit_rate), 2)
                 t1_down_limit_price = round(t2_close * (1 - limit_rate), 2)
+
+                # 3. 创建今天的实时数据行
+                today_date = pd.Timestamp(now_dt.date())
+                today_row = pd.DataFrame([{
+                    'open': open_price,
+                    'high': high_price,
+                    'low': low_price,
+                    'close': current_price,
+                    'volume': tick.get('volume')
+                }], index=[today_date])
+
+                # 4. 拼接历史数据和今日实时数据
+                combined_df = pd.concat([hist_df, today_row])
+                combined_df = normal.prepare_data(combined_df, stock_code, config)
+
                 market_data = MarketDataContext(
                     high=high_price,
+                    low=low_price,
+                    open=open_price,
                     close=current_price,
                     ma5=ma5_price,
                     up_limit_price=today_up_limit_price,
                     down_limit_price=today_down_limit_price,
                     prev_close=t1_close,
                     prev_up_limit_price=t1_limit_price,
-                    prev_down_limit_price=t1_down_limit_price
+                    prev_down_limit_price=t1_down_limit_price,
+                    today_df=combined_df
                 )
                 stock_info = StockInfo(
                     code=stock_code,

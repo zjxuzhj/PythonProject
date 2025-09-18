@@ -119,7 +119,7 @@ if __name__ == "__main__":
     print("今日涨停原因以及时间更新完毕")
 
     time.sleep(60) # 防止短时间多次调用被屏蔽
-    query_tool.update_stock_market_value()
+    query_tool.update_stock_market_value(spot_df)
     print("--------------- 今日股票市值更新完毕 ---------------")
     # 记住每天盘后更新数据，不然会对卖出逻辑产生影响
     print("--------------- 所有数据均更新完毕，请放心！！！---------------")

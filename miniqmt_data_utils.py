@@ -1,7 +1,38 @@
 # utils/data_utils.py
 import pandas as pd
 import os
+from datetime import datetime
 import getAllStockCsv as tools
+
+
+# 获得今天以前的数据
+def get_stock_data_not_today(symbol, isNeedLog):
+    file_name = f"stock_{symbol}_20240201.parquet"
+    cache_path = os.path.join("data_cache", file_name)
+
+    if os.path.exists(cache_path):
+        try:
+            df = pd.read_parquet(cache_path, engine='fastparquet')
+
+            # <--- 新增逻辑：确保索引是日期时间格式 ---
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+
+            # <--- 新增逻辑：过滤掉今天及之后的数据 ---
+            today_timestamp = pd.Timestamp.now().normalize()
+            yesterday_timestamp = today_timestamp - pd.Timedelta(days=1)
+            day_before_yesterday_timestamp = today_timestamp - pd.Timedelta(days=2)
+            # 2. 直接与索引进行比较，筛选出今天之前的所有数据
+            df = df[df.index < today_timestamp]
+
+            if isNeedLog:
+                print(f"从缓存加载数据 (已过滤今日)：{symbol}")
+            return df, True
+        except Exception as e:
+            print(f"缓存读取或过滤失败：{e}（建议删除损坏文件：{cache_path}）")
+
+    print(f"数据获取失败：{symbol}")
+    return pd.DataFrame(), False  # <--- 修正：当返回空DF时，成功标记应为False
 
 def get_stock_data(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
