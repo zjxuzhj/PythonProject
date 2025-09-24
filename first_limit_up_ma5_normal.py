@@ -736,42 +736,8 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                     # 条件3: T+1收盘价依然站在5日线上方 (保持短期强势)
                     is_close_above_ma5 = close_p1 > ma5_p1
                     # 如果三个强支撑信号同时满足，则豁免此次“破位”，不立即排除，继续观察后续走势
-                    # if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
-                    #     return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
-                    pre_window_6d = df.iloc[limit_up_day_idx - 15: limit_up_day_idx]
-                    # 筛选出在窗口内，同时满足“更高价”和“更大量”的那些天
-                    dominated_days = pre_window_6d[
-                        (pre_window_6d['high'] > high_p1) & (pre_window_6d['volume'] > volume_p1)
-                        ]
-                    is_high_p1=True
-                    if len(pre_window_6d) >= 2:  # 确保窗口内至少有2天数据用于比较
-                        # 1. 在6日窗口内，按成交量降序排列，找出量最大和次大的两天
-                        sorted_by_vol = pre_window_6d.sort_values(by='volume', ascending=False)
-                        top_2_vol_days = sorted_by_vol.iloc[:2]
-
-                        # 2. 检查成交量最大的这两天，是否是连续的交易日
-                        day1_idx = df.index.get_loc(top_2_vol_days.index[0])
-                        day2_idx = df.index.get_loc(top_2_vol_days.index[1])
-
-                        # 条件一：交易日连续
-                        if abs(day1_idx - day2_idx) == 1:
-                            # 提取这两天的最高价
-                            high1 = top_2_vol_days.iloc[0]['high']
-                            high2 = top_2_vol_days.iloc[1]['high']
-
-                            # 条件二：最高价差距在2%以内，构成平台
-                            if max(high1, high2) > 0 and abs(high1 - high2) / max(high1, high2) <= 0.02:
-                                # 构成平台后，定义平台的压力位（取两者最高价中的较大值）
-                                resistance_high = max(high1, high2)
-                                if abs(high_p1 - resistance_high) / resistance_high < 0.008 or high_p1<= resistance_high:
-                                    is_high_p1= False
-
-
-                    target_price = close_m1 * 1.05
-                    is_low_near_target_price = abs(low_p1 - target_price) / target_price < 0.008
-                    is_low_on_ma10_new = abs(low_p1 - ma10_p1) / ma10_p1 < 0.008
-                    if is_low_near_target_price and is_low_on_ma10_new and is_close_above_ma5 and is_high_p1:
-                        return None
+                    if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
+                        return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
 
 
             return RuleEnum.PRICE_FELL_BELOW_LIMIT_UP_PRICE
@@ -1183,8 +1149,8 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
-    # return None  # 所有检查通过
-    return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
+    return None  # 所有检查通过
+    # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,

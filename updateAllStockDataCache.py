@@ -118,7 +118,7 @@ if __name__ == "__main__":
     http_util.updateZTThemeAndTime()
     print("今日涨停原因以及时间更新完毕")
 
-    time.sleep(60) # 防止短时间多次调用被屏蔽
+    time.sleep(1) # 防止短时间多次调用被屏蔽，现在直接传数据进去，不怕屏蔽了
     query_tool.update_stock_market_value(spot_df)
     print("--------------- 今日股票市值更新完毕 ---------------")
     # 记住每天盘后更新数据，不然会对卖出逻辑产生影响
