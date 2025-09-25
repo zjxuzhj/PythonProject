@@ -26,8 +26,8 @@ class StrategyConfig:
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
-    BUY_OFFSETS: list[int] = field(default_factory=lambda: [4])
-    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2, 4])
+    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [4])
+    BUY_OFFSETS: list[int] = field(default_factory=lambda: [2, 4])
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -41,6 +41,7 @@ class StrategyConfig:
     DOUBLE_TOP_CHECK_DAYS = 40  # 检测最近40日的双头形态
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
+
 
 def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
     """模拟预测买入日MA5值，然后计算挂单价格"""
@@ -741,26 +742,25 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if check_day_data['is_limit']:
             return RuleEnum.NEW_LIMIT_UP_AFTER_FIRST
         if check_day_data['close'] < limit_up_day_price:
-            if i == 1:
-                # 提取T+1日所需数据
-                ma5_p1 = day_plus_1_data['ma5']
-                ma10_p1 = day_plus_1_data['ma10']
-
-                # 检查所需数据是否有效，避免计算错误
-                is_data_valid = all(pd.notna([low_p1, limit_up_day_low, ma10_p1, close_p1, ma5_p1])) and \
-                                limit_up_day_low > 0 and ma10_p1 > 0
-
-                if is_data_valid:
-                    # 条件1: T+1最低价非常接近涨停日最低价 (说明是回踩，非破位下跌)
-                    is_low_near_limit_low = abs(low_p1 - limit_up_day_low) / limit_up_day_low < 0.005
-                    # 条件2: T+1最低价精准回踩10日线 (获得均线支撑)
-                    is_low_on_ma10 = abs(low_p1 - ma10_p1) / ma10_p1 < 0.005
-                    # 条件3: T+1收盘价依然站在5日线上方 (保持短期强势)
-                    is_close_above_ma5 = close_p1 > ma5_p1
-                    # 如果三个强支撑信号同时满足，则豁免此次“破位”，不立即排除，继续观察后续走势
-                    if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
-                        return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
-
+            # if i == 1:
+            #     # 提取T+1日所需数据
+            #     ma5_p1 = day_plus_1_data['ma5']
+            #     ma10_p1 = day_plus_1_data['ma10']
+            #
+            #     # 检查所需数据是否有效，避免计算错误
+            #     is_data_valid = all(pd.notna([low_p1, limit_up_day_low, ma10_p1, close_p1, ma5_p1])) and \
+            #                     limit_up_day_low > 0 and ma10_p1 > 0
+            #
+            #     if is_data_valid:
+            #         # 条件1: T+1最低价非常接近涨停日最低价 (说明是回踩，非破位下跌)
+            #         is_low_near_limit_low = abs(low_p1 - limit_up_day_low) / limit_up_day_low < 0.005
+            #         # 条件2: T+1最低价精准回踩10日线 (获得均线支撑)
+            #         is_low_on_ma10 = abs(low_p1 - ma10_p1) / ma10_p1 < 0.005
+            #         # 条件3: T+1收盘价依然站在5日线上方 (保持短期强势)
+            #         is_close_above_ma5 = close_p1 > ma5_p1
+            #         # 如果三个强支撑信号同时满足，则豁免此次“破位”，不立即排除，继续观察后续走势
+            #         if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
+            #             return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
 
             return RuleEnum.PRICE_FELL_BELOW_LIMIT_UP_PRICE
             # return None
@@ -1168,22 +1168,24 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                         and not checker.is_55120_m1_nian_he()):
                     return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
 
-
-        highs_are_similar = abs(high_p2 - high_p3) / high_p2 < 0.01
+        upper_shadow = high_p2 - close_p2
+        candle_body = abs(open_p2 - close_p2)
+        p2_is_significantly_higher = (high_p2 - close_p2) / close_p1 > 0.02
+        is_body_relatively_small = candle_body < 2 * upper_shadow
+        highs_are_similar = abs(high_p2 - high_p3) / high_p2 < 0.008
         # 条件B: T+2和T+3的收盘价非常接近 (<1%的差异)
         closes_are_similar = abs(close_p2 - close_p3) / close_p2 < 0.01
         # 条件C: T+2的最高价略高于T+3
-        t2_high_is_slightly_higher = high_p2 > high_p3
+        p2_high_is_slightly_higher = high_p2 > high_p3
         # 如果三个条件同时满足，则构成一个微弱的下降结构，可能是上涨乏力的信号，应予以排除
-        if highs_are_similar and closes_are_similar and t2_high_is_slightly_higher:
+        if highs_are_similar and closes_are_similar and p2_high_is_slightly_higher and p2_is_significantly_higher and is_body_relatively_small:
             # print(f"[{code}] 在 {day_plus_3_day_date.date()} 触发T+2, T+3高位滞涨形态，排除。") # 这是一条可选的调试信息
-            return None
-            # return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
+            return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
-    # return None  # 所有检查通过
-    return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
+    return None  # 所有检查通过
+    # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
