@@ -26,8 +26,8 @@ class StrategyConfig:
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
-    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [4])
-    BUY_OFFSETS: list[int] = field(default_factory=lambda: [2, 4])
+    BUY_OFFSETS: list[int] = field(default_factory=lambda: [4])
+    # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2, 4])
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
@@ -292,6 +292,28 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     if offset == 4:
         day_plus_2_data = df.iloc[limit_up_day_idx + 2]
         day_plus_3_data = df.iloc[limit_up_day_idx + 3]
+        open_p2 = day_plus_2_data['open']
+        high_p2 = day_plus_2_data['high']
+        close_p2 = day_plus_2_data['close']
+        open_p3 = day_plus_3_data['open']
+        high_p3 = day_plus_3_data['high']
+        close_p3 = day_plus_3_data['close']
+        low_p3 = day_plus_3_data['low']
+        volume_p3 = day_plus_3_data['volume']
+
+        hugging_rate_0003 = 0.003
+        hugging_rate_0005 = 0.005
+        is_p1_hugging = (abs(open_p1 - limit_up_day_price) / limit_up_day_price < hugging_rate_0003) or \
+                        (abs(close_p1 - limit_up_day_price) / limit_up_day_price < hugging_rate_0003)
+        is_p2_hugging = (abs(open_p2 - limit_up_day_price) / limit_up_day_price < hugging_rate_0003) or \
+                        (abs(close_p2 - limit_up_day_price) / limit_up_day_price < hugging_rate_0003)
+        is_p3_hugging = (abs(open_p3 - limit_up_day_price) / limit_up_day_price < hugging_rate_0005) or \
+                        (abs(close_p3 - limit_up_day_price) / limit_up_day_price < hugging_rate_0005)
+        # 总交易数: 129，胜率: 52.71%，均盈: 12.86% | 均亏: 2.63% | 均持: 2.50，盈亏比: 4.88:1，期望: 5.531
+        # 总交易数: 470，胜率: 40.64 %，均盈: 8.41 % | 均亏: 2.58 % | 均持: 2.37，盈亏比: 3.26:1，期望: 1.887
+        if is_p1_hugging or is_p2_hugging or is_p3_hugging:
+            score += 15
+            reasons.append("(+15) 其开盘价或收盘价是否紧贴涨停价 (距离小于1%)")
 
     return score, reasons
 
@@ -1146,11 +1168,22 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                         and not checker.is_55120_m1_nian_he()):
                     return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
 
+
+        highs_are_similar = abs(high_p2 - high_p3) / high_p2 < 0.01
+        # 条件B: T+2和T+3的收盘价非常接近 (<1%的差异)
+        closes_are_similar = abs(close_p2 - close_p3) / close_p2 < 0.01
+        # 条件C: T+2的最高价略高于T+3
+        t2_high_is_slightly_higher = high_p2 > high_p3
+        # 如果三个条件同时满足，则构成一个微弱的下降结构，可能是上涨乏力的信号，应予以排除
+        if highs_are_similar and closes_are_similar and t2_high_is_slightly_higher:
+            # print(f"[{code}] 在 {day_plus_3_day_date.date()} 触发T+2, T+3高位滞涨形态，排除。") # 这是一条可选的调试信息
+            return None
+            # return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
-    return None  # 所有检查通过
-    # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
+    # return None  # 所有检查通过
+    return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
 
 def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, code: str,
