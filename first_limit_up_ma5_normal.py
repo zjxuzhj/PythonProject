@@ -20,9 +20,9 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
 
-    USE_SELL_LOGIC: bool = False  # False 回测买入时的排除条件, True 回测卖出条件
+    USE_SELL_LOGIC: bool = True  # False 回测买入时的排除条件, True 回测卖出条件
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -1360,7 +1360,7 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
             '买入日': buy_data.name.strftime('%Y-%m-%d'),
             '卖出日': sell_day.strftime('%Y-%m-%d'),
             '评分': score,
-            '涨停后天数': (buy_data.name - first_limit_timestamp).days,
+            '涨停后天数': offset,
             '持有天数': hold_days_val,
             '买入价': round(actual_price, 2),
             '卖出价': round(sell_price, 2),
@@ -1856,12 +1856,12 @@ class ComparisonRunner:
                 affected_trades.append({
                     '股票': f"{opt_trade['股票名称']}({opt_trade['股票代码']})",
                     '买入日': opt_trade['买入日'],
-                    '原始卖出日': orig_trade['卖出日'],
-                    '原始卖出原因': orig_trade['卖出原因'],
-                    '原始收益率(%)': orig_trade['收益率(%)'],
-                    '优化卖出日': opt_trade['卖出日'],
-                    '优化卖出原因': opt_trade['卖出原因'],
-                    '优化收益率(%)': opt_trade['收益率(%)'],
+                    '原卖出': orig_trade['卖出日'],
+                    '优卖出': opt_trade['卖出日'],
+                    '原卖出因': orig_trade['卖出原因'],
+                    '优卖出因': opt_trade['卖出原因'],
+                    '原收益(%)': orig_trade['收益率(%)'],
+                    '优收益(%)': opt_trade['收益率(%)'],
                 })
 
         if not affected_trades:
@@ -1876,7 +1876,7 @@ class ComparisonRunner:
         comparison_df = comparison_df.sort_values(by='买入日', ascending=False)
 
         # 计算收益变化
-        comparison_df['收益变化(%)'] = comparison_df['优化收益率(%)'] - comparison_df['原始收益率(%)']
+        comparison_df['收益变化(%)'] = comparison_df['优收益(%)'] - comparison_df['原收益(%)']
 
         # 打印结果
         pd.set_option('display.max_rows', None)
