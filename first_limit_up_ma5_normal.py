@@ -725,6 +725,9 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
     close_p1 = day_plus_1_data['close']
     low_p1 = day_plus_1_data['low']
     volume_p1 = day_plus_1_data['volume']
+    ma10_p1 = day_plus_1_data['ma10']
+    ma20_p1 = day_plus_1_data['ma20']
+    ma30_p1 = day_plus_1_data['ma30']
     is_red_candle_p1 = close_p1 >= open_p1
     upper_body_p1 = max(open_p1, close_p1)
     upper_shadow_ratio_p1 = (high_p1 - upper_body_p1) / limit_up_day_price if limit_up_day_price > 0 else 0  # P1上影线比例
@@ -742,25 +745,25 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if check_day_data['is_limit']:
             return RuleEnum.NEW_LIMIT_UP_AFTER_FIRST
         if check_day_data['close'] < limit_up_day_price:
-            # if i == 1:
-            #     # 提取T+1日所需数据
-            #     ma5_p1 = day_plus_1_data['ma5']
-            #     ma10_p1 = day_plus_1_data['ma10']
-            #
-            #     # 检查所需数据是否有效，避免计算错误
-            #     is_data_valid = all(pd.notna([low_p1, limit_up_day_low, ma10_p1, close_p1, ma5_p1])) and \
-            #                     limit_up_day_low > 0 and ma10_p1 > 0
-            #
-            #     if is_data_valid:
-            #         # 条件1: T+1最低价非常接近涨停日最低价 (说明是回踩，非破位下跌)
-            #         is_low_near_limit_low = abs(low_p1 - limit_up_day_low) / limit_up_day_low < 0.005
-            #         # 条件2: T+1最低价精准回踩10日线 (获得均线支撑)
-            #         is_low_on_ma10 = abs(low_p1 - ma10_p1) / ma10_p1 < 0.005
-            #         # 条件3: T+1收盘价依然站在5日线上方 (保持短期强势)
-            #         is_close_above_ma5 = close_p1 > ma5_p1
-            #         # 如果三个强支撑信号同时满足，则豁免此次“破位”，不立即排除，继续观察后续走势
-            #         if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
-            #             return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
+            if i == 1:
+                # 提取T+1日所需数据
+                ma5_p1 = day_plus_1_data['ma5']
+                ma10_p1 = day_plus_1_data['ma10']
+
+                # 检查所需数据是否有效，避免计算错误
+                is_data_valid = all(pd.notna([low_p1, limit_up_day_low, ma10_p1, close_p1, ma5_p1])) and \
+                                limit_up_day_low > 0 and ma10_p1 > 0
+
+                if is_data_valid:
+                    # 条件1: T+1最低价非常接近涨停日最低价 (说明是回踩，非破位下跌)
+                    is_low_near_limit_low = abs(low_p1 - limit_up_day_low) / limit_up_day_low < 0.005
+                    # 条件2: T+1最低价精准回踩10日线 (获得均线支撑)
+                    is_low_on_ma10 = abs(low_p1 - ma10_p1) / ma10_p1 < 0.005
+                    # 条件3: T+1收盘价依然站在5日线上方 (保持短期强势)
+                    is_close_above_ma5 = close_p1 > ma5_p1
+                    # 如果三个强支撑信号同时满足，则豁免此次“破位”，不立即排除，继续观察后续走势
+                    if is_low_near_limit_low and is_low_on_ma10 and is_close_above_ma5:
+                        return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
 
             return RuleEnum.PRICE_FELL_BELOW_LIMIT_UP_PRICE
             # return None
@@ -1184,6 +1187,42 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
+    pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+    four_day_limit_up_streak = pre_window_20d['is_limit'].rolling(window=4).sum()
+    streak_end_dates = four_day_limit_up_streak[four_day_limit_up_streak >= 4].index
+
+    # 步骤2: 如果找到了连板行情，则进入统一的后续检查逻辑
+    if not streak_end_dates.empty:
+        last_streak_end_date = streak_end_dates.max()
+        # --- 分支判断 1: “中位线压力”检查 ---
+        # a. 定位连板期间的最高点
+        last_streak_end_idx_loc = pre_window_20d.index.get_loc(last_streak_end_date)
+        streak_start_idx_loc = last_streak_end_idx_loc
+        while streak_start_idx_loc >= 0 and pre_window_20d.iloc[streak_start_idx_loc]['is_limit']:
+            streak_start_idx_loc -= 1
+        streak_start_idx_loc += 1
+        streak_days_df = pre_window_20d.iloc[streak_start_idx_loc: last_streak_end_idx_loc + 1]
+        streak_peak_high = streak_days_df['high'].max()
+        streak_peak_date = streak_days_df['high'].idxmax()
+        streak_peak_idx_global = df.index.get_loc(streak_peak_date)
+        # b. 寻找后续调整的最低点并计算中位线
+        search_window_for_low = df.iloc[streak_peak_idx_global: limit_up_day_idx]
+        if not search_window_for_low.empty:
+            subsequent_trough_low = search_window_for_low['low'].min()
+            midpoint_price = (streak_peak_high + subsequent_trough_low) / 2
+            # c. 判断T+1最高价是否受阻
+            if midpoint_price > 0:
+                if abs(high_p1 - midpoint_price) / midpoint_price < 0.02:
+                    return RuleEnum.REJECTED_BY_STREAK_MIDPOINT_V2  # 排除：受阻于中位线
+        # --- 分支判断 2: “假突破20日线”检查 ---
+        # a. 定义连板结束后的窗口
+        search_start_idx_global = df.index.get_loc(last_streak_end_date) + 1
+        if search_start_idx_global < limit_up_day_idx:
+            after_streak_window = df.iloc[search_start_idx_global: limit_up_day_idx]
+            # b. 检查此窗口内是否“没有”3连跌停
+            three_day_limit_down_streak = after_streak_window['is_limit_down'].rolling(window=3).sum()
+            if not (three_day_limit_down_streak >= 3).any() and high_p1 > ma20_p1 and close_p1 < ma20_p1 and is_red_candle_p1:
+                return RuleEnum.POST_STREAK_FAKE_BREAKTHROUGH
     return None  # 所有检查通过
     # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
 
@@ -1922,52 +1961,52 @@ if __name__ == '__main__':
                     f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
                 print(f"近三月收益：{monthly_str}")
 
-                print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
-
-                score_groups = {
-                    "评分 >= 60": result_df[result_df['评分'] >= 60],
-                    "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
-                    "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
-                    "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
-                    "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
-                    "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
-                    "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
-                    "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
-                    "评分 < -10": result_df[result_df['评分'] < -10]
-                }
-
-                for label, df_group in score_groups.items():
-                    if len(df_group) == 0:
-                        print(f"{label:<18}: 无交易记录")
-                        continue
-
-                    win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
-                    avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
-                    avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
-                    # 处理可能不存在亏损交易的情况
-                    if np.isnan(avg_loss_group): avg_loss_group = 0
-
-                    profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
-                    avg_hold_days_group = df_group['持有天数'].mean()
-
-                    # 处理可能不存在盈利交易的情况
-                    if np.isnan(avg_win_group): avg_win_group = 0
-
-                    expectancy_group = (win_rate_group / 100) * avg_win_group - (
-                            1 - win_rate_group / 100) * avg_loss_group
-
-                    print(
-                        f"{label:<18}: "
-                        f"总交易数: {len(df_group):<4}，"
-                        f"胜率: {win_rate_group:.2f}%，"
-                        f"均盈: {avg_win_group:.2f}% | "
-                        f"均亏: {avg_loss_group:.2f}% | "
-                        f"均持: {avg_hold_days_group:.2f}，"
-                        f"盈亏比: {profit_ratio_group:.2f}:1，"
-                        f"期望: {expectancy_group:.3f}"
-                    )
-            else:
-                print("未产生有效交易信号")
+            #     print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
+            #
+            #     score_groups = {
+            #         "评分 >= 60": result_df[result_df['评分'] >= 60],
+            #         "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
+            #         "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
+            #         "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
+            #         "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
+            #         "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
+            #         "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
+            #         "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
+            #         "评分 < -10": result_df[result_df['评分'] < -10]
+            #     }
+            #
+            #     for label, df_group in score_groups.items():
+            #         if len(df_group) == 0:
+            #             print(f"{label:<18}: 无交易记录")
+            #             continue
+            #
+            #         win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
+            #         avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
+            #         avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
+            #         # 处理可能不存在亏损交易的情况
+            #         if np.isnan(avg_loss_group): avg_loss_group = 0
+            #
+            #         profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
+            #         avg_hold_days_group = df_group['持有天数'].mean()
+            #
+            #         # 处理可能不存在盈利交易的情况
+            #         if np.isnan(avg_win_group): avg_win_group = 0
+            #
+            #         expectancy_group = (win_rate_group / 100) * avg_win_group - (
+            #                 1 - win_rate_group / 100) * avg_loss_group
+            #
+            #         print(
+            #             f"{label:<18}: "
+            #             f"总交易数: {len(df_group):<4}，"
+            #             f"胜率: {win_rate_group:.2f}%，"
+            #             f"均盈: {avg_win_group:.2f}% | "
+            #             f"均亏: {avg_loss_group:.2f}% | "
+            #             f"均持: {avg_hold_days_group:.2f}，"
+            #             f"盈亏比: {profit_ratio_group:.2f}:1，"
+            #             f"期望: {expectancy_group:.3f}"
+            #         )
+            # else:
+            #     print("未产生有效交易信号")
 
             if not result_df.empty:
                 result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')
