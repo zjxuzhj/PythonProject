@@ -126,7 +126,7 @@ def get_sell_decision(
                                                  today_data['volume'] < p1_data['volume'] and
                                                  today_data['high'] < p1_data['high'])
                         if cond_p1_is_weak and cond_p3_attack_failed:
-                            return True, '疑似双头卖出'
+                            return True, '2日买入后疑似双头卖出'
 
     # 卖出条件5:: 跌破五日线卖出 ---
     # 确保 MA5 是有效值

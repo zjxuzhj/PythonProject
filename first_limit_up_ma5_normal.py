@@ -20,9 +20,9 @@ from strategy_rules import RuleEnum
 class StrategyConfig:
     """集中存放所有策略参数，便于统一调整。"""
     # --- 数据设置 ---
-    USE_2019_DATA: bool = True  # False 使用2024年数据, True 使用2019年数据
+    USE_2019_DATA: bool = False  # False 使用2024年数据, True 使用2019年数据
 
-    USE_SELL_LOGIC: bool = True  # False 回测买入时的排除条件, True 回测卖出条件
+    USE_SELL_LOGIC: bool = False  # False 回测买入时的排除条件, True 回测卖出条件
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -169,7 +169,7 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     if full_range > 1e-5:
         upper_body = max(open_p1, close_p1)
         upper_wick_length = high_p1 - upper_body
-        # 条件2: 定义长上影线为上影线长度占K线总长度的比例
+        # 定义长上影线为上影线长度占K线总长度的比例
         rate = (upper_wick_length / full_range)
         # 总交易数: 104 ，胜率: 34.62%，均盈: 8.40% | 均亏: 2.47% | 均持: 2.29，盈亏比: 3.40:1，期望: 1.292
         # 总交易数: 451 ，胜率: 39.02%，均盈: 7.53% | 均亏: 2.97% | 均持: 2.33，盈亏比: 2.54:1，期望: 1.130
@@ -180,27 +180,27 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
         if 0.4 < rate <= 0.45:
             score -= 5
 
-    # 总交易数: 213 ，胜率: 48.83%，均盈: 10.37% | 均亏: 2.80% | 均持: 2.28，盈亏比: 3.71:1，期望: 3.633
-    # 总交易数: 822 ，胜率: 43.80%，均盈: 7.92% | 均亏: 3.33% | 均持: 2.23，盈亏比: 2.38:1，期望: 1.595
     pre_window_30d = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
     daily_change_pct = (pre_window_30d['close'].pct_change(fill_method=None).abs())
     # 如果在过去30天里，有超过11天（50%）的日收盘价变动小于1%，则认为是极端沉寂
     stagnant_days_count = (daily_change_pct < 0.01).sum()
+    # 总交易数: 213 ，胜率: 48.83%，均盈: 10.37% | 均亏: 2.80% | 均持: 2.28，盈亏比: 3.71:1，期望: 3.633
+    # 总交易数: 822 ，胜率: 43.80%，均盈: 7.92% | 均亏: 3.33% | 均持: 2.23，盈亏比: 2.38:1，期望: 1.595
     if 4 < stagnant_days_count <= 6:
         score += 10
 
     # 涨停后第一日低开幅度
-    # 总交易数: 320 ，胜率: 45.62 %，均盈: 10.29 % | 均亏: 2.86 % | 均持: 2.04，盈亏比: 3.60:1，期望: 3.141
-    # 总交易数: 1166，胜率: 43.83 %，均盈: 8.04 % | 均亏: 3.01 % | 均持: 2.30，盈亏比: 2.67:1，期望: 1.833
     if (limit_up_close * 1.00) < low_p1 <= (limit_up_close * 1.02):
+        # 总交易数: 320 ，胜率: 45.62 %，均盈: 10.29 % | 均亏: 2.86 % | 均持: 2.04，盈亏比: 3.60:1，期望: 3.141
+        # 总交易数: 1166，胜率: 43.83 %，均盈: 8.04 % | 均亏: 3.01 % | 均持: 2.30，盈亏比: 2.67:1，期望: 1.833
         score += 10
-    # 总交易数: 125 ，胜率: 41.60 %，均盈: 9.02 % | 均亏: 2.69 % | 均持: 2.43，盈亏比: 3.35:1，期望: 2.178
-    # 总交易数: 465 ，胜率: 37.85 %，均盈: 6.90 % | 均亏: 3.03 % | 均持: 2.32，盈亏比: 2.28:1，期望: 0.731
-    if (limit_up_close * 0.980) < low_p1 <= (limit_up_close * 0.985):
+    elif (limit_up_close * 0.980) < low_p1 <= (limit_up_close * 0.985):
+        # 总交易数: 125 ，胜率: 41.60 %，均盈: 9.02 % | 均亏: 2.69 % | 均持: 2.43，盈亏比: 3.35:1，期望: 2.178
+        # 总交易数: 465 ，胜率: 37.85 %，均盈: 6.90 % | 均亏: 3.03 % | 均持: 2.32，盈亏比: 2.28:1，期望: 0.731
         score -= 10
-    # 总交易数: 123 ，胜率: 40.65 %，均盈: 9.27 % | 均亏: 3.24 % | 均持: 2.03，盈亏比: 2.86:1，期望: 1.848
-    # 总交易数: 442 ，胜率: 39.82 %，均盈: 6.39 % | 均亏: 3.55 % | 均持: 2.14，盈亏比: 1.80:1，期望: 0.407
-    if (limit_up_close * 0.96) < low_p1 <= (limit_up_close * 0.97):
+    elif (limit_up_close * 0.96) < low_p1 <= (limit_up_close * 0.97):
+        # 总交易数: 123 ，胜率: 40.65 %，均盈: 9.27 % | 均亏: 3.24 % | 均持: 2.03，盈亏比: 2.86:1，期望: 1.848
+        # 总交易数: 442 ，胜率: 39.82 %，均盈: 6.39 % | 均亏: 3.55 % | 均持: 2.14，盈亏比: 1.80:1，期望: 0.407
         score -= 10
 
     # 涨停前30日内从最低点上涨幅度
@@ -209,51 +209,50 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     price_before_limit_up = close_m1
     if lowest_low_30d > 0:
         gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
-        # 总交易数: 164 ，胜率: 51.83%，均盈: 8.79% | 均亏: 3.04% | 均持: 3.51，盈亏比: 2.90:1，期望: 3.095
-        # 总交易数: 592 ，胜率: 47.97%，均盈: 7.79% | 均亏: 2.92% | 均持: 2.95，盈亏比: 2.66:1，期望: 2.215
         if 0 < gain_from_low <= 0.025:
+            # 总交易数: 164 ，胜率: 51.83%，均盈: 8.79% | 均亏: 3.04% | 均持: 3.51，盈亏比: 2.90:1，期望: 3.095
+            # 总交易数: 592 ，胜率: 47.97%，均盈: 7.79% | 均亏: 2.92% | 均持: 2.95，盈亏比: 2.66:1，期望: 2.215
             score += 5
-        # 总交易数: 124 ，胜率: 45.16%，均盈: 10.89% | 均亏: 2.57% | 均持: 2.27，盈亏比: 4.24:1，期望: 3.510
-        # 总交易数: 378 ，胜率: 44.71%，均盈: 7.49% | 均亏: 2.68% | 均持: 2.20，盈亏比: 2.80:1，期望: 1.869
-        if 0.10 < gain_from_low <= 0.125:
+        elif 0.10 < gain_from_low <= 0.125:
+            # 总交易数: 124 ，胜率: 45.16%，均盈: 10.89% | 均亏: 2.57% | 均持: 2.27，盈亏比: 4.24:1，期望: 3.510
+            # 总交易数: 378 ，胜率: 44.71%，均盈: 7.49% | 均亏: 2.68% | 均持: 2.20，盈亏比: 2.80:1，期望: 1.869
             score += 5
-        # 总交易数: 168 ，胜率: 51.19%，均盈: 12.76% | 均亏: 4.21% | 均持: 2.01，盈亏比: 3.03:1，期望: 4.475
-        # 总交易数: 539 ，胜率: 43.78%，均盈: 9.82% | 均亏: 4.59% | 均持: 1.85，盈亏比: 2.14:1，期望: 1.722
-        if 0.29 < gain_from_low:
+        elif 0.29 < gain_from_low:
+            # 总交易数: 168 ，胜率: 51.19%，均盈: 12.76% | 均亏: 4.21% | 均持: 2.01，盈亏比: 3.03:1，期望: 4.475
+            # 总交易数: 539 ，胜率: 43.78%，均盈: 9.82% | 均亏: 4.59% | 均持: 1.85，盈亏比: 2.14:1，期望: 1.722
             score += 10
 
-    # --- 均线粘合支撑相关---
-    # 总交易数: 83  ，胜率: 54.22 %，均盈: 8.03 % | 均亏: 1.95 % | 均持: 2.11，盈亏比: 4.11:1，期望: 3.460
-    # 总交易数: 381 ，胜率: 43.31 %，均盈: 7.12 % | 均亏: 2.78 % | 均持: 2.28，盈亏比: 2.56:1，期望: 1.505
+    # --- 均线粘合支撑相关（可用性存疑，后续验证）---
     if checker.is_555_m1_abs_nian_he():
+        # 总交易数: 83  ，胜率: 54.22 %，均盈: 8.03 % | 均亏: 1.95 % | 均持: 2.11，盈亏比: 4.11:1，期望: 3.460
+        # 总交易数: 381 ，胜率: 43.31 %，均盈: 7.12 % | 均亏: 2.78 % | 均持: 2.28，盈亏比: 2.56:1，期望: 1.505
         score += 10
         reasons.append("(+10) 涨停前一日五日五十五日线粘合")
-    # 总交易数: 54  ，胜率: 53.70%，均盈: 8.75% | 均亏: 2.26% | 均持: 2.04，盈亏比: 3.88:1，期望: 3.654
-    # 总交易数: 290 ，胜率: 40.00%，均盈: 7.49% | 均亏: 2.54% | 均持: 2.02，盈亏比: 2.95:1，期望: 1.473
     if checker.is_120_p0m1m2_support():
+        # 总交易数: 54  ，胜率: 53.70%，均盈: 8.75% | 均亏: 2.26% | 均持: 2.04，盈亏比: 3.88:1，期望: 3.654
+        # 总交易数: 290 ，胜率: 40.00%，均盈: 7.49% | 均亏: 2.54% | 均持: 2.02，盈亏比: 2.95:1，期望: 1.473
         score += 10
         reasons.append("(+10) 涨停日以及前两日120日线支撑")
 
     # --- 涨停日最低价 ---
     # 检查涨停日最低价是否大幅高于前一日收盘价，这通常意味着非常强势的跳空高开且未回补缺口
-    # 总交易数: 144 ，胜率: 46.53%，均盈: 7.16% | 均亏: 3.13% | 均持: 2.62，盈亏比: 2.28:1，期望: 1.655
-    # 总交易数: 507 ，胜率: 40.63%，均盈: 6.83% | 均亏: 3.03% | 均持: 2.41，盈亏比: 2.25:1，期望: 0.973
     if (close_m1 * 1.02) < limit_up_day_low <= (close_m1 * 1.05):
+        # 总交易数: 144 ，胜率: 46.53%，均盈: 7.16% | 均亏: 3.13% | 均持: 2.62，盈亏比: 2.28:1，期望: 1.655
+        # 总交易数: 507 ，胜率: 40.63%，均盈: 6.83% | 均亏: 3.03% | 均持: 2.41，盈亏比: 2.25:1，期望: 0.973
         score -= 10
         reasons.append("(-10) 涨停日最低价>昨收1.020<昨收1.050")
-
-    # 总交易数: 113 ，胜率: 51.33 %，均盈: 9.51 % | 均亏: 2.83 % | 均持: 2.26，盈亏比: 3.36:1，期望: 3.501
-    # 总交易数: 468 ，胜率: 43.38%，均盈: 7.18% | 均亏: 3.19% | 均持: 2.19，盈亏比: 2.25:1，期望: 1.311
-    if (close_m1 * 0.985) < limit_up_day_low <= (close_m1 * 0.990):
+    elif (close_m1 * 0.985) < limit_up_day_low <= (close_m1 * 0.990):
+        # 总交易数: 113 ，胜率: 51.33 %，均盈: 9.51 % | 均亏: 2.83 % | 均持: 2.26，盈亏比: 3.36:1，期望: 3.501
+        # 总交易数: 468 ，胜率: 43.38%，均盈: 7.18% | 均亏: 3.19% | 均持: 2.19，盈亏比: 2.25:1，期望: 1.311
         score += 10
         reasons.append("(+10) 涨停日最低价>昨收0.985<昨收0.990")
 
     # --- 均线趋势相关---
-    # 总交易数: 101 ，胜率: 40.59%，均盈: 9.76% | 均亏: 3.06% | 均持: 2.06，盈亏比: 3.19:1，期望: 2.147
-    # 总交易数: 280 ，胜率: 40.71%，均盈: 6.90% | 均亏: 4.33% | 均持: 1.75，盈亏比: 1.59:1，期望: 0.244
     ma5_p0, ma10_p0, ma20_p0, ma55_p0 = day_minus_1_data[['ma5', 'ma10', 'ma20', 'ma60']]
     if all(pd.notna([ma5_p0, ma10_p0, ma20_p0, ma55_p0])):
         if day_minus_1_data['close'] > ma5_p0 > ma10_p0 > ma20_p0 > ma55_p0:
+            # 总交易数: 101 ，胜率: 40.59%，均盈: 9.76% | 均亏: 3.06% | 均持: 2.06，盈亏比: 3.19:1，期望: 2.147
+            # 总交易数: 280 ，胜率: 40.71%，均盈: 6.90% | 均亏: 4.33% | 均持: 1.75，盈亏比: 1.59:1，期望: 0.244
             score -= 10
             reasons.append("(-10) 黄金趋势背景")
 
@@ -263,32 +262,50 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
     pre5_close = df.loc[pre5_start, 'close']
     if pre5_close != 0:
         total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
-        # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
         if total_change < 1:
+            # 总交易数: 214 ，胜率: 48.13%，均盈: 10.08% | 均亏: 3.35% | 均持: 3.01，盈亏比: 3.01:1，期望: 3.115
             score += 10
             reasons.append("(+10) 四天累计只能涨1%")
-        # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
-        if 3 <= total_change < 6:
+        elif 3 <= total_change < 6:
+            # 总交易数: 191 ，胜率: 52.36%，均盈: 10.26% | 均亏: 2.68% | 均持: 2.37，盈亏比: 3.82:1，期望: 4.095
             score += 10
             reasons.append("(+10) 四天累计涨幅在3-5%内")
 
-    # --- 涨停后第一天和涨停日的量能相关 ---
-    # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
+    # --- 涨停后第一天和涨停日的量能相关(没有验证19年数据，需重新检验) ---
     if volume_p1 <= limit_up_day_volume * 1.3:
+        # 总交易数: 206 ，胜率: 52.91%，均盈: 10.84% | 均亏: 2.78% | 均持: 2.67，盈亏比: 3.91:1，期望: 4.430
         score += 10
         reasons.append("(+10) 成交量占比小于1.3")
-    # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
-    if limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
+    elif limit_up_day_volume * 1.5 < volume_p1 <= limit_up_day_volume * 1.8:
+        # 总交易数: 249 ，胜率: 46.18%，均盈: 10.65% | 均亏: 2.86% | 均持: 2.32，盈亏比: 3.73:1，期望: 3.382
         score += 10
         reasons.append("(+10) 成交量占比在1.5-1.8内")
-    # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
-    if limit_up_day_volume * 3 < volume_p1 <= limit_up_day_volume * 4.5:
+    elif limit_up_day_volume * 3 < volume_p1 <= limit_up_day_volume * 4.5:
+        # 总交易数: 159 ，胜率: 47.17 %，均盈: 7.09 % | 均亏: 3.24 % | 均持: 1.99，盈亏比: 2.19:1，期望: 1.632
         score -= 10
         reasons.append("(-10) 成交量占比在3-4.5内")
-    # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
-    if limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
+    elif limit_up_day_volume * 1.3 < volume_p1 <= limit_up_day_volume * 1.5:
+        # 总交易数: 179 ，胜率: 44.69%，均盈: 6.27% | 均亏: 3.18% | 均持: 2.09，盈亏比: 1.97:1，期望: 1.044
         score -= 10
         reasons.append("(-10) 成交量占比在1.3-1.5内")
+
+    if offset == 2:
+        if limit_up_day_idx >= 35:
+            # 获取不同周期的前期高点
+            high_3d = df.iloc[limit_up_day_idx - 3: limit_up_day_idx]['high'].max()
+            high_10d = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]['high'].max()
+            high_35d = df.iloc[limit_up_day_idx - 35: limit_up_day_idx]['high'].max()
+            price_value = high_p1
+            if high_10d > price_value >= high_3d:
+                # 总交易数: 101 ，胜率: 52.48%，均盈: 11.03% | 均亏: 3.07% | 均持: 2.45，盈亏比: 3.59:1，期望: 4.327
+                # 总交易数: 479 ，胜率: 49.90%，均盈: 9.38% | 均亏: 3.68% | 均持: 2.47，盈亏比: 2.55:1，期望: 2.838
+                score += 10
+                reasons.append("(+10) T+1最高价价突破前3-10日高点")
+            elif high_35d > price_value >= high_10d:
+                # 总交易数: 174 ，胜率: 48.28 %，均盈: 6.37 % | 均亏: 3.11 % | 均持: 2.09，盈亏比: 2.05:1，期望: 1.468
+                # 总交易数: 737 ，胜率: 40.84%，均盈: 5.86% | 均亏: 3.34% | 均持: 2.10，盈亏比: 1.75:1，期望: 0.416
+                score -= 10
+                reasons.append("(-10) T+1最高价突破前10-35日高点")
 
     if offset == 4:
         day_plus_2_data = df.iloc[limit_up_day_idx + 2]
@@ -310,12 +327,35 @@ def calculate_quality_score(stock_info: StockInfo, df: pd.DataFrame, limit_up_da
                         (abs(close_p2 - limit_up_day_price) / limit_up_day_price < hugging_rate_0003)
         is_p3_hugging = (abs(open_p3 - limit_up_day_price) / limit_up_day_price < hugging_rate_0005) or \
                         (abs(close_p3 - limit_up_day_price) / limit_up_day_price < hugging_rate_0005)
-        # 总交易数: 129，胜率: 52.71%，均盈: 12.86% | 均亏: 2.63% | 均持: 2.50，盈亏比: 4.88:1，期望: 5.531
-        # 总交易数: 470，胜率: 40.64 %，均盈: 8.41 % | 均亏: 2.58 % | 均持: 2.37，盈亏比: 3.26:1，期望: 1.887
         if is_p1_hugging or is_p2_hugging or is_p3_hugging:
+            # 总交易数: 129，胜率: 52.71%，均盈: 12.86% | 均亏: 2.63% | 均持: 2.50，盈亏比: 4.88:1，期望: 5.531
+            # 总交易数: 470，胜率: 40.64 %，均盈: 8.41 % | 均亏: 2.58 % | 均持: 2.37，盈亏比: 3.26:1，期望: 1.887
             score += 15
             reasons.append("(+15) 其开盘价或收盘价是否紧贴涨停价 (距离小于1%)")
 
+        if limit_up_day_idx >= 55:
+            # 获取不同周期的前期高点
+            high_5d = df.iloc[limit_up_day_idx - 5: limit_up_day_idx]['high'].max()
+            high_10d = df.iloc[limit_up_day_idx - 10: limit_up_day_idx]['high'].max()
+            high_17d = df.iloc[limit_up_day_idx - 17: limit_up_day_idx]['high'].max()
+            high_33d = df.iloc[limit_up_day_idx - 33: limit_up_day_idx]['high'].max()
+            high_55d = df.iloc[limit_up_day_idx - 55: limit_up_day_idx]['high'].max()
+            price_value = max(high_p1, high_p2, high_p3)
+            if high_55d > price_value >= high_33d:
+                # 总交易数: 68  ，胜率: 38.24%，均盈: 6.58% | 均亏: 2.53% | 均持: 1.81，盈亏比: 2.60:1，期望: 0.955（四日总数480）
+                # 总交易数: 266 ，胜率: 35.71%，均盈: 5.87% | 均亏: 2.37% | 均持: 2.11，盈亏比: 2.47:1，期望: 0.570（四日总数1967）
+                score -= 10
+                reasons.append("(-10) T+1到T+3最高价突破前33-55日高点")
+            elif high_17d > price_value >= high_10d:
+                # 总交易数: 40  ，胜率: 52.50%，均盈: 11.40% | 均亏: 1.47% | 均持: 2.67，盈亏比: 7.77:1，期望: 5.289
+                # 总交易数: 189 ，胜率: 37.57%，均盈: 8.70% | 均亏: 2.18% | 均持: 2.66，盈亏比: 4.00:1，期望: 1.911
+                score += 10
+                reasons.append("(+10) T+1到T+3最高价突破前10-17日高点")
+            elif high_5d > price_value:
+                # 总交易数: 21  ，胜率: 52.38%，均盈: 12.22% | 均亏: 3.69% | 均持: 2.95，盈亏比: 3.31:1，期望: 4.643
+                # 总交易数: 155 ，胜率: 57.42%，均盈: 7.97% | 均亏: 2.52% | 均持: 3.41，盈亏比: 3.16:1，期望: 3.505
+                score += 10
+                reasons.append("(+10) T+1到T+3最高价小于前5日高点")
     return score, reasons
 
 
@@ -766,7 +806,6 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                         return None  # 跳过本次循环的排除逻辑，进入下一次循环(检查T+2日等)
 
             return RuleEnum.PRICE_FELL_BELOW_LIMIT_UP_PRICE
-            # return None
 
     # 第二日买入专有策略
     if offset == 2:
@@ -1066,23 +1105,43 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                 # print(f"[{code}] 触发MA55假突破回落形态，排除。")
                 return RuleEnum.FAILED_MA55_BREAKOUT
 
-        # 买前条件15：p1阴线，p2红柱，p3十字星并且p3收盘价小于p2实体的一半。副条件：三天都不被十日线支撑，并且五日十日二十日不粘和
-        if not is_red_candle_p1:
+        # 买前条件15：p1阴线，p2红柱，p3收盘价小于p2实体一半，且无强支撑时排除
+        if not is_red_candle_p1 and is_red_candle_p2:
             midpoint_p1_body = (open_p1 + close_p1) / 2
+            # 首先检查 T+2 是否未能强势收复 T+1 的一半，这是后续判断的前提
             if close_p2 <= midpoint_p1_body:
-                # print(f"[{code}] 触发弱反弹形态 (T+2未能收复T+1阴线一半)，排除。")
-                if is_red_candle_p2:
-                    midpoint_p2_body = (open_p2 + close_p2) / 2
-                    is_shi_zi = True
-                    if close_p3 > 0:
-                        real_body_ratio_p3 = abs(open_p3 - close_p3) / close_p3
-                        if real_body_ratio_p3 < 0.004:
-                            is_shi_zi = False
-                    if (close_p3 < midpoint_p2_body and is_shi_zi
-                            and not checker.is_51020_m1_nian_he()
-                            and not checker.is_10_p1p2p3_support()):
-                        # print(f"[{code}] 触发上涨乏力形态 (T+3跌破T+2阳线一半)，排除。")
-                        return RuleEnum.FAILED_REBOUND_PATTERN
+                # --- 强支撑豁免逻辑 ---
+                # 1. 定义支撑区域和判断函数
+                limit_up_close = limit_up_day_data['close']
+                upper_bound = limit_up_close * 1.015
+
+                def is_day_supported(day_data):
+                    """辅助函数：检查单日是否被涨停价强力支撑"""
+                    # 支撑条件1: 开盘价在支撑区内，并且当天收阳线
+                    open_supported = limit_up_close < day_data['open'] <= upper_bound and day_data['close'] > day_data[
+                        'open']
+                    # 支撑条件2: 收盘价在支撑区内
+                    close_supported = limit_up_close < day_data['close'] <= upper_bound
+                    return open_supported or close_supported
+
+                # 2. 计算T+1到T+3获得支撑的天数
+                days_to_check = [day_plus_1_data, day_plus_2_data, day_plus_3_data]
+                supported_days_count = sum(1 for day in days_to_check if is_day_supported(day))
+
+                # 定义豁免条件：三天中至少有两天获得强支撑
+                has_strong_support_override = supported_days_count >= 2
+
+                # --- 最终排除逻辑 ---
+                # 将多个弱势条件分别赋值给变量，提高可读性
+                midpoint_p2_body = (open_p2 + close_p2) / 2
+                is_weak_follow_through = close_p3 < midpoint_p2_body
+                is_ma_diverged = not checker.is_51020_m1_nian_he()
+                is_ma_unsupported = not checker.is_10_p1p2p3_support()
+                # 最终决策：当所有“弱势条件”都满足，并且“没有”强支撑豁免时，才执行排除
+                if is_weak_follow_through and is_ma_diverged and is_ma_unsupported and not has_strong_support_override:
+                    # print(f"[{code}] 触发上涨乏力形态 (T+3跌破T+2阳线一半)，排除。")
+                    # return None
+                    return RuleEnum.FAILED_REBOUND_PATTERN
 
         # 买前条件16：涨停后三天的最高值差不多相等，p1p2存在上影线长度占K线总长度的20%以上
         highs = [day_plus_1_data['high'], day_plus_2_data['high'], day_plus_3_data['high']]
@@ -1133,12 +1192,31 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         # 买前条件19：整理期持续阴跌且缺乏支撑
         is_yin_p1 = close_p1 < open_p1
         is_yin_p3 = close_p3 < open_p3
+        limit_up_close = limit_up_day_data['close']
+        upper_bound = limit_up_close * 1.015
+
+        def is_day_supported(day_data):
+            """辅助函数：检查单日是否被涨停价强力支撑"""
+            # 支撑条件1: 开盘价在支撑区内，并且当天收阳线
+            open_supported = limit_up_close < day_data['open'] <= upper_bound and day_data['close'] > day_data[
+                'open']
+            # 支撑条件2: 收盘价在支撑区内
+            close_supported = limit_up_close < day_data['close'] <= upper_bound
+            return open_supported or close_supported
+
+        # 2. 计算T+1到T+3获得支撑的天数
+        days_to_check = [day_plus_1_data, day_plus_2_data, day_plus_3_data]
+        supported_days_count = sum(1 for day in days_to_check if is_day_supported(day))
+        # 定义豁免条件：三天中至少有两天获得强支撑
+        has_strong_support_override = supported_days_count >= 2
         if (is_yin_p1 and is_yin_p3
+                and not has_strong_support_override
                 and not checker.is_555_m1_abs_nian_he()
                 and not checker.is_20_p0m1m2_support()
                 and not checker.is_20_p1p2p3_support()
                 and not checker.is_60_p0m1m2_support()
                 and not checker.is_stable_platform()):
+            # return None
             return RuleEnum.UNSUPPORTED_WEAK_CONSOLIDATION
 
         # 买前条件20 : 排除T+3日出现高波动长影十字星，显示多空激战/力竭
@@ -1171,10 +1249,10 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                         and not checker.is_55120_m1_nian_he()):
                     return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
 
-        upper_shadow = high_p2 - close_p2
-        candle_body = abs(open_p2 - close_p2)
+        upper_shadow_p2 = high_p2 - close_p2
+        candle_body_p2 = abs(open_p2 - close_p2)
         p2_is_significantly_higher = (high_p2 - close_p2) / close_p1 > 0.02
-        is_body_relatively_small = candle_body < 2 * upper_shadow
+        is_body_relatively_small = candle_body_p2 < 2 * upper_shadow_p2
         highs_are_similar = abs(high_p2 - high_p3) / high_p2 < 0.008
         # 条件B: T+2和T+3的收盘价非常接近 (<1%的差异)
         closes_are_similar = abs(close_p2 - close_p3) / close_p2 < 0.01
@@ -1184,6 +1262,33 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if highs_are_similar and closes_are_similar and p2_high_is_slightly_higher and p2_is_significantly_higher and is_body_relatively_small:
             # print(f"[{code}] 在 {day_plus_3_day_date.date()} 触发T+2, T+3高位滞涨形态，排除。") # 这是一条可选的调试信息
             return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
+
+        # highs_are_close = False
+        # if max(high_p1, high_p2) > 0:
+        #     if abs(high_p1 - high_p2) / max(high_p1, high_p2) < 0.005:
+        #         highs_are_close = True
+        #
+        # # 条件2: T+1和T+2都有超过2%的长上影线 (价格在该位置受阻)
+        # p1_has_long_wick = False
+        # if high_p1 > 0 and (high_p1 - max(open_p1, close_p1)) / high_p1 > 0.02:
+        #     p1_has_long_wick = True
+        #
+        # p2_has_long_wick = False
+        # if high_p2 > 0 and (high_p2 - max(open_p2, close_p2)) / high_p2 > 0.02:
+        #     p2_has_long_wick = True
+        #
+        # both_days_rejected = p1_has_long_wick and p2_has_long_wick
+        #
+        # # 条件3: T+3创出新高但留下更长的上影线 (力竭信号)
+        # p3_is_failed_breakout = False
+        # if high_p3 > high_p1 and high_p3 > high_p2:
+        #     if high_p3 > 0 and (high_p3 - max(open_p3, close_p3)) / high_p3 > 0.04:
+        #         p3_is_failed_breakout = True
+        #
+        # # 最终判断: 如果所有条件都满足，则构成牛市陷阱，应予以排除
+        # if highs_are_close and both_days_rejected and p3_is_failed_breakout:
+        #     return None
+        # return RuleEnum.REPEATED_UPPER_WICK_FAILURE
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
@@ -1221,7 +1326,8 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
             after_streak_window = df.iloc[search_start_idx_global: limit_up_day_idx]
             # b. 检查此窗口内是否“没有”3连跌停
             three_day_limit_down_streak = after_streak_window['is_limit_down'].rolling(window=3).sum()
-            if not (three_day_limit_down_streak >= 3).any() and high_p1 > ma20_p1 and close_p1 < ma20_p1 and is_red_candle_p1:
+            if not (
+                    three_day_limit_down_streak >= 3).any() and high_p1 > ma20_p1 and close_p1 < ma20_p1 and is_red_candle_p1:
                 return RuleEnum.POST_STREAK_FAKE_BREAKTHROUGH
     return None  # 所有检查通过
     # return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
@@ -1961,52 +2067,53 @@ if __name__ == '__main__':
                     f"总交易数: {len(result_df)}，胜率: {win_rate:.2f}%，均盈: {avg_win:.2f}% | 均亏: {avg_loss:.2f}% | 均持: {avg_hold_days:.2f}，盈亏比: {profit_ratio:.2f}:1，期望: {get_money:.3f}")
                 print(f"近三月收益：{monthly_str}")
 
-            #     print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
-            #
-            #     score_groups = {
-            #         "评分 >= 60": result_df[result_df['评分'] >= 60],
-            #         "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
-            #         "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
-            #         "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
-            #         "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
-            #         "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
-            #         "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
-            #         "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
-            #         "评分 < -10": result_df[result_df['评分'] < -10]
-            #     }
-            #
-            #     for label, df_group in score_groups.items():
-            #         if len(df_group) == 0:
-            #             print(f"{label:<18}: 无交易记录")
-            #             continue
-            #
-            #         win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
-            #         avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
-            #         avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
-            #         # 处理可能不存在亏损交易的情况
-            #         if np.isnan(avg_loss_group): avg_loss_group = 0
-            #
-            #         profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
-            #         avg_hold_days_group = df_group['持有天数'].mean()
-            #
-            #         # 处理可能不存在盈利交易的情况
-            #         if np.isnan(avg_win_group): avg_win_group = 0
-            #
-            #         expectancy_group = (win_rate_group / 100) * avg_win_group - (
-            #                 1 - win_rate_group / 100) * avg_loss_group
-            #
-            #         print(
-            #             f"{label:<18}: "
-            #             f"总交易数: {len(df_group):<4}，"
-            #             f"胜率: {win_rate_group:.2f}%，"
-            #             f"均盈: {avg_win_group:.2f}% | "
-            #             f"均亏: {avg_loss_group:.2f}% | "
-            #             f"均持: {avg_hold_days_group:.2f}，"
-            #             f"盈亏比: {profit_ratio_group:.2f}:1，"
-            #             f"期望: {expectancy_group:.3f}"
-            #         )
-            # else:
-            #     print("未产生有效交易信号")
+                print(f"\n\033[1m--- 评分表现汇总 ---\033[0m")
+
+                score_groups = {
+                    "评分 >= 70": result_df[result_df['评分'] >= 70],
+                    "60 <= 评分 < 70": result_df[(result_df['评分'] >= 60) & (result_df['评分'] < 70)],
+                    "50 <= 评分 < 60": result_df[(result_df['评分'] >= 50) & (result_df['评分'] < 60)],
+                    "40 <= 评分 < 50": result_df[(result_df['评分'] >= 40) & (result_df['评分'] < 50)],
+                    "30 <= 评分 < 40": result_df[(result_df['评分'] >= 30) & (result_df['评分'] < 40)],
+                    "20 <= 评分 < 30": result_df[(result_df['评分'] >= 20) & (result_df['评分'] < 30)],
+                    "10 <= 评分 < 20": result_df[(result_df['评分'] >= 10) & (result_df['评分'] < 20)],
+                    "0 <= 评分 < 10": result_df[(result_df['评分'] >= 0) & (result_df['评分'] < 10)],
+                    "-10 <= 评分 < 0": result_df[(result_df['评分'] >= -10) & (result_df['评分'] < 0)],
+                    "评分 < -10": result_df[result_df['评分'] < -10]
+                }
+
+                for label, df_group in score_groups.items():
+                    if len(df_group) == 0:
+                        print(f"{label:<18}: 无交易记录")
+                        continue
+
+                    win_rate_group = len(df_group[df_group['收益率(%)'] > 0]) / len(df_group) * 100
+                    avg_win_group = df_group[df_group['收益率(%)'] > 0]['收益率(%)'].mean()
+                    avg_loss_group = abs(df_group[df_group['收益率(%)'] <= 0]['收益率(%)'].mean())
+                    # 处理可能不存在亏损交易的情况
+                    if np.isnan(avg_loss_group): avg_loss_group = 0
+
+                    profit_ratio_group = avg_win_group / avg_loss_group if avg_loss_group != 0 else np.inf
+                    avg_hold_days_group = df_group['持有天数'].mean()
+
+                    # 处理可能不存在盈利交易的情况
+                    if np.isnan(avg_win_group): avg_win_group = 0
+
+                    expectancy_group = (win_rate_group / 100) * avg_win_group - (
+                            1 - win_rate_group / 100) * avg_loss_group
+
+                    print(
+                        f"{label:<18}: "
+                        f"总交易数: {len(df_group):<4}，"
+                        f"胜率: {win_rate_group:.2f}%，"
+                        f"均盈: {avg_win_group:.2f}% | "
+                        f"均亏: {avg_loss_group:.2f}% | "
+                        f"均持: {avg_hold_days_group:.2f}，"
+                        f"盈亏比: {profit_ratio_group:.2f}:1，"
+                        f"期望: {expectancy_group:.3f}"
+                    )
+            else:
+                print("未产生有效交易信号")
 
             if not result_df.empty:
                 result_df['买入日'] = result_df['买入日'].dt.strftime('%Y-%m-%d')

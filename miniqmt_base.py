@@ -25,7 +25,7 @@ from stock_info import StockInfo
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
-PER_STOCK_TOTAL_BUDGET = 10000  # 每只股票的总买入预算
+PER_STOCK_TOTAL_BUDGET = 20000  # 每只股票的总买入预算
 PER_FOURTH_STOCK_TOTAL_BUDGET = PER_STOCK_TOTAL_BUDGET  # 涨停后第四天的每只股票的总买入预算(暂时改为统一，因为第四天并没有特别优势)
 daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
