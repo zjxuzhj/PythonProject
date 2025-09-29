@@ -44,7 +44,7 @@ class RuleEnum(Enum):
     IS_CONSECUTIVE_LIMIT_UP = ("连板股", "形态", "涨停前一日或后一日也是涨停，非首板")
     LARGE_GAIN_BEFORE_LIMIT_UP = ("首板前涨幅过高", "形态", "首板前的5天内累计涨幅过大（>15%）")
     PRE_LIMIT_UP_CHAOTIC_PATTERN = (
-    "涨停前K线形态混乱", "形态", "涨停前两日连续出现宽幅震荡且实体极小的K线，且近期未有效测试MA10支撑")
+        "涨停前K线形态混乱", "形态", "涨停前两日连续出现宽幅震荡且实体极小的K线，且近期未有效测试MA10支撑")
     FREQUENT_LIMIT_UPS_RECENTLY = (
         "近期涨停过于频繁",
         "形态",
@@ -255,7 +255,7 @@ class RuleEnum(Enum):
     # 检查M-1, M-2, M-3是否连续阳线爬升
     PARABOLIC_CLIMB_EXHAUSTION = (
         "加速爬升后力竭",
-         "形态",
+        "形态",
         "涨停前出现连续3日以上的小阳线爬升，且最低价持续脱离5日均线。"
     )
 
@@ -327,6 +327,11 @@ class RuleEnum(Enum):
         "策略逻辑",  # 类型
         "前期4连板后未出现3连跌停，且T+1日向上假突破MA20（最高价过线、收盘价未过线）的阳线。",  # 规则描述
     )
+
+    REBOUND_TO_MIDPOINT_RESISTANCE = (
+        "反弹至中点阻力位",
+        "策略逻辑",  # 类型
+        "反弹至前期下跌中位线遇阻")
 
     SCORE_IS_SMALL_TEN = (
         "评分小于10",

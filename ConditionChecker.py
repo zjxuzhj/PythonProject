@@ -89,6 +89,7 @@ class ConditionChecker:
         return self.is_ma_cohesive(['ma5', 'ma10', 'ma20'], actual_threshold)
 
     def is_102030_m1_nian_he(self, threshold: Optional[float] = None) -> bool:
+        # 0.012参数比0.025更好
         actual_threshold = threshold if threshold is not None else 0.025
         return self.is_ma_cohesive(['ma10', 'ma20', 'ma30'], actual_threshold)
 
