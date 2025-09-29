@@ -63,20 +63,20 @@ def get_sell_decision(
     if position_info['hold_days'] >= config.max_hold_days:
         return True, '持有超限'
 
-    # 卖出条件2: 跌停止损 (基于前一日状态) ---
-    # 如果前一天收盘价已经低于或等于前一天的跌停价
-    if market_data.prev_close <= market_data.prev_down_limit_price:
-        return True, '跌停止损'
+    # 优先级 2 : 今日涨停强制持有规则
+    # 无论昨天是何种状态，只要今天涨停，就是最强的持有信号。
+    if market_data.close >= market_data.up_limit_price:
+        return False, '今日涨停'
 
-    # 卖出条件3: 断板止盈 (基于前一日状态) ---
-    # 如果前一天是涨停的
+    # 优先级 3: 跌停止损 (基于前一日状态)
+    # 如果代码执行到这里，说明今天肯定不是涨停。
+    if market_data.prev_close <= market_data.prev_down_limit_price:
+        return True, '昨日跌停止损'
+
+    # 优先级 4: 断板止盈 (基于前一日状态)
+    # 如果代码执行到这里，说明今天肯定不是涨停。
     if market_data.prev_close >= market_data.prev_up_limit_price:
-        # 但今天收盘价没有涨停，则卖出
-        if market_data.close < market_data.up_limit_price:
-            return True, '断板止盈'
-        else:
-            # 如果今天继续涨停，则继续持有
-            return False, ''
+        return True, '断板止盈'
 
     # 卖出条件4: 首板炸板卖出，只要股票冲高到达8.7%，收盘没有涨停就卖出 ---
     price_at_9_percent_gain = market_data.prev_close * 1.087

@@ -328,6 +328,11 @@ class RuleEnum(Enum):
         "前期4连板后未出现3连跌停，且T+1日向上假突破MA20（最高价过线、收盘价未过线）的阳线。",  # 规则描述
     )
 
+    FLAT_TOP_RESISTANCE_3DAYS = (
+        "3天平顶阻力",
+        "策略逻辑",  # 类型
+        "T+1,T+2,T+3形成三日平头顶强阻力")
+
     REBOUND_TO_MIDPOINT_RESISTANCE = (
         "反弹至中点阻力位",
         "策略逻辑",  # 类型

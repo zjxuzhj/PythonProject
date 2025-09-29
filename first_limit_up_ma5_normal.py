@@ -1266,6 +1266,22 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if highs_are_similar and closes_are_similar and p2_high_is_slightly_higher and p2_is_significantly_higher and is_body_relatively_small:
             # print(f"[{code}] 在 {day_plus_3_day_date.date()} 触发T+2, T+3高位滞涨形态，排除。") # 这是一条可选的调试信息
             return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
+
+
+        is_flat_top_p2_p3 = False
+        if abs(high_p2 - high_p3) / high_p3 <= 0.01:
+           is_flat_top_p2_p3 = True
+        # 条件2: T+1 最高价与该平头顶的距离在1%以内
+        is_p1_close_to_top = False
+        if high_p2 > 0:  # 避免除以零
+            if abs(high_p1 - high_p2) / high_p2 <= 0.02:
+                is_p1_close_to_top = True
+        is_p2_bullish = close_p2 > open_p2
+        is_p3_bearish = close_p3 < open_p3
+        # 条件3: T+3的实体被T+2的实体完全包裹
+        is_body_engulfed = (open_p3 < close_p2) and (close_p3 > open_p2)
+        if is_flat_top_p2_p3 and is_p1_close_to_top and is_p2_bullish and is_p3_bearish and is_body_engulfed:
+            return RuleEnum.FLAT_TOP_RESISTANCE_3DAYS
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
