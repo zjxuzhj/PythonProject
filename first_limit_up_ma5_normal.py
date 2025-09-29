@@ -1367,6 +1367,18 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
             ):
                 return RuleEnum.REBOUND_TO_MIDPOINT_RESISTANCE
 
+    upper_shadow_p1 = high_p1 - max(open_p1, close_p1)
+    upper_shadow_ratio = upper_shadow_p1 / limit_up_day_price
+    cond_long_upper_shadow = upper_shadow_ratio >= 0.05
+    # 涨停后第一天收阴线
+    cond_is_bearish_candle = close_p1 < open_p1
+    # 涨停后第一天的收盘价和涨停日收盘价基本一致 (使用0.1%的容差来判断“一致”)
+    cond_close_is_identical = abs(close_p1 - limit_up_day_price) / limit_up_day_price < 0.001
+    if (cond_long_upper_shadow and cond_is_bearish_candle
+            and not checker.is_55250_m1_nian_he(0.022)
+            and cond_close_is_identical):
+        return RuleEnum.T1_GRAVESTONE_REJECTION
+
     if config.USE_SINGLE_RULE:
         return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
     else:

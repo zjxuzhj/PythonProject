@@ -338,6 +338,11 @@ class RuleEnum(Enum):
         "策略逻辑",  # 类型
         "反弹至前期下跌中位线遇阻")
 
+    T1_GRAVESTONE_REJECTION = (
+        "T+1日出现墓碑线",
+        "K线形态",
+        "T+1日长上影(>5%)、收阴线且收盘价与涨停价一致")
+
     SCORE_IS_SMALL_TEN = (
         "评分小于10",
         "策略逻辑",

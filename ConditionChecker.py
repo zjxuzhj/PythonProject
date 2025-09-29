@@ -111,7 +111,8 @@ class ConditionChecker:
 
     def is_55250_m1_nian_he(self, threshold: Optional[float] = None) -> bool:
         actual_threshold = threshold if threshold is not None else 0.012
-        return self.is_ma_cohesive(['ma55', 'ma250'], actual_threshold)
+        return (self.is_ma_cohesive(['ma55', 'ma250'], actual_threshold)
+                or self.is_ma_cohesive(['ma60', 'ma250'], actual_threshold))
 
     def is_555_m1_abs_nian_he(self, threshold: Optional[float] = None) -> bool:
         # 检查T-1日短期均线(5,55)是否粘合，取绝对值
