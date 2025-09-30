@@ -1267,10 +1267,9 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
             # print(f"[{code}] 在 {day_plus_3_day_date.date()} 触发T+2, T+3高位滞涨形态，排除。") # 这是一条可选的调试信息
             return RuleEnum.STAGNATION_WITH_SLIGHTLY_LOWER_HIGH
 
-
         is_flat_top_p2_p3 = False
         if abs(high_p2 - high_p3) / high_p3 <= 0.01:
-           is_flat_top_p2_p3 = True
+            is_flat_top_p2_p3 = True
         # 条件2: T+1 最高价与该平头顶的距离在1%以内
         is_p1_close_to_top = False
         if high_p2 > 0:  # 避免除以零
@@ -1378,6 +1377,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
             and not checker.is_55250_m1_nian_he(0.022)
             and cond_close_is_identical):
         return RuleEnum.T1_GRAVESTONE_REJECTION
+
 
     if config.USE_SINGLE_RULE:
         return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
