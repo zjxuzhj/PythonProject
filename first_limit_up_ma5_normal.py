@@ -24,7 +24,9 @@ class StrategyConfig:
 
     USE_SELL_LOGIC: bool = False  # False 回测买入时的排除条件, True 回测卖出条件
 
-    USE_SINGLE_RULE: bool = False  # False 进入正常回测所有排除条件， True 单独回测一个条件
+    USE_BUY_SINGLE_RULE: int = 0  # 0 进入正常回测所有排除条件， 1 单独回测涨停前日期选择策略 2 单独回测买入日前策略
+
+    BACKTEST_DATE_FILTERING = '2024-03-01'  # 默认 2024-03-01 ， 会把该日期之前的回测数据过滤掉，除非 USE_2019_DATA 为True
 
     # <<<<<<<<<<<<<<<< 买入日偏移量配置 <<<<<<<<<<<<<<<<
     # BUY_OFFSETS: list[int] = field(default_factory=lambda: [2])
@@ -33,7 +35,7 @@ class StrategyConfig:
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
-    MAX_MARKET_CAP_BILLIONS = 250  # 条件7: 最大市值过滤（单位：亿）
+    MAX_MARKET_CAP_BILLIONS = 250  # 最大市值过滤（单位：亿） 原值250，最近中大市值比较吃香
 
     # --- 买入参数 ---
     PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
@@ -391,7 +393,8 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
     return df
 
 
-def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd.Timestamp, config: StrategyConfig) -> \
+def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_limit_day: pd.Timestamp,
+                                config: StrategyConfig) -> \
         Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
@@ -401,16 +404,16 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
     name = stock_info.name
     theme = stock_info.theme
     market_value = stock_info.market_value
-    day_idx = df.index.get_loc(day)
+    day_idx = df.index.get_loc(first_limit_day)
 
-    if df.index.get_loc(day) + 1 >= len(df):
+    if df.index.get_loc(first_limit_day) + 1 >= len(df):
         return RuleEnum.NO_DATA_AFTER_LIMIT_UP  # 没有涨停后一天数据的直接排除
-    if df.index.get_loc(day) < 20:
+    if df.index.get_loc(first_limit_day) < 20:
         return RuleEnum.INSUFFICIENT_DATA_BEFORE_LIMIT_UP  # 涨停前数据少于20的直接排除
 
     checker = ConditionChecker(df, limit_up_day_idx=day_idx, offset=0, stock_info=stock_info)
 
-    limit_up_day_date = day  # 涨停日日期
+    limit_up_day_date = first_limit_day  # 涨停日日期
     limit_up_day_idx = df.index.get_loc(limit_up_day_date)  # 涨停日行号
     limit_up_day_data = df.loc[limit_up_day_date]  # 涨停日数据
     limit_up_day_price = limit_up_day_data['close']  # 涨停日收盘价，重要支撑位
@@ -455,8 +458,8 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
     volume_p1 = day_plus_1_data['volume']
     is_red_candle_p1 = close_p1 >= open_p1
 
-    # 条件0：排除市值大于250亿的股票
-    if market_value > config.MAX_MARKET_CAP_BILLIONS:
+    # 条件0：排除市值大于250亿，小于350亿的股票
+    if  300>=market_value > config.MAX_MARKET_CAP_BILLIONS:
         return RuleEnum.MARKET_CAP_TOO_HIGH
 
     # 条件1：排除特定题材
@@ -478,7 +481,7 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
         return RuleEnum.FREQUENT_LIMIT_UPS_RECENTLY
 
     # 条件5：前五日累计涨幅校验（相当于往前数五根k线，那天的收盘价到涨停当天收盘价的涨幅，也就是除涨停外，四天累计只能涨5%）
-    pre5_start = df.index[df.index.get_loc(day) - 5]
+    pre5_start = df.index[df.index.get_loc(first_limit_day) - 5]
     pre5_close = df.loc[pre5_start, 'close']
     if pre5_close != 0:
         total_change = (limit_up_day_price - pre5_close) / pre5_close * 100
@@ -524,7 +527,7 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
             if len(search_for_down_streak_window) >= 2:
                 down_streaks = search_for_down_streak_window['is_limit_down'].rolling(window=2).sum()
                 if (down_streaks >= 2).any():
-                    print(f"[{code}] 在 {day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
+                    print(f"[{code}] 在 {first_limit_day.date()} 排除：涨停前10日内出现先2连板后2连跌的极端走势。")
                     return RuleEnum.EXTREME_VOLATILITY_UP_DOWN
 
     # 条件13: 排除前期高位连板后，出现的缩量反抽形态，如果回调期最低点高于起涨的最低点，排除说明的确是在反抽，不过是缩量反抽，不需要参与
@@ -564,7 +567,7 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
                             pullback_is_shallow = True
                 if vol_condition and price_condition and pullback_is_shallow:
                     print(
-                        f"[{code}] 在 {day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
+                        f"[{code}] 在 {first_limit_day.date()} 的涨停被条件12排除：疑似对 {peak_day_timestamp.date()} 的高位炸板进行缩量反抽。")
                     return RuleEnum.LOW_VOLUME_REBOUND_AFTER_STREAK
 
     # 条件53：排除一字板，且排除最近20天内在20日线下超过一次的票，筛选出那些在涨停前趋势保持良好、没有经历深度或反复调整的股票。副条件：排除涨停前第二天低于五日线的票
@@ -710,8 +713,11 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, day: pd
         if (gap_up_on_limit_day and gap_down_after_limit
                 and not checker.is_stable_platform_to_new_low()):
             return RuleEnum.ISLAND_REVERSAL_PATTERN
-    return None  # 所有检查通过
-    # return RuleEnum.ISLAND_REVERSAL_PATTERN
+
+    if config.USE_BUY_SINGLE_RULE == 1:  # 0和2的状态都要返回None
+        return RuleEnum.ISLAND_REVERSAL_PATTERN
+    else:
+        return None  # 所有检查通过
 
 
 def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_day_idx: int, offset: int,
@@ -787,7 +793,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if check_day_data['is_limit']:
             return RuleEnum.NEW_LIMIT_UP_AFTER_FIRST
         if check_day_data['close'] < limit_up_day_price:
-            if not config.USE_SINGLE_RULE:
+            if config.USE_BUY_SINGLE_RULE == 0:
                 if i == 1:
                     # 提取T+1日所需数据
                     ma5_p1 = day_plus_1_data['ma5']
@@ -1378,8 +1384,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
             and cond_close_is_identical):
         return RuleEnum.T1_GRAVESTONE_REJECTION
 
-
-    if config.USE_SINGLE_RULE:
+    if config.USE_BUY_SINGLE_RULE == 2:  # 0和1都需要return None通过
         return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
     else:
         return None  # 所有检查通过
@@ -1396,7 +1401,7 @@ def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, co
     return False
 
 
-def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, rejection_log):
+def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig):
     """识别首板涨停日并排除连板"""
     limit_days = df[df['is_limit']].index.tolist()
     code = stock_info.code
@@ -1404,18 +1409,12 @@ def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, rejec
     valid_days = []
     for day in limit_days:
         # 日期过滤条件（方便回测）
-        if day < pd.Timestamp('2024-03-01') and not config.USE_2019_DATA:
+        if day < pd.Timestamp(config.BACKTEST_DATE_FILTERING) and not config.USE_2019_DATA:
             continue
-
-        rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config)
-
-        if rejection_rule:
-            rejection_log.append({
-                '股票代码': code, '股票名称': name, '日期': day.strftime('%Y-%m-%d'),
-                '阶段': '首板筛选', '规则名称': rejection_rule.name,
-                '规则描述': rejection_rule.description, '规则类型': rejection_rule.rule_type,
-                '排除原因': rejection_rule.message,
-            })
+        if config.USE_BUY_SINGLE_RULE == 0:
+            rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config)
+            if not rejection_rule:
+                valid_days.append(day)
         else:
             valid_days.append(day)
     return valid_days
@@ -1563,7 +1562,14 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
             order_valid = True
         actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
-        rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
+        if config.USE_BUY_SINGLE_RULE == 0:
+            rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
+        else:
+            valid_first_limit_up_rejection_rule = is_valid_first_limit_up_day(stock_info, df, first_limit_day, config)
+            if not valid_first_limit_up_rejection_rule:
+                rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
+            else:
+                rejection_rule = valid_first_limit_up_rejection_rule
 
         score, reasons = calculate_quality_score(stock_info, df, start_idx, offset, config)
 
@@ -1728,7 +1734,7 @@ def save_trades_excel(result_df, rejections_df):
 
         if not rejections_df.empty:
             # --- 核心修改：在处理前，先筛选掉“首板筛选”阶段的记录 ---
-            rejections_df = rejections_df[rejections_df['阶段'] != '首板筛选'].copy()
+            # rejections_df = rejections_df[rejections_df['阶段'] != '首板筛选'].copy()
             if not rejections_df.empty:
                 rejection_columns = [
                     '股票代码', '股票名称', '首板日', '买入日', '卖出日', '评分',
@@ -1929,7 +1935,7 @@ def process_single_stock(stock_info_task):
         market_value=query_tool.get_stock_market_value(code),
         theme=query_tool.get_theme_by_code(code),
     )
-    first_limit_days = find_first_limit_up(stock_info, df, config, rejection_log)
+    first_limit_days = find_first_limit_up(stock_info, df, config)
 
     all_signals = []
     for day in first_limit_days:
