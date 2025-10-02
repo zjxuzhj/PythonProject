@@ -12,6 +12,7 @@ from scipy.signal import find_peaks
 import getAllStockCsv
 from ConditionChecker import ConditionChecker
 from common_sell_logic import get_sell_decision, MarketDataContext
+from first_limit_up_ma5_normal_util import simulate_ma5_order_prices
 from stock_info import StockInfo
 from strategy_rules import RuleEnum
 
@@ -47,21 +48,6 @@ class StrategyConfig:
     DOUBLE_TOP_CHECK_DAYS = 40  # 检测最近40日的双头形态
     DOUBLE_TOP_PRICE_TOLERANCE = 0.04  # 两个高点价格差异容忍度（3%）
     DOUBLE_TOP_VOLUME_DECREASE_THRESHOLD = 0.8  # 第二头部成交量需小于第一头部的阈值
-
-
-def simulate_ma5_order_prices(df, current_day, predict_ratio, lookback_days=5):
-    """模拟预测买入日MA5值，然后计算挂单价格"""
-    current_idx = df.index.get_loc(current_day)
-    if current_idx < lookback_days:
-        return None
-    prev_data = df.iloc[current_idx - lookback_days: current_idx]
-    try:
-        price_ma5 = modify_last_days_and_calc_ma5(prev_data, predict_ratio)['MA5'].iloc[-1]
-        return price_ma5
-    except Exception as e:
-        print(f"预测MA5失败: {e}")
-        return None
-
 
 def get_stock_data(symbol, config: StrategyConfig):
     """带本地缓存的数据获取"""
@@ -396,8 +382,7 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
 
 
 def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_limit_day: pd.Timestamp,
-                                config: StrategyConfig, query_tool) -> \
-        Optional[RuleEnum]:
+                                config: StrategyConfig, query_tool) -> Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
@@ -458,9 +443,10 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_l
     high_p1 = day_plus_1_data['high']
     close_p1 = day_plus_1_data['close']
     volume_p1 = day_plus_1_data['volume']
+    ma20_p1 = day_plus_1_data['ma20']
     is_red_candle_p1 = close_p1 >= open_p1
 
-    # 条件0：排除市值大于250亿，小于350亿的股票
+    # 条件0：排除市值大于200亿，小于250亿的股票和大于300亿的股票
     # float_shares = query_tool.get_stock_float_shares(code)  # 获取流通股本（单位：万股）
     # market_value = close_p1 * float_shares / 100000000 # 计算市值：收盘价 * 流通股本（万股）/ 100000000 = 亿元
     if 200 < market_value <= 250 and market_value > 300:
@@ -710,13 +696,107 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_l
             return RuleEnum.ABNORMAL_VOLUME_SPIKE
 
     if close_m1 > 0 and limit_up_day_price > 0:
-        # 规则A：T+0日跳空高开超过2%
+        # T+0日跳空高开超过2% T+1日低开超过2%
         gap_up_on_limit_day = (open_p0 - close_m1) / close_m1 > 0.02
-        # 规则B：T+1日低开超过2%
         gap_down_after_limit = (limit_up_day_price - open_p1) / limit_up_day_price > 0.02
         if (gap_up_on_limit_day and gap_down_after_limit
                 and not checker.is_stable_platform_to_new_low()):
             return RuleEnum.ISLAND_REVERSAL_PATTERN
+
+    pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
+    four_day_limit_up_streak = pre_window_20d['is_limit'].rolling(window=4).sum()
+    streak_end_dates = four_day_limit_up_streak[four_day_limit_up_streak >= 4].index
+    # 步骤2: 如果找到了连板行情，则进入统一的后续检查逻辑
+    if not streak_end_dates.empty:
+        last_streak_end_date = streak_end_dates.max()
+        # --- 分支判断 1: “中位线压力”检查 ---
+        # a. 定位连板期间的最高点
+        last_streak_end_idx_loc = pre_window_20d.index.get_loc(last_streak_end_date)
+        streak_start_idx_loc = last_streak_end_idx_loc
+        while streak_start_idx_loc >= 0 and pre_window_20d.iloc[streak_start_idx_loc]['is_limit']:
+            streak_start_idx_loc -= 1
+        streak_start_idx_loc += 1
+        streak_days_df = pre_window_20d.iloc[streak_start_idx_loc: last_streak_end_idx_loc + 1]
+        streak_peak_high = streak_days_df['high'].max()
+        streak_peak_date = streak_days_df['high'].idxmax()
+        streak_peak_idx_global = df.index.get_loc(streak_peak_date)
+        # b. 寻找后续调整的最低点并计算中位线
+        search_window_for_low = df.iloc[streak_peak_idx_global: limit_up_day_idx]
+        if not search_window_for_low.empty:
+            subsequent_trough_low = search_window_for_low['low'].min()
+            midpoint_price = (streak_peak_high + subsequent_trough_low) / 2
+            # c. 判断T+1最高价是否受阻
+            if midpoint_price > 0:
+                if abs(high_p1 - midpoint_price) / midpoint_price < 0.02:
+                    return RuleEnum.REJECTED_BY_STREAK_MIDPOINT_V2  # 排除：受阻于中位线
+
+        # --- 分支判断 2: “假突破20日线”检查 ---
+        # a. 定义连板结束后的窗口
+        search_start_idx_global = df.index.get_loc(last_streak_end_date) + 1
+        if search_start_idx_global < limit_up_day_idx:
+            after_streak_window = df.iloc[search_start_idx_global: limit_up_day_idx]
+            # b. 检查此窗口内是否“没有”3连跌停
+            three_day_limit_down_streak = after_streak_window['is_limit_down'].rolling(window=3).sum()
+            if (not (three_day_limit_down_streak >= 3).any()
+                    and high_p1 > ma20_p1
+                    and close_p1 < ma20_p1
+                    and is_red_candle_p1):
+                return RuleEnum.POST_STREAK_FAKE_BREAKTHROUGH
+
+    if limit_up_day_idx >= 25:
+        window = df.iloc[limit_up_day_idx - 25: limit_up_day_idx]
+        window_50 = df.iloc[limit_up_day_idx - 50: limit_up_day_idx]
+        peak_idx = window['high'].idxmax()
+        peak_high = window.loc[peak_idx, 'high']
+        # 2. 在“最高点”到“涨停日”的区间内寻找最低点 (Trough)
+        trough_search_window = window.loc[peak_idx:]
+        trough_idx = trough_search_window['low'].idxmin()
+        trough_low = trough_search_window.loc[trough_idx, 'low']
+        peak_loc = window.index.get_loc(peak_idx)
+        trough_loc = window.index.get_loc(trough_idx)
+        trading_days_apart = trough_loc - peak_loc
+
+        has_large_rebound = False
+        # 定义下跌区间（从最高点之后一天到最低点当天）
+        decline_start_loc = peak_loc + 1
+        decline_end_loc = trough_loc + 1  # 切片不包含末尾，所以+1以包含最低点当天
+        if decline_start_loc < decline_end_loc:
+            decline_window = window.iloc[decline_start_loc:decline_end_loc]
+            # 计算区间内每日的涨幅
+            daily_change = (decline_window['close'] - decline_window['prev_close']) / decline_window['prev_close']
+            # 检查是否有任何一天的涨幅超过5.5%
+            if (daily_change > 0.055).any():
+                has_large_rebound = True
+        is_trough_significant = False
+        pre_peak_start_loc = peak_loc - trading_days_apart
+        # 确保历史数据足够长，可以进行对比
+        pre_peak_window = window_50.iloc[pre_peak_start_loc + 25:peak_loc + 25]
+        # 计算在“顶”之前，有多少天的价格比我们找到的“底”还低
+        lower_low_count = (pre_peak_window['low'] < trough_low).sum()
+        if lower_low_count > 3:
+            is_trough_significant = True
+        # 3. 验证形态: 确保从高点到低点有显著的跌幅
+        if peak_high > 0 and (peak_high - trough_low) / peak_high > 0.05:
+            midpoint = (peak_high + trough_low) / 2
+            # 条件：T+0收盘价 < 中位线 < T+1最高价，表示反弹区间“包含”了中位线
+            if (limit_up_day_price < midpoint and high_p1 > midpoint
+                    and trading_days_apart > 10 and not has_large_rebound and is_trough_significant
+                    and not checker.is_102030_m1_nian_he(0.012)
+                    and not checker.is_120_p0m1m2_support()
+            ):
+                return RuleEnum.REBOUND_TO_MIDPOINT_RESISTANCE
+
+    upper_shadow_p1 = high_p1 - max(open_p1, close_p1)
+    upper_shadow_ratio = upper_shadow_p1 / limit_up_day_price
+    cond_long_upper_shadow = upper_shadow_ratio >= 0.05
+    # 涨停后第一天收阴线
+    cond_is_bearish_candle = close_p1 < open_p1
+    # 涨停后第一天的收盘价和涨停日收盘价基本一致 (使用0.1%的容差来判断“一致”)
+    cond_close_is_identical = abs(close_p1 - limit_up_day_price) / limit_up_day_price < 0.001
+    if (cond_long_upper_shadow and cond_is_bearish_candle
+            and not checker.is_55250_m1_nian_he(0.022)
+            and cond_close_is_identical):
+        return RuleEnum.T1_GRAVESTONE_REJECTION
 
     if config.USE_BUY_SINGLE_RULE == 1:  # 0和2的状态都要返回None
         return RuleEnum.ISLAND_REVERSAL_PATTERN
@@ -1230,7 +1310,6 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                 and not checker.is_20_p1p2p3_support()
                 and not checker.is_60_p0m1m2_support()
                 and not checker.is_stable_platform()):
-            # return None
             return RuleEnum.UNSUPPORTED_WEAK_CONSOLIDATION
 
         # 买前条件20 : 排除T+3日出现高波动长影十字星，显示多空激战/力竭
@@ -1294,101 +1373,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         # 新策略开头对齐位置---------------------------------------------------
     # 四日专有策略结束 --------------------------------------------------------
 
-    pre_window_20d = df.iloc[limit_up_day_idx - 20: limit_up_day_idx]
-    four_day_limit_up_streak = pre_window_20d['is_limit'].rolling(window=4).sum()
-    streak_end_dates = four_day_limit_up_streak[four_day_limit_up_streak >= 4].index
-
-    # 步骤2: 如果找到了连板行情，则进入统一的后续检查逻辑
-    if not streak_end_dates.empty:
-        last_streak_end_date = streak_end_dates.max()
-        # --- 分支判断 1: “中位线压力”检查 ---
-        # a. 定位连板期间的最高点
-        last_streak_end_idx_loc = pre_window_20d.index.get_loc(last_streak_end_date)
-        streak_start_idx_loc = last_streak_end_idx_loc
-        while streak_start_idx_loc >= 0 and pre_window_20d.iloc[streak_start_idx_loc]['is_limit']:
-            streak_start_idx_loc -= 1
-        streak_start_idx_loc += 1
-        streak_days_df = pre_window_20d.iloc[streak_start_idx_loc: last_streak_end_idx_loc + 1]
-        streak_peak_high = streak_days_df['high'].max()
-        streak_peak_date = streak_days_df['high'].idxmax()
-        streak_peak_idx_global = df.index.get_loc(streak_peak_date)
-        # b. 寻找后续调整的最低点并计算中位线
-        search_window_for_low = df.iloc[streak_peak_idx_global: limit_up_day_idx]
-        if not search_window_for_low.empty:
-            subsequent_trough_low = search_window_for_low['low'].min()
-            midpoint_price = (streak_peak_high + subsequent_trough_low) / 2
-            # c. 判断T+1最高价是否受阻
-            if midpoint_price > 0:
-                if abs(high_p1 - midpoint_price) / midpoint_price < 0.02:
-                    return RuleEnum.REJECTED_BY_STREAK_MIDPOINT_V2  # 排除：受阻于中位线
-        # --- 分支判断 2: “假突破20日线”检查 ---
-        # a. 定义连板结束后的窗口
-        search_start_idx_global = df.index.get_loc(last_streak_end_date) + 1
-        if search_start_idx_global < limit_up_day_idx:
-            after_streak_window = df.iloc[search_start_idx_global: limit_up_day_idx]
-            # b. 检查此窗口内是否“没有”3连跌停
-            three_day_limit_down_streak = after_streak_window['is_limit_down'].rolling(window=3).sum()
-            if not (
-                    three_day_limit_down_streak >= 3).any() and high_p1 > ma20_p1 and close_p1 < ma20_p1 and is_red_candle_p1:
-                return RuleEnum.POST_STREAK_FAKE_BREAKTHROUGH
-
-    if limit_up_day_idx >= 25:
-        window = df.iloc[limit_up_day_idx - 25: limit_up_day_idx]
-        window_50 = df.iloc[limit_up_day_idx - 50: limit_up_day_idx]
-        peak_idx = window['high'].idxmax()
-        peak_high = window.loc[peak_idx, 'high']
-        # 2. 在“最高点”到“涨停日”的区间内寻找最低点 (Trough)
-        trough_search_window = window.loc[peak_idx:]
-        trough_idx = trough_search_window['low'].idxmin()
-        trough_low = trough_search_window.loc[trough_idx, 'low']
-        peak_loc = window.index.get_loc(peak_idx)
-        trough_loc = window.index.get_loc(trough_idx)
-        trading_days_apart = trough_loc - peak_loc
-
-        has_large_rebound = False
-        # 定义下跌区间（从最高点之后一天到最低点当天）
-        decline_start_loc = peak_loc + 1
-        decline_end_loc = trough_loc + 1  # 切片不包含末尾，所以+1以包含最低点当天
-        if decline_start_loc < decline_end_loc:
-            decline_window = window.iloc[decline_start_loc:decline_end_loc]
-            # 计算区间内每日的涨幅
-            daily_change = (decline_window['close'] - decline_window['prev_close']) / decline_window['prev_close']
-            # 检查是否有任何一天的涨幅超过5.5%
-            if (daily_change > 0.055).any():
-                has_large_rebound = True
-
-        is_trough_significant = False
-        pre_peak_start_loc = peak_loc - trading_days_apart
-        # 确保历史数据足够长，可以进行对比
-        pre_peak_window = window_50.iloc[pre_peak_start_loc + 25:peak_loc + 25]
-        # 计算在“顶”之前，有多少天的价格比我们找到的“底”还低
-        lower_low_count = (pre_peak_window['low'] < trough_low).sum()
-        if lower_low_count > 3:
-            is_trough_significant = True
-        # 3. 验证形态: 确保从高点到低点有显著的跌幅
-        if peak_high > 0 and (peak_high - trough_low) / peak_high > 0.05:
-            midpoint = (peak_high + trough_low) / 2
-            # 条件：T+0收盘价 < 中位线 < T+1最高价，表示反弹区间“包含”了中位线
-            if (limit_up_day_price < midpoint and high_p1 > midpoint
-                    and trading_days_apart > 10 and not has_large_rebound and is_trough_significant
-                    and not checker.is_102030_m1_nian_he(0.012)
-                    and not checker.is_120_p0m1m2_support()
-            ):
-                return RuleEnum.REBOUND_TO_MIDPOINT_RESISTANCE
-
-    upper_shadow_p1 = high_p1 - max(open_p1, close_p1)
-    upper_shadow_ratio = upper_shadow_p1 / limit_up_day_price
-    cond_long_upper_shadow = upper_shadow_ratio >= 0.05
-    # 涨停后第一天收阴线
-    cond_is_bearish_candle = close_p1 < open_p1
-    # 涨停后第一天的收盘价和涨停日收盘价基本一致 (使用0.1%的容差来判断“一致”)
-    cond_close_is_identical = abs(close_p1 - limit_up_day_price) / limit_up_day_price < 0.001
-    if (cond_long_upper_shadow and cond_is_bearish_candle
-            and not checker.is_55250_m1_nian_he(0.022)
-            and cond_close_is_identical):
-        return RuleEnum.T1_GRAVESTONE_REJECTION
-
-    if config.USE_BUY_SINGLE_RULE == 2:  # 0和1都需要return None通过
+    if config.USE_BUY_SINGLE_RULE == 2:  # 0 和 1都需要return None通过
         return RuleEnum.WEAK_PULLBACK_AFTER_T1_PEAK
     else:
         return None  # 所有检查通过
@@ -1422,22 +1407,6 @@ def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, query
         else:
             valid_days.append(day)
     return valid_days
-
-
-def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
-    """模拟预测MA5的核心方法（优化版，使用.loc替代concat）"""
-    if df.empty or len(df) < 2:
-        raise ValueError("数据不足，至少需要2个交易日数据")
-    modified_df = df.copy()
-    last_row = modified_df.iloc[-1]
-    new_index_label = last_row.name + pd.Timedelta(days=1)
-    new_data = last_row.copy()
-    new_data['close'] = last_row['close'] * predict_ratio
-    modified_df.loc[new_index_label] = new_data
-    modified_df['MA5'] = modified_df['close'].rolling(
-        window=5, min_periods=1
-    ).mean().round(2)
-    return modified_df
 
 
 def calculate_actual_fill_price(open_price, order_price):
