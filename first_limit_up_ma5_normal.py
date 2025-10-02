@@ -24,7 +24,9 @@ class StrategyConfig:
 
     USE_SELL_LOGIC: bool = False  # False 回测买入时的排除条件, True 回测卖出条件
 
-    USE_BUY_SINGLE_RULE: int = 0  # 0 进入正常回测所有排除条件， 1 单独回测涨停前日期选择策略 2 单独回测买入日前策略
+    USE_BUY_SINGLE_RULE = 0  # 0 进入正常回测所有排除条件， 1 单独回测涨停前日期选择策略 2 单独回测买入日前策略
+
+    EVALUATE_REJECTION_RULES = False  # False: 快速模式，排除后即终止；True: 分析模式，为被排除项计算模拟盈亏以评估规则效果
 
     BACKTEST_DATE_FILTERING = '2024-03-01'  # 默认 2024-03-01 ， 会把该日期之前的回测数据过滤掉，除非 USE_2019_DATA 为True
 
@@ -35,7 +37,7 @@ class StrategyConfig:
 
     # --- 首板涨停识别参数 ---
     MARKET_LIMIT_RATES = {'主板': 0.10, '创业板': 0.20, '科创板': 0.20}
-    MAX_MARKET_CAP_BILLIONS = 250  # 最大市值过滤（单位：亿） 原值250，最近中大市值比较吃香
+    MAX_MARKET_CAP_BILLIONS = 200  # 最大市值过滤（单位：亿） 原值250，最近中大市值比较吃香
 
     # --- 买入参数 ---
     PREDICT_PRICE_INCREASE_RATIO = 1.04  # 用于预测MA5的价格涨幅
@@ -394,7 +396,7 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
 
 
 def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_limit_day: pd.Timestamp,
-                                config: StrategyConfig) -> \
+                                config: StrategyConfig, query_tool) -> \
         Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
@@ -459,7 +461,9 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_l
     is_red_candle_p1 = close_p1 >= open_p1
 
     # 条件0：排除市值大于250亿，小于350亿的股票
-    if  300>=market_value > config.MAX_MARKET_CAP_BILLIONS:
+    # float_shares = query_tool.get_stock_float_shares(code)  # 获取流通股本（单位：万股）
+    # market_value = close_p1 * float_shares / 100000000 # 计算市值：收盘价 * 流通股本（万股）/ 100000000 = 亿元
+    if 200 < market_value <= 250 and market_value > 300:
         return RuleEnum.MARKET_CAP_TOO_HIGH
 
     # 条件1：排除特定题材
@@ -1401,7 +1405,7 @@ def second_chance_check(df: pd.DataFrame, limit_up_day_idx: int, offset: int, co
     return False
 
 
-def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig):
+def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, query_tool):
     """识别首板涨停日并排除连板"""
     limit_days = df[df['is_limit']].index.tolist()
     code = stock_info.code
@@ -1411,8 +1415,8 @@ def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig):
         # 日期过滤条件（方便回测）
         if day < pd.Timestamp(config.BACKTEST_DATE_FILTERING) and not config.USE_2019_DATA:
             continue
-        if config.USE_BUY_SINGLE_RULE == 0:
-            rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config)
+        if not config.EVALUATE_REJECTION_RULES:
+            rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config, query_tool)
             if not rejection_rule:
                 valid_days.append(day)
         else:
@@ -1484,7 +1488,7 @@ def check_double_top_neckline_resistance(df, check_day_idx, config: StrategyConf
 
 
 def generate_signals(stock_info: StockInfo, df, first_limit_day, config: StrategyConfig, rejection_log,
-                     use_optimized_sell_logic: bool = False):
+                     use_optimized_sell_logic: bool = False, query_tool=None):
     """生成买卖信号"""
     signals = []
     first_limit_timestamp = pd.Timestamp(first_limit_day)
@@ -1562,10 +1566,11 @@ def generate_signals(stock_info: StockInfo, df, first_limit_day, config: Strateg
             order_valid = True
         actual_price = calculate_actual_fill_price(day_open, price_ma5) if order_valid else None
 
-        if config.USE_BUY_SINGLE_RULE == 0:
+        if not config.EVALUATE_REJECTION_RULES:
             rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
         else:
-            valid_first_limit_up_rejection_rule = is_valid_first_limit_up_day(stock_info, df, first_limit_day, config)
+            valid_first_limit_up_rejection_rule = is_valid_first_limit_up_day(stock_info, df, first_limit_day, config,
+                                                                              query_tool)
             if not valid_first_limit_up_rejection_rule:
                 rejection_rule = is_valid_buy_opportunity(stock_info, df, start_idx, offset, config)
             else:
@@ -1935,11 +1940,11 @@ def process_single_stock(stock_info_task):
         market_value=query_tool.get_stock_market_value(code),
         theme=query_tool.get_theme_by_code(code),
     )
-    first_limit_days = find_first_limit_up(stock_info, df, config)
+    first_limit_days = find_first_limit_up(stock_info, df, config, query_tool)
 
     all_signals = []
     for day in first_limit_days:
-        signals = generate_signals(stock_info, df, day, config, rejection_log, use_optimized_sell_logic)
+        signals = generate_signals(stock_info, df, day, config, rejection_log, use_optimized_sell_logic, query_tool)
         all_signals.extend(signals)
 
     return all_signals, rejection_log

@@ -75,6 +75,8 @@ class StockQuery:
         self._init_industry_data()  # 新增初始化方法
         self.market_value_cache = None  # 新增流通市值缓存
         self._init_market_value_data()  # 新增初始化方法
+        self.float_shares_cache = None  # 新增流通股本缓存
+        self._init_float_shares_data()  # 新增初始化方法
         self.revenue_growth_cache = None  # 营业总收入增速缓存
         self.profit_growth_cache = None  # 净利润增速缓存
         self._init_growth_data()  # 新增初始化方法
@@ -170,6 +172,24 @@ class StockQuery:
         except Exception as e:
             print(f"流动市值初始化失败: {str(e)}")
             self.market_value_cache = {}
+
+    def _init_float_shares_data(self):
+        """加载流通股本数据到内存"""
+        try:
+            df = pd.read_csv(
+                self.REPORT_CSV_PATH,
+                dtype={'stock_code': str},
+                usecols=['stock_code', '流通股本(万股)'],  # 明确指定需要加载的列
+                converters={
+                    '流通股本(万股)': lambda x: round(pd.to_numeric(x, errors='coerce'), 2) if x != '-' else 0.0
+                }
+            )
+            df['stock_code'] = self.get_simple_by_code(df['stock_code'])
+            # 转换为字典加速查询（键为股票代码，值为流通股本）
+            self.float_shares_cache = df.set_index('stock_code')['流通股本(万股)'].to_dict()
+        except Exception as e:
+            print(f"流通股本初始化失败: {str(e)}")
+            self.float_shares_cache = {}
 
     def _init_growth_data(self):
         """预加载营收和净利润增速数据到内存"""
@@ -335,6 +355,15 @@ class StockQuery:
         except Exception as e:
             print(f"流通市值查询异常: {symbol} - {str(e)}")
             return 0.0  # 明确返回None代替0
+
+    def get_stock_float_shares(self, symbol):
+        """获取流通股本数据（万股）- 字典直查法（O(1)时间复杂度）"""
+        try:
+            return self.float_shares_cache.get(symbol, 0.0)  # 无匹配返回0.0
+
+        except Exception as e:
+            print(f"流通股本查询异常: {symbol} - {str(e)}")
+            return 0.0  # 异常时返回0.0
 
     def _load_data(self):
         """加载本地数据"""
