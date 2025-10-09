@@ -306,38 +306,31 @@ class ETFScoreQuery:
         
         return etf_scores
 
+
 def main():
-    """主函数 - 交互式查询"""
+    """主函数 - 直接配置日期查询"""
     query = ETFScoreQuery()
-    
-    print("ETF动量分值查询工具")
+
+    target_date = "20251009"
+
+    print(f"ETF动量分值查询工具 - 目标日期: {target_date}")
     print("=" * 40)
-    
-    while True:
-        try:
-            target_date = input("\n请输入查询日期 (YYYYMMDD格式，如20250930) 或输入 'q' 退出: ").strip()
-            
-            if target_date.lower() == 'q':
-                print("退出程序")
-                break
-            
-            if len(target_date) != 8 or not target_date.isdigit():
-                print("错误：请输入8位数字的日期格式 (YYYYMMDD)")
-                continue
-            
-            # 执行查询
-            results = query.query_etf_scores(target_date)
-            
-            if results:
-                print(f"\n✅ 成功计算 {len(results)} 只ETF的分值")
-            else:
-                print("\n❌ 查询失败，请检查日期是否有效或数据是否存在")
-                
-        except KeyboardInterrupt:
-            print("\n\n程序被用户中断")
-            break
-        except Exception as e:
-            print(f"\n❌ 发生错误: {str(e)}")
+
+    try:
+        if len(target_date) != 8 or not target_date.isdigit():
+            print("错误：配置的日期格式不正确，请输入8位数字 (YYYYMMDD)")
+            return
+
+        # 执行查询
+        results = query.query_etf_scores(target_date)
+
+        if results:
+            print(f"\n✅ 成功计算 {len(results)} 只ETF的分值")
+        else:
+            print("\n❌ 查询失败，请检查日期是否有效或数据是否存在")
+
+    except Exception as e:
+        print(f"\n❌ 发生错误: {str(e)}")
 
 if __name__ == "__main__":
     main()
