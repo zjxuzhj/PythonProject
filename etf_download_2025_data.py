@@ -42,7 +42,7 @@ ETF_POOL = [
 ]
 
 # 时间范围设置 - 2025年全年
-start_date = "20250101"
+start_date = "20251001"
 end_date = "20251231"
 period = "1d"  # 日线数据
 

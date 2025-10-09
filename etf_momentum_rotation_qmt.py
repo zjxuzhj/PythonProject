@@ -2,25 +2,24 @@
 # 基于聚宽策略改写，适用于MiniQMT实盘交易
 # 原策略来源：https://www.joinquant.com/post/62008
 
+import math
 import threading
 import time
-import math
-import numpy as np
-import pandas as pd
 from datetime import datetime, timedelta
-from collections import defaultdict
+
+import numpy as np
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from xtquant import xtconstant, xtdata
 from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
 
+import getAllStockCsv as tools
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
-import getAllStockCsv as tools
 
 # ====== 全局配置 ======
-TOTAL_BUDGET = 100000  # 总投资预算
+TOTAL_BUDGET = 5000  # 总投资预算
 MIN_TRADE_AMOUNT = 1000  # 最小交易金额
 MOMENTUM_DAYS = 25  # 动量计算天数
 MAX_ETF_COUNT = 1  # 最大持有ETF数量
@@ -58,6 +57,34 @@ ETF_POOL = [
     "512480.SH",  # 半导体
 ]
 
+ETF_NAMES = {
+    "513100.SH": "纳指ETF",
+    "159509.SZ": "纳指科技ETF",
+    "513520.SH": "日经ETF",
+    "513030.SH": "德国ETF",
+    "518880.SH": "黄金ETF",
+    "159980.SZ": "有色ETF",
+    "159985.SZ": "豆粕ETF",
+    "501018.SH": "南方原油",
+    "511090.SH": "30年国债ETF",
+    "513130.SH": "恒生科技",
+    "513690.SH": "港股红利",
+    "510180.SH": "上证180",
+    "159915.SZ": "创业板ETF",
+    "510410.SH": "资源",
+    "515650.SH": "消费50",
+    "512290.SH": "生物医药",
+    "588120.SH": "科创100",
+    "515070.SH": "人工智能ETF",
+    "159851.SZ": "金融科技",
+    "159637.SZ": "新能源车",
+    "516160.SH": "新能源",
+    "159550.SZ": "互联网ETF",
+    "512710.SH": "军工ETF",
+    "159692.SZ": "证券",
+    "512480.SH": "半导体",
+}
+
 # 全局变量
 query_tool = tools.StockQuery()
 strategy_logger = None
@@ -81,25 +108,20 @@ class ETFMomentumStrategy:
     def get_historical_data(self, stock_code, days):
         """获取历史数据"""
         try:
-            # 转换股票代码格式
-            converted_code = self.convert_stock_code(stock_code)
-
             # 获取历史数据
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=days + 10)).strftime('%Y%m%d')
-
-            data = xtdata.get_market_data_ex(
-                stock_list=[converted_code],
+            yesterday = datetime.now() - timedelta(days=1)
+            end_date = yesterday.strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=days + 40)).strftime('%Y%m%d')
+            data = xtdata.get_local_data(
+                field_list=['close'],
+                stock_list=[stock_code],
                 period='1d',
                 start_time=start_date,
                 end_time=end_date,
-                count=-1,
-                dividend_type='front',
-                fill_data=True
             )
 
-            if converted_code in data and len(data[converted_code]) > 0:
-                df = data[converted_code]
+            if stock_code in data and len(data[stock_code]) > 0:
+                df = data[stock_code]
                 # 确保有足够的数据
                 if len(df) >= days:
                     return df.tail(days)
@@ -110,14 +132,6 @@ class ETFMomentumStrategy:
         except Exception as e:
             self.logger.error(f"获取 {stock_code} 历史数据异常: {str(e)}")
             return None
-
-    def convert_stock_code(self, stock_code):
-        """转换股票代码格式"""
-        if '.SH' in stock_code:
-            return stock_code.replace('.SH', '.SS')
-        elif '.SZ' in stock_code:
-            return stock_code.replace('.SZ', '.SZ')
-        return stock_code
 
     def get_current_price(self, stock_code):
         """获取当前价格"""
@@ -209,12 +223,12 @@ class ETFMomentumStrategy:
             self.logger.info("【ETF得分列表（按score降序）】")
             for data in etf_scores:
                 try:
-                    etf_name = query_tool.get_name_by_code(data['stock_code'])
+                    etf_name = ETF_NAMES.get(data['stock_code'], '未知')
                     self.logger.info(
                         f"{data['stock_code']} | {etf_name} | "
                         f"得分: {data['score']:.4f} | "
                         f"年化收益: {data['annualized_returns']:.2%} | "
-                        f"R²: {data['r2']:.4f} | "
+                        f"R2: {data['r2']:.4f} | "
                         f"当前价: {data['current_price']:.2f}"
                     )
                 except Exception:
@@ -236,11 +250,11 @@ class ETFMomentumStrategy:
             position_dict = {}
 
             for pos in positions:
-                if pos.m_nVolume > 0:  # 只考虑有持仓的
+                if pos.volume > 0:
                     position_dict[pos.stock_code] = {
-                        'volume': pos.m_nVolume,
-                        'can_use_volume': pos.m_nCanUseVolume,
-                        'market_value': pos.m_dMarketValue
+                        'volume': pos.volume,
+                        'can_use_volume': pos.can_use_volume,
+                        'market_value': pos.market_value
                     }
 
             return position_dict
@@ -254,7 +268,7 @@ class ETFMomentumStrategy:
         try:
             asset = self.trader.query_stock_asset(self.account)
             if asset:
-                return asset.m_dAvailableCash
+                return asset.cash
             return 0
         except Exception as e:
             self.logger.error(f"获取可用资金异常: {str(e)}")
@@ -376,10 +390,11 @@ class ETFMomentumStrategy:
             #     if stock_code not in target_codes:
             #         self.execute_trade(stock_code, 0)  # 清仓
 
-            # 5. 调整目标ETF持仓
+            # 5. 调整目标ETF持仓 暂时先不买入卖出
             for etf_data in target_etfs:
                 stock_code = etf_data['stock_code']
                 target_value = total_value * target_weight
+                # target_value = TOTAL_BUDGET
                 self.execute_trade(stock_code, target_value)
 
             self.logger.info("=== ETF动量轮动调仓完成 ===")
@@ -405,10 +420,10 @@ def monitor_strategy_status():
             positions = xt_trader.query_stock_positions(acc)
 
             if asset:
-                available_cash = asset.m_dAvailableCash
-                total_asset = asset.m_dTotalAsset
+                available_cash = asset.cash  # 修改此处
+                total_asset = asset.total_asset  # 修改此处
 
-                position_count = len([p for p in positions if p.m_nVolume > 0])
+                position_count = len([p for p in positions if p.volume > 0])  # 同样修改 p.m_nVolume
 
                 status_msg = (
                     f"ETF轮动策略运行正常 | "
@@ -421,7 +436,7 @@ def monitor_strategy_status():
         except Exception as e:
             strategy_logger.error(f"状态监控异常: {str(e)}")
 
-        time.sleep(30 * 60)  # 30分钟监控一次
+        time.sleep(30 * 60)
 
 
 if __name__ == "__main__":
@@ -463,20 +478,17 @@ if __name__ == "__main__":
     # 配置定时任务
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
-    # 获取当前持仓股票集合
-    positions = xt_trader.query_stock_positions(acc)
-    hold_stocks = {pos.stock_code for pos in positions}
-
+    etf_rotation_adjust()
     # 每日11:00执行调仓
-    scheduler.add_job(
-        etf_rotation_adjust,
-        trigger=CronTrigger(
-            hour=11,
-            minute=0,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=300
-    )
+    # scheduler.add_job(
+    #     etf_rotation_adjust,
+    #     trigger=CronTrigger(
+    #         hour=11,
+    #         minute=00,
+    #         day_of_week='mon-fri'
+    #     ),
+    #     misfire_grace_time=300
+    # )
     print("定时任务已启动：每日11:00执行ETF动量轮动调仓")
 
     # 启动调度器
