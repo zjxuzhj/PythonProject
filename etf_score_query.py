@@ -311,7 +311,7 @@ def main():
     """主函数 - 直接配置日期查询"""
     query = ETFScoreQuery()
 
-    target_date = "20251009"
+    target_date = "20251010"
 
     print(f"ETF动量分值查询工具 - 目标日期: {target_date}")
     print("=" * 40)

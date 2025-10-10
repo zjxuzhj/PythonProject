@@ -385,10 +385,11 @@ class ETFMomentumStrategy:
         current_positions = self.get_current_positions()
 
         # 遍历当前持仓，如果不在目标里，就清仓
-        # for stock_code in current_positions:
-        #     if stock_code not in target_codes:
-        #         self.logger.info(f"持仓 {stock_code} 不在目标列表中，执行卖出。")
-        #         self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
+        for stock_code in current_positions:
+            # 必须同时满足1.该持仓在我们的策略ETF池中 2.它不是今天的目标ETF
+            if stock_code in self.etf_pool and stock_code not in target_codes:
+                self.logger.info(f"持仓 {stock_code} 在策略池中但非今日目标，执行卖出。")
+                self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
 
     def handle_buys(self):
         """处理买入逻辑"""
