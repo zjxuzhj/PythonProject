@@ -29,8 +29,8 @@ def updateZTThemeAndTime():
             print("解析成功！股票数量：", len(stock_data["stocks"]))
             print("前5个股票信息：")
             for stock in stock_data["stocks"]:
-                print(
-                    f"代码：{stock['code']} | 名称：{stock['name']} | 原因：{stock['ztyy']} | 时间：{stock['time']} | 状态：{stock['zt']}")
+                # print(
+                #     f"代码：{stock['code']} | 名称：{stock['name']} | 原因：{stock['ztyy']} | 时间：{stock['time']} | 状态：{stock['zt']}")
                 query_tool.add_time(getAllStockCsv.code_add_prefix(stock['code']), stock['time'])
                 query_tool.add_theme(getAllStockCsv.code_add_prefix(stock['code']), stock['ztyy'])
         else:

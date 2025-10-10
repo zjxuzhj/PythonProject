@@ -17,6 +17,7 @@ from xtquant.xttype import StockAccount
 import getAllStockCsv as tools
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
+import updateAllStockDataCache as data_updater
 
 # ====== 全局配置 ======
 TOTAL_BUDGET = 5000  # 总投资预算
@@ -605,7 +606,18 @@ if __name__ == "__main__":
         id='daily_data_downloader',  # 给任务一个唯一的ID
         misfire_grace_time=300
     )
-    print("定时任务已启动：每日16:00执行日线数据下载")
+    print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
+    scheduler.add_job(
+        data_updater.update_all_daily_data(),
+        trigger=CronTrigger(
+            hour=16,
+            minute=5,
+            day_of_week='mon-fri'
+        ),
+        id='daily_data_small_downloader',
+        misfire_grace_time=300
+    )
+    print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
 
     # download_daily_data()
     # today_str_for_verify = datetime.now().strftime('%Y%m%d')

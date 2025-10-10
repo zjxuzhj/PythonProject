@@ -1,183 +1,164 @@
 import os
 import time
+from datetime import datetime
 
 import akshare as ak
 import pandas as pd
-from fastparquet import write
-from fastparquet import ParquetFile
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 import getAllStockCsv
-import getTopIndustry as getTopIndustry
-import getBacktestForDepart as backtestForDepart
-import scanAllStockDepart as scan
 import http_util
 
-def addStockData(symbol, start_date):
-    file_name = f"stock_{symbol}_{start_date}.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+# ----------------- 全局对象初始化 -----------------
+# 这些对象在模块加载时创建，可以被后续的所有函数共享
+try:
+    query_tool = getAllStockCsv.StockQuery()
+except Exception as e:
+    print(f"初始化 StockQuery 失败: {e}")
+    query_tool = None
 
+
+# ----------------- 核心功能函数 -----------------
 
 def get_stock_prefix(code):
-    code_str = str(code).zfill(6)  # 确保6位字符串，如输入"688131"→"688131"
-    prefix = ""
-
-    # 判断逻辑
-    if code_str.startswith(("688","60")):
-        prefix = "sh"
-    elif code_str.startswith(("00","30")):
-        prefix = "sz"
+    """根据股票代码判断交易所前缀 (sh, sz, bj)"""
+    code_str = str(code).zfill(6)
+    if code_str.startswith(("688", "60")):
+        return f"sh{code_str}"
+    elif code_str.startswith(("00", "30")):
+        return f"sz{code_str}"
     elif code_str.startswith(("430", "8", "9")):
-        prefix = "bj"
+        return f"bj{code_str}"
     else:
-        prefix = "未知"
-
-    return f"{prefix}{code_str}"
+        return f"unknown{code_str}"
 
 
-query_tool = getAllStockCsv.StockQuery()
+def update_all_daily_data():
+    """
+    【核心公共函数】
+    执行所有每日数据的更新操作。
+    包括：获取最新行情、更新个股Parquet文件、更新涨停原因、更新股票市值。
+    """
+    print("=" * 30)
+    print(f"开始执行每日数据更新任务 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 30)
 
-# 使用示例（单独执行此类时）
-if __name__ == "__main__":
+    # 1. 获取全市场实时行情数据
+    try:
+        print("步骤 1/4: 获取全市场实时行情...")
+        spot_df = ak.stock_zh_a_spot_em()
+        if spot_df.empty:
+            print("错误：未能从akshare获取到实时行情数据，任务终止。")
+            return
+        print("实时行情获取成功。")
+    except Exception as e:
+        print(f"获取akshare实时行情失败: {e}")
+        return
 
-    # 获取实时数据
-    spot_df = ak.stock_zh_a_spot_em()  # 东财接口更稳定[6](@ref)
-    # 字段映射表（中文→英文）
-    column_mapping = {
-        '代码': 'symbol',
-        '最新价': 'close',
-        '今开': 'open',
-        '最高': 'high',
-        '最低': 'low',
-        '成交量': 'volume',
-        '成交额': 'amount',
-        '涨跌幅': 'pct_chg',
-        '涨跌额': 'change',
-        '换手率': 'turnover_rate'
-    }
-
-    # 遍历处理每只股票（网页3的遍历方法）
+    # 2. 遍历行情，更新本地Parquet数据文件
+    print("\n步骤 2/4: 更新本地个股Parquet数据文件...")
+    total = len(spot_df)
     for idx, row in spot_df.iterrows():
         try:
-            # 提取标准化代码（处理带交易所前缀的情况）
-            symbol = row['代码'].split('.')[0]  # 如"600519.SH"→"600519"
+            symbol = str(row['代码'])
+
+            # 确保文件夹存在
+            cache_dir = "data_cache"
+            os.makedirs(cache_dir, exist_ok=True)
 
             file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
-            cache_path = os.path.join("data_cache", file_name)
+            cache_path = os.path.join(cache_dir, file_name)
 
-            # 读取数据并保留索引
             try:
                 df = pd.read_parquet(cache_path, engine='fastparquet')
-                # 若原数据没有date索引，则创建索引
                 if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
                     df = df.set_index('date')
             except FileNotFoundError:
+                # 如果文件不存在，创建一个空的DataFrame，后续逻辑会新增行
                 df = pd.DataFrame()
-                continue  # 直接跳过当前循环的后续代码
 
-            today = time.strftime("%Y-%m-%d", time.localtime())
-            # 新数据准备（带日期索引）
-            new_date = pd.to_datetime(today)
-            # 构建新数据字典
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            new_date = pd.to_datetime(today_str)
+
             new_data = {
-                "股票代码": symbol,
-                "open": row['今开'],
-                "close": row['最新价'],
-                "high": row['最高'],
-                "low": row['最低'],
-                "volume": row['成交量'],
-                "成交额": row['成交额'],
-                "振幅": row['振幅'],
-                "涨跌幅": row['涨跌幅'],
-                "涨跌额": row['涨跌额'],
-                "换手率": row['换手率']
+                "股票代码": symbol, "open": row['今开'], "close": row['最新价'],
+                "high": row['最高'], "low": row['最低'], "volume": row['成交量'],
+                "成交额": row['成交额'], "振幅": row['振幅'], "涨跌幅": row['涨跌幅'],
+                "涨跌额": row['涨跌额'], "换手率": row['换手率']
             }
 
-            # 索引存在性检查
             if not df.empty and new_date in df.index:
-                # 更新模式（保留原始数据类型）
                 df.loc[new_date, list(new_data.keys())] = list(new_data.values())
-                print(f"已更新 {symbol} {new_date} 数据")
+                # print(f"  - 已更新 {symbol} 数据") # 打印信息过多，可注释掉
             else:
-                # 追加模式（带索引创建）
                 new_row = pd.DataFrame([new_data], index=[new_date])
                 df = pd.concat([df, new_row])
-                print(f"已新增 {symbol} {new_date} 数据")
+                # print(f"  - 已新增 {symbol} 数据") # 打印信息过多，可注释掉
 
-            # 保存时保持索引
-            df.to_parquet(
-                cache_path,
-                engine='fastparquet',
-                compression='snappy'
-            )
+            df.to_parquet(cache_path, engine='fastparquet', compression='snappy')
 
         except Exception as e:
-            print(f"处理 {row['代码']} 失败：{str(e)}")
+            print(f"处理 {row['代码']} 失败：{e}")
+    print(f"个股Parquet文件更新完成，共处理 {total} 条。")
 
-    print("全市场数据更新完成")
+    # 3. 更新涨停原因及时间
+    try:
+        print("\n步骤 3/4: 更新今日涨停原因及时间...")
+        http_util.updateZTThemeAndTime()
+        print("涨停数据更新完毕。")
+    except Exception as e:
+        print(f"更新涨停数据失败: {e}")
 
-    http_util.updateZTThemeAndTime()
-    print("今日涨停原因以及时间更新完毕")
+    # 4. 更新股票市值
+    if query_tool:
+        try:
+            print("\n步骤 4/4: 更新股票市值...")
+            time.sleep(1)
+            query_tool.update_stock_market_value(spot_df)
+            print("股票市值更新完毕。")
+        except Exception as e:
+            print(f"更新股票市值失败: {e}")
 
-    time.sleep(1) # 防止短时间多次调用被屏蔽，现在直接传数据进去，不怕屏蔽了
-    query_tool.update_stock_market_value(spot_df)
-    print("--------------- 今日股票市值更新完毕 ---------------")
-    # 记住每天盘后更新数据，不然会对卖出逻辑产生影响
-    print("--------------- 所有数据均更新完毕，请放心！！！---------------")
+    print("\n" + "=" * 30)
+    print(f"所有数据均更新完毕 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 30 + "\n")
 
-    # getTopIndustry.get_top_industry()
+
+# ----------------- 脚本执行入口 -----------------
+
+if __name__ == "__main__":
+
+    # --- 方案一：直接运行一次 ---
+    update_all_daily_data()
+
+    # --- 方案二：设置为定时任务，每天下午4:30执行 ---
+    # print("定时数据更新服务已启动。")
+    # print("任务将在每个交易日下午16:30自动执行。")
     #
-    # scan.setup_logger()
+    # scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     #
-    # # 记录总耗时起点
-    # total_start = time.perf_counter()
-    #
-    # # 加载股票列表并过滤
-    # filtered_stocks = query_tool.get_all_filter_stocks()
-    #
-    # # 分批处理
-    # result_df = scan.batch_process(filtered_stocks[['stock_code', 'stock_name']].values)
-    #
-    # # Excel格式输出部分
-    # excel_start = time.perf_counter()
-    #
-    # # 格式化输出
-    # writer = pd.ExcelWriter('signals.xlsx', engine='xlsxwriter')
-    # result_df.to_excel(writer, index=False, sheet_name='背离信号')
-    #
-    # # 设置Excel格式
-    # workbook = writer.book
-    # format_red = workbook.add_format({'font_color': '#FF0000'})
-    # format_green = workbook.add_format({'font_color': '#00B050'})
-    #
-    # worksheet = writer.sheets['背离信号']
-    # worksheet.conditional_format('D2:D1000', {
-    #     'type': 'text',
-    #     'criteria': 'containing',
-    #     'value': '顶',
-    #     'format': format_red
-    # })
-    # worksheet.conditional_format('D2:D1000', {
-    #     'type': 'text',
-    #     'criteria': 'containing',
-    #     'value': '底',
-    #     'format': format_green
-    # })
-    # writer.close()
-    # excel_duration = time.perf_counter() - excel_start
-    #
-    # # 计算总耗时
-    # total_duration = time.perf_counter() - total_start
-    #
-    # # 输出耗时统计（带人性化格式）
-    # scan.logger.info("\n" + "=" * 50)
-    # scan.logger.info(f"Excel格式处理耗时: {excel_duration:.2f}s")
-    # scan.logger.info(
-    #     f"总耗时: {total_duration // 3600:.0f}h {(total_duration % 3600) // 60:.0f}m {total_duration % 60:.2f}s")
-    # scan.logger.info("=" * 50)
-    #
-    # time.sleep(3)
-    # backtestForDepart.batch_process(
-    #     input_path="signals.xlsx",  # 输入文件路径
-    #     output_path="output_20250329.xlsx"  # 带日期的输出文件名
+    # scheduler.add_job(
+    #     update_all_daily_data,
+    #     trigger=CronTrigger(
+    #         hour=16,
+    #         minute=30,
+    #         day_of_week='mon-fri'  # 周一至周五执行
+    #     ),
+    #     id='daily_data_update_job'
     # )
-
+    #
+    # scheduler.start()
+    #
+    # # 为了演示，可以先手动执行一次
+    # print("为了确保数据最新，启动时立即执行一次更新任务...")
+    # update_all_daily_data()
+    #
+    # try:
+    #     # 保持主线程运行，以便调度器在后台执行
+    #     print("\n服务正在后台运行，请勿关闭此窗口。按 Ctrl+C 退出。")
+    #     while True:
+    #         time.sleep(1)
+    # except (KeyboardInterrupt, SystemExit):
+    #     scheduler.shutdown()
+    #     print("服务已停止。")

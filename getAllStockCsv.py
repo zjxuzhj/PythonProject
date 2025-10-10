@@ -471,7 +471,7 @@ class StockQuery:
         # 重新加载数据
         self._load_data()
         self._build_mapping()
-        print(f"成功更新 {len(time_dict)} 只股票涨停时间信息")
+        # print(f"成功更新 {len(time_dict)} 只股票涨停时间信息")
 
     def get_time_by_code(self, code):
         """根据股票代码获取涨停时间"""
@@ -519,7 +519,7 @@ class StockQuery:
         # 重新加载数据
         self._load_data()
         self._build_mapping()
-        print(f"成功更新 {len(theme_dict)} 只股票的题材信息")
+        # print(f"成功更新 {len(theme_dict)} 只股票的题材信息")
 
     def get_theme_by_code(self, code):
         """根据股票代码获取题材"""
