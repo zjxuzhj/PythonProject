@@ -404,71 +404,27 @@ class ETFMomentumStrategy:
         current_positions = self.get_current_positions()
         available_cash = self.get_available_cash()
 
-        # 计算总可用资金（持仓市值 + 可用现金）
-        total_value = available_cash
-        for pos_data in current_positions.values():
-            total_value += pos_data['market_value']
-
-        self.logger.info(f"总资产: {total_value:.2f}, 可用现金: {available_cash:.2f}")
-
-        # 3. 计算目标配置
         target_codes = [etf['stock_code'] for etf in target_etfs]
         target_weight = 1.0 / len(target_codes)
 
         self.logger.info(f"目标ETF: {target_codes}, 每个权重: {target_weight:.2%}")
 
+        # 计算总可用资金（持仓市值 + 可用现金）
+        total_value = available_cash
         # 买入目标ETF
         for etf_data in target_etfs:
             stock_code = etf_data['stock_code']
             target_value = total_value * target_weight
             self.execute_trade(stock_code, target_value)
 
+        for pos_data in current_positions.values():
+            total_value += pos_data['market_value']
+
+        self.logger.info(f"总资产: {total_value:.2f}, 可用现金: {available_cash:.2f}")
+
+        # 3. 计算目标配置
+
         self.logger.info("=== ETF动量轮动调仓完成 ===")
-
-    def adjust_positions(self):
-        """调仓主函数"""
-        try:
-            self.logger.info("=== 开始ETF动量轮动调仓 ===")
-
-            # 1. 筛选目标ETF
-            target_etfs = self.filter_etfs()
-
-            if not target_etfs:
-                self.logger.warning("未找到符合条件的ETF，跳过调仓")
-                return
-
-            # 2. 获取当前持仓和可用资金
-            current_positions = self.get_current_positions()
-            available_cash = self.get_available_cash()
-
-            # 计算总可用资金（持仓市值 + 可用现金）
-            total_value = available_cash
-            for pos_data in current_positions.values():
-                total_value += pos_data['market_value']
-
-            self.logger.info(f"总资产: {total_value:.2f}, 可用现金: {available_cash:.2f}")
-
-            # 3. 计算目标配置
-            target_codes = [etf['stock_code'] for etf in target_etfs]
-            target_weight = 1.0 / len(target_codes)
-
-            self.logger.info(f"目标ETF: {target_codes}, 每个权重: {target_weight:.2%}")
-
-            # 4. 卖出不在目标列表中的持仓 暂时先不清仓
-            # for stock_code in current_positions:
-            #     if stock_code not in target_codes:
-            #         self.execute_trade(stock_code, 0)  # 清仓
-
-            # 5. 调整目标ETF持仓 暂时先不买入卖出
-            for etf_data in target_etfs:
-                stock_code = etf_data['stock_code']
-                target_value = total_value * target_weight
-                self.execute_trade(stock_code, target_value)
-
-            self.logger.info("=== ETF动量轮动调仓完成 ===")
-
-        except Exception as e:
-            self.logger.error(f"调仓异常: {str(e)}")
 
 
 def download_daily_data():
@@ -608,7 +564,7 @@ if __name__ == "__main__":
     )
     print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
     scheduler.add_job(
-        data_updater.update_all_daily_data(),
+        data_updater.update_all_daily_data,
         trigger=CronTrigger(
             hour=16,
             minute=5,
@@ -620,8 +576,9 @@ if __name__ == "__main__":
     print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
 
     # download_daily_data()
-    # today_str_for_verify = datetime.now().strftime('%Y%m%d')
-    # verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
+    yesterday = datetime.now() - timedelta(days=1)
+    today_str_for_verify = datetime.now().strftime('%Y%m%d')
+    verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
 
     # 任务1：每日10:55执行卖出
     scheduler.add_job(
