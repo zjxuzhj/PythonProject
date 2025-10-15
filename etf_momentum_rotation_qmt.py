@@ -341,7 +341,6 @@ class ETFMomentumStrategy:
                     'ETF动量轮动买入',
                     ''
                 )
-
                 etf_name = query_tool.get_name_by_code(stock_code)
                 self.logger.info(f"买入: {etf_name}({stock_code}) {volume_diff}股 @ {current_price:.2f}")
 
@@ -387,7 +386,7 @@ class ETFMomentumStrategy:
 
         # 遍历当前持仓，如果不在目标里，就清仓
         for stock_code in current_positions:
-            # 必须同时满足1.该持仓在我们的策略ETF池中 2.它不是今天的目标ETF
+            # 该持仓在策略ETF池中，它不是今天的目标ETF
             if stock_code in self.etf_pool and stock_code not in target_codes:
                 self.logger.info(f"持仓 {stock_code} 在策略池中但非今日目标，执行卖出。")
                 self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
@@ -403,26 +402,18 @@ class ETFMomentumStrategy:
         # 2. 获取当前持仓和可用资金
         current_positions = self.get_current_positions()
         available_cash = self.get_available_cash()
-
+        # 从目标etf列表中提取代码
         target_codes = [etf['stock_code'] for etf in target_etfs]
-        target_weight = 1.0 / len(target_codes)
+        # 因为MAX_ETF_COUNT=1，所以我们只关心列表中的第一个代码
+        if not target_codes:
+            self.logger.warning("目标代码列表为空，无法确定买入对象。")
+            return
+        target_code = target_codes[0]
+        etf_name = ETF_NAMES.get(target_code, '未知')
+        self.logger.info(f"【买入决策】准备买入 '{etf_name}({target_code})'")
 
-        self.logger.info(f"目标ETF: {target_codes}, 每个权重: {target_weight:.2%}")
-
-        # 计算总可用资金（持仓市值 + 可用现金）
-        total_value = available_cash
         # 买入目标ETF
-        for etf_data in target_etfs:
-            stock_code = etf_data['stock_code']
-            target_value = total_value * target_weight
-            self.execute_trade(stock_code, target_value)
-
-        for pos_data in current_positions.values():
-            total_value += pos_data['market_value']
-
-        self.logger.info(f"总资产: {total_value:.2f}, 可用现金: {available_cash:.2f}")
-
-        # 3. 计算目标配置
+        self.execute_trade(target_code, available_cash)
 
         self.logger.info("=== ETF动量轮动调仓完成 ===")
 
@@ -576,9 +567,9 @@ if __name__ == "__main__":
     print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
 
     # download_daily_data()
-    yesterday = datetime.now() - timedelta(days=1)
-    today_str_for_verify = datetime.now().strftime('%Y%m%d')
-    verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
+    # yesterday = datetime.now() - timedelta(days=1)
+    # today_str_for_verify = datetime.now().strftime('%Y%m%d')
+    # verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
 
     # 任务1：每日10:55执行卖出
     scheduler.add_job(
