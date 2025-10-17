@@ -15,9 +15,9 @@ from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
 
 import getAllStockCsv as tools
+import updateAllStockDataCache as data_updater
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
-import updateAllStockDataCache as data_updater
 
 # ====== 全局配置 ======
 TOTAL_BUDGET = 5000  # 总投资预算
@@ -223,10 +223,11 @@ class ETFMomentumStrategy:
 
             # 获取当前日期用于显示
             today_str = datetime.now().strftime('%Y-%m-%d')
-            print(f"\n{'='*75}")
+            print(f"\n{'=' * 75}")
             print(f"ETF分值排序结果 ({today_str})")
-            print(f"{'='*75}")
-            print(f"{'排名':<4} {'代码':<12} {'名称':<12} {'分值':<8} {'年化收益':<10} {'R2':<8} {'价格':<8} {'数据点'}")
+            print(f"{'=' * 75}")
+            print(
+                f"{'排名':<4} {'代码':<12} {'名称':<12} {'分值':<8} {'年化收益':<10} {'R2':<8} {'价格':<8} {'数据点'}")
             print("-" * 75)
 
             for rank, data in enumerate(etf_scores, 1):
@@ -234,8 +235,7 @@ class ETFMomentumStrategy:
                 print(f"{rank:<4} {data['stock_code']:<12} {etf_name:<12} "
                       f"{data['score']:<8.4f} {data['annualized_returns']:<10.2%} "
                       f"{data['r2']:<8.4f} {data['current_price']:<8.2f} {data['data_points']}")
-            print(f"{'='*75}\n")
-
+            print(f"{'=' * 75}\n")
 
             # 保留日志标题，但注释掉原有的逐行日志记录，避免信息重复
             self.logger.info("【ETF得分列表（按score降序）】 - 详细见上方控制台表格")
@@ -295,77 +295,80 @@ class ETFMomentumStrategy:
     def execute_trade(self, stock_code, target_value):
         """执行交易"""
         try:
-            current_price = self.get_current_price(stock_code)
-            if current_price <= 0:
-                self.logger.warning(f"{stock_code} 价格无效，跳过交易")
+            tick_data = xtdata.get_full_tick([stock_code])
+            if not tick_data or stock_code not in tick_data or not tick_data[stock_code]:
+                self.logger.warning(f"{stock_code} 获取tick五档行情失败，跳过交易")
+                return False
+            tick = tick_data[stock_code]
+
+            # 2. 检查五档行情列表是否存在且长度足够
+            bid_prices = tick.get('bidPrice', [])
+            ask_prices = tick.get('askPrice', [])
+            if len(bid_prices) < 5 or len(ask_prices) < 5:
+                self.logger.warning(f"{stock_code} 五档行情数据不完整，跳过交易")
                 return False
 
-            # 获取当前持仓
+            # 3. 使用最新成交价作为计算目标股数的“参考价”
+            reference_price = tick.get('lastPrice', 0)
+            if reference_price <= 0:
+                self.logger.warning(f"{stock_code} 参考价格无效，跳过交易")
+                return False
+
+            # 4. 计算交易量
             current_positions = self.get_current_positions()
-            current_value = 0
-            current_volume = 0
-
-            if stock_code in current_positions:
-                current_volume = current_positions[stock_code]['volume']
-                current_value = current_volume * current_price
-
-            # 计算目标持仓数量
-            target_volume = int(target_value / current_price / 100) * 100
-
-            # 计算需要调整的数量
+            current_volume = current_positions.get(stock_code, {}).get('volume', 0)
+            target_volume = int(target_value / reference_price / 100) * 100
             volume_diff = target_volume - current_volume
 
-            if abs(volume_diff * current_price) < MIN_TRADE_AMOUNT:
+            if abs(volume_diff * reference_price) < MIN_TRADE_AMOUNT:
                 self.logger.info(f"{stock_code} 调整金额过小，跳过交易")
                 return True
 
             # 执行交易
             if volume_diff > 0:  # 买入
-                available_cash = self.get_available_cash()
-                trade_value = volume_diff * current_price
+                execution_price = ask_prices[4] or reference_price
+                if execution_price <= 0:
+                    self.logger.warning(f"{stock_code} 获取买入执行价（卖五）失败，跳过交易")
+                    return False
 
+                available_cash = self.get_available_cash()
+                trade_value = volume_diff * reference_price
                 if trade_value > available_cash:
-                    volume_diff = int(available_cash / current_price / 100) * 100
+                    volume_diff = int(available_cash / execution_price / 100) * 100
                     if volume_diff <= 0:
                         self.logger.warning(f"{stock_code} 资金不足，无法买入")
                         return False
 
                 # 执行买入
-                order_id = self.trader.order_stock_async(
-                    self.account,
-                    stock_code,
-                    xtconstant.STOCK_BUY,
-                    volume_diff,
-                    xtconstant.FIX_PRICE,
-                    current_price,
-                    'ETF动量轮动买入',
-                    ''
+                self.trader.order_stock_async(
+                    self.account, stock_code, xtconstant.STOCK_BUY,
+                    volume_diff, xtconstant.FIX_PRICE, execution_price,
+                    'ETF动量轮动买入', ''
                 )
-                etf_name = query_tool.get_name_by_code(stock_code)
-                self.logger.info(f"买入: {etf_name}({stock_code}) {volume_diff}股 @ {current_price:.2f}")
+                etf_name = ETF_NAMES.get(stock_code, '未知')
+                self.logger.info(f"买入: {etf_name}({stock_code}) {volume_diff}股 @ {execution_price:.3f} (卖五价)")
 
             elif volume_diff < 0:  # 卖出
-                sell_volume = abs(volume_diff)
-                can_use_volume = current_positions[stock_code]['can_use_volume']
+                # 从 bidPrice 列表中获取买五价
+                execution_price = bid_prices[4] or reference_price
+                if execution_price <= 0:
+                    self.logger.warning(f"{stock_code} 获取卖出执行价（买五）失败，跳过交易")
+                    return False
 
+                sell_volume = abs(volume_diff)
+                can_use_volume = current_positions.get(stock_code, {}).get('can_use_volume', 0)
                 if sell_volume > can_use_volume:
                     sell_volume = can_use_volume
 
                 if sell_volume > 0:
                     # 执行卖出
-                    order_id = self.trader.order_stock_async(
-                        self.account,
-                        stock_code,
-                        xtconstant.STOCK_SELL,
-                        sell_volume,
-                        xtconstant.FIX_PRICE,
-                        current_price,
-                        'ETF动量轮动卖出',
-                        ''
+                    self.trader.order_stock_async(
+                        self.account, stock_code, xtconstant.STOCK_SELL,
+                        sell_volume, xtconstant.FIX_PRICE, execution_price,
+                        'ETF动量轮动卖出', ''
                     )
-
-                    etf_name = query_tool.get_name_by_code(stock_code)
-                    self.logger.info(f"卖出: {etf_name}({stock_code}) {sell_volume}股 @ {current_price:.2f}")
+                    etf_name = ETF_NAMES.get(stock_code, '未知')
+                    self.logger.info(f"卖出: {etf_name}({stock_code}) {sell_volume}股 @ {execution_price:.3f} (买五价)")
 
             return True
 
@@ -542,30 +545,6 @@ if __name__ == "__main__":
     # 配置定时任务
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
-    # 每日16:00执行数据下载任务
-    scheduler.add_job(
-        download_daily_data,
-        trigger=CronTrigger(
-            hour=16,
-            minute=0,
-            day_of_week='mon-fri'  # 周一至周五执行
-        ),
-        id='daily_data_downloader',  # 给任务一个唯一的ID
-        misfire_grace_time=300
-    )
-    print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
-    scheduler.add_job(
-        data_updater.update_all_daily_data,
-        trigger=CronTrigger(
-            hour=16,
-            minute=5,
-            day_of_week='mon-fri'
-        ),
-        id='daily_data_small_downloader',
-        misfire_grace_time=300
-    )
-    print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
-
     # download_daily_data()
     # yesterday = datetime.now() - timedelta(days=1)
     # today_str_for_verify = datetime.now().strftime('%Y%m%d')
@@ -596,6 +575,31 @@ if __name__ == "__main__":
         id='etf_buys_handler'
     )
     print("定时任务已启动：每日11:00执行ETF买入检查")
+
+    # 每日16:00执行数据下载任务
+    scheduler.add_job(
+        download_daily_data,
+        trigger=CronTrigger(
+            hour=16,
+            minute=0,
+            day_of_week='mon-fri'  # 周一至周五执行
+        ),
+        id='daily_data_downloader',  # 给任务一个唯一的ID
+        misfire_grace_time=300
+    )
+    print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
+
+    scheduler.add_job(
+        data_updater.update_all_daily_data,
+        trigger=CronTrigger(
+            hour=16,
+            minute=5,
+            day_of_week='mon-fri'
+        ),
+        id='daily_data_small_downloader',
+        misfire_grace_time=300
+    )
+    print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
 
     # 启动调度器
     scheduler.start()
