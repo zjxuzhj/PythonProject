@@ -201,20 +201,19 @@ class ETFMomentumStrategy:
         for stock_code in current_positions:
             # 该持仓在策略ETF池中，它不是今天的目标ETF
             if stock_code in self.core.ETF_POOL and stock_code not in target_codes:
-                self.logger.info(f"持仓 {stock_code} 在策略池中但非今日目标，执行卖出。")
+                stock_name = self.core.etf_names.get(stock_code, '未知')
+                self.logger.info(f"【卖出决策】标的 '{stock_name}({stock_code})' 被移出目标持仓，准备清仓。")
                 self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
 
     def handle_buys(self):
         """处理买入逻辑"""
         self.logger.info("=== [2/2] 开始执行买入检查 ===")
+
         target_etfs = self.filter_etfs()  # 再次计算，确保逻辑一致
         if not target_etfs:
             self.logger.warning("未找到目标ETF，不执行买入。")
             return
 
-        # 2. 获取当前持仓和可用资金
-        current_positions = self.get_current_positions()
-        available_cash = self.get_available_cash()
         # 从目标etf列表中提取代码
         target_codes = [etf['stock_code'] for etf in target_etfs]
         # 因为MAX_ETF_COUNT=1，所以我们只关心列表中的第一个代码
@@ -223,10 +222,23 @@ class ETFMomentumStrategy:
             return
         target_code = target_codes[0]
         etf_name = self.core.etf_names.get(target_code, '未知')
+
+        # 3. 获取当前持仓和可用资金，计算账户总资产，用于确定买入金额
+        current_positions = self.get_current_positions()
+        if target_code in current_positions:
+            self.logger.info(f"已持有目标ETF {target_code}，无需买入。")
+            return
+
+        available_cash = self.get_available_cash()
+        total_value = available_cash
+        for pos_data in current_positions.values():
+            total_value += pos_data['market_value']
+
+        self.logger.info(f"账户总资产: {total_value:.2f}, 可用现金: {available_cash:.2f}")
         self.logger.info(f"【买入决策】准备买入 '{etf_name}({target_code})'")
 
         # 买入目标ETF
-        self.execute_trade(target_code, available_cash)
+        self.execute_trade(target_code, total_value)
 
         self.logger.info("=== ETF动量轮动调仓完成 ===")
 
