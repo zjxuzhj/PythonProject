@@ -1,6 +1,7 @@
 # ETF动量轮动策略 - MiniQMT版本
 # 基于聚宽策略改写，适用于MiniQMT实盘交易
 # 原策略来源：https://www.joinquant.com/post/62008
+# 现在使用统一的ETF核心模块
 
 import math
 import threading
@@ -18,6 +19,7 @@ import getAllStockCsv as tools
 import updateAllStockDataCache as data_updater
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
+from etf_momentum_core import ETFMomentumCore
 
 # ====== 全局配置 ======
 TOTAL_BUDGET = 5000  # 总投资预算
@@ -25,66 +27,7 @@ MIN_TRADE_AMOUNT = 1000  # 最小交易金额
 MOMENTUM_DAYS = 25  # 动量计算天数
 MAX_ETF_COUNT = 1  # 最大持有ETF数量
 
-# ETF池配置
-ETF_POOL = [
-    # 境外
-    "513100.SH",  # 纳指ETF
-    "159509.SZ",  # 纳指科技ETF
-    "513520.SH",  # 日经ETF
-    "513030.SH",  # 德国ETF
-    # 商品
-    "518880.SH",  # 黄金ETF 2013.7 714亿
-    "159980.SZ",  # 有色ETF
-    "159985.SZ",  # 豆粕ETF
-    "501018.SH",  # 南方原油
-    # 债券
-    "511090.SH",  # 30年国债ETF
-    # 国内
-    "513130.SH",  # 恒生科技
-    "513690.SH",  # 港股红利
-    "510180.SH",  # 上证180
-    "159915.SZ",  # 创业板ETF
-    "510410.SH",  # 资源
-    "515650.SH",  # 消费50
-    "512290.SH",  # 生物医药
-    "588120.SH",  # 科创100
-    "515070.SH",  # 人工智能ETF
-    "159851.SZ",  # 金融科技 2021.3 123亿
-    "159637.SZ",  # 新能源车
-    "516160.SH",  # 新能源 2021.2 61亿 中证新能
-    "159550.SZ",  # 互联网ETF
-    "512710.SH",  # 军工ETF
-    "159692.SZ",  # 证券
-    "512480.SH",  # 半导体 2019.6 230亿
-]
-
-ETF_NAMES = {
-    "513100.SH": "纳指ETF",
-    "159509.SZ": "纳指科技ETF",
-    "513520.SH": "日经ETF",
-    "513030.SH": "德国ETF",
-    "518880.SH": "黄金ETF",
-    "159980.SZ": "有色ETF",
-    "159985.SZ": "豆粕ETF",
-    "501018.SH": "南方原油",
-    "511090.SH": "30年国债ETF",
-    "513130.SH": "恒生科技",
-    "513690.SH": "港股红利",
-    "510180.SH": "上证180",
-    "159915.SZ": "创业板ETF",
-    "510410.SH": "资源",
-    "515650.SH": "消费50",
-    "512290.SH": "生物医药",
-    "588120.SH": "科创100",
-    "515070.SH": "人工智能ETF",
-    "159851.SZ": "金融科技",
-    "159637.SZ": "新能源车",
-    "516160.SH": "新能源",
-    "159550.SZ": "互联网ETF",
-    "512710.SH": "军工ETF",
-    "159692.SZ": "证券",
-    "512480.SH": "半导体",
-}
+# ETF池配置和名称映射现在由统一的核心模块提供
 
 # 全局变量
 query_tool = tools.StockQuery()
@@ -102,155 +45,22 @@ class ETFMomentumStrategy:
         self.trader = trader
         self.account = account
         self.logger = logger
-        self.etf_pool = ETF_POOL
-        self.momentum_days = MOMENTUM_DAYS
+        self.core = ETFMomentumCore(MOMENTUM_DAYS)  # 使用统一的核心模块
         self.max_etf_count = MAX_ETF_COUNT
-
-    def get_historical_data(self, stock_code, days):
-        """获取历史数据"""
-        try:
-            # 获取历史数据
-            yesterday = datetime.now() - timedelta(days=1)
-            end_date = yesterday.strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=days + 40)).strftime('%Y%m%d')
-            data = xtdata.get_local_data(
-                field_list=['close'],
-                stock_list=[stock_code],
-                period='1d',
-                start_time=start_date,
-                end_time=end_date,
-            )
-
-            if stock_code in data and len(data[stock_code]) > 0:
-                df = data[stock_code]
-                # 确保有足够的数据
-                if len(df) >= days:
-                    return df.tail(days)
-
-            self.logger.warning(f"获取 {stock_code} 历史数据失败或数据不足")
-            return None
-
-        except Exception as e:
-            self.logger.error(f"获取 {stock_code} 历史数据异常: {str(e)}")
-            return None
-
-    def get_current_price(self, stock_code):
-        """获取当前价格"""
-        try:
-            tick = xtdata.get_full_tick([stock_code])
-            if stock_code in tick and tick[stock_code]:
-                return tick[stock_code].get('lastPrice', 0)
-            return 0
-        except Exception as e:
-            self.logger.error(f"获取 {stock_code} 当前价格异常: {str(e)}")
-            return 0
-
-    def calculate_momentum_score(self, stock_code):
-        """计算动量得分"""
-        try:
-            # 获取历史数据
-            df = self.get_historical_data(stock_code, self.momentum_days)
-            if df is None or len(df) < self.momentum_days:
-                return None
-
-            # 获取当前价格
-            current_price = self.get_current_price(stock_code)
-            if current_price <= 0:
-                return None
-
-            # 构建价格序列（历史价格 + 当前价格）
-            prices = np.append(df['close'].values, current_price)
-
-            # 计算对数价格
-            y = np.log(prices)
-            x = np.arange(len(y))
-
-            # 设置权重（线性递增）
-            weights = np.linspace(1, 2, len(y))
-
-            # 加权线性回归
-            slope, intercept = np.polyfit(x, y, 1, w=weights)
-
-            # 计算年化收益率
-            annualized_returns = math.exp(slope * 250) - 1
-
-            # 计算R²
-            y_pred = slope * x + intercept
-            ss_res = np.sum(weights * (y - y_pred) ** 2)
-            ss_tot = np.sum(weights * (y - np.mean(y)) ** 2)
-            r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-
-            # 计算得分
-            score = annualized_returns * r2
-
-            # 过滤近3日跌幅超过5%的ETF
-            if len(prices) >= 4:
-                recent_drops = [
-                    prices[-1] / prices[-2],
-                    prices[-2] / prices[-3],
-                    prices[-3] / prices[-4]
-                ]
-                if min(recent_drops) < 0.95:
-                    score = 0
-
-            return {
-                'stock_code': stock_code,
-                'annualized_returns': annualized_returns,
-                'r2': r2,
-                'score': score,
-                'current_price': current_price,
-                'data_points': len(df)
-            }
-
-        except Exception as e:
-            self.logger.error(f"计算 {stock_code} 动量得分异常: {str(e)}")
-            return None
 
     def filter_etfs(self):
         """筛选ETF并计算得分"""
         try:
             self.logger.info("开始计算ETF动量得分...")
 
-            etf_scores = []
+            # 使用核心模块获取ETF得分
+            etf_scores = self.core.get_etf_scores_for_live()
 
-            for etf_code in self.etf_pool:
-                score_data = self.calculate_momentum_score(etf_code)
-                if score_data:
-                    etf_scores.append(score_data)
-
-            # 按得分排序
-            etf_scores.sort(key=lambda x: x['score'], reverse=True)
-
-            # 获取当前日期用于显示
-            today_str = datetime.now().strftime('%Y-%m-%d')
-            print(f"\n{'=' * 75}")
-            print(f"ETF分值排序结果 ({today_str})")
-            print(f"{'=' * 75}")
-            print(
-                f"{'排名':<4} {'代码':<12} {'名称':<12} {'分值':<8} {'年化收益':<10} {'R2':<8} {'价格':<8} {'数据点'}")
-            print("-" * 75)
-
-            for rank, data in enumerate(etf_scores, 1):
-                etf_name = ETF_NAMES.get(data['stock_code'], '未知')
-                print(f"{rank:<4} {data['stock_code']:<12} {etf_name:<12} "
-                      f"{data['score']:<8.4f} {data['annualized_returns']:<10.2%} "
-                      f"{data['r2']:<8.4f} {data['current_price']:<8.2f} {data['data_points']}")
-            print(f"{'=' * 75}\n")
+            # 打印详细表格
+            self.core.print_etf_scores(etf_scores)
 
             # 保留日志标题，但注释掉原有的逐行日志记录，避免信息重复
             self.logger.info("【ETF得分列表（按score降序）】 - 详细见上方控制台表格")
-            # for data in etf_scores:
-            #     try:
-            #         etf_name = ETF_NAMES.get(data['stock_code'], '未知')
-            #         self.logger.info(
-            #             f"{data['stock_code']} | {etf_name} | "
-            #             f"得分: {data['score']:.4f} | "
-            #             f"年化收益: {data['annualized_returns']:.2%} | "
-            #             f"R2: {data['r2']:.4f} | "
-            #             f"当前价: {data['current_price']:.2f}"
-            #         )
-            #     except Exception:
-            #         self.logger.info(f"{data['stock_code']} | 得分: {data['score']:.4f}")
 
             # 过滤有效得分的ETF
             valid_etfs = [data for data in etf_scores if 0 < data['score'] < 6]
@@ -345,7 +155,7 @@ class ETFMomentumStrategy:
                     volume_diff, xtconstant.FIX_PRICE, execution_price,
                     'ETF动量轮动买入', ''
                 )
-                etf_name = ETF_NAMES.get(stock_code, '未知')
+                etf_name = self.core.etf_names.get(stock_code, '未知')
                 self.logger.info(f"买入: {etf_name}({stock_code}) {volume_diff}股 @ {execution_price:.3f} (卖五价)")
 
             elif volume_diff < 0:  # 卖出
@@ -367,7 +177,7 @@ class ETFMomentumStrategy:
                         sell_volume, xtconstant.FIX_PRICE, execution_price,
                         'ETF动量轮动卖出', ''
                     )
-                    etf_name = ETF_NAMES.get(stock_code, '未知')
+                    etf_name = self.core.etf_names.get(stock_code, '未知')
                     self.logger.info(f"卖出: {etf_name}({stock_code}) {sell_volume}股 @ {execution_price:.3f} (买五价)")
 
             return True
@@ -390,7 +200,7 @@ class ETFMomentumStrategy:
         # 遍历当前持仓，如果不在目标里，就清仓
         for stock_code in current_positions:
             # 该持仓在策略ETF池中，它不是今天的目标ETF
-            if stock_code in self.etf_pool and stock_code not in target_codes:
+            if stock_code in self.core.ETF_POOL and stock_code not in target_codes:
                 self.logger.info(f"持仓 {stock_code} 在策略池中但非今日目标，执行卖出。")
                 self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
 
@@ -412,7 +222,7 @@ class ETFMomentumStrategy:
             self.logger.warning("目标代码列表为空，无法确定买入对象。")
             return
         target_code = target_codes[0]
-        etf_name = ETF_NAMES.get(target_code, '未知')
+        etf_name = self.core.etf_names.get(target_code, '未知')
         self.logger.info(f"【买入决策】准备买入 '{etf_name}({target_code})'")
 
         # 买入目标ETF
@@ -424,13 +234,16 @@ class ETFMomentumStrategy:
 def download_daily_data():
     """下载ETF池中所有证券的最新日线数据"""
     try:
+        from etf_momentum_core import ETFMomentumCore
+        core = ETFMomentumCore()
+        
         today_str = datetime.now().strftime('%Y%m%d')
         strategy_logger.info(f"=== 开始执行每日日线数据下载任务 ({today_str}) ===")
 
-        total_etfs = len(ETF_POOL)
-        for idx, stock_code in enumerate(ETF_POOL, 1):
+        total_etfs = len(core.ETF_POOL)
+        for idx, stock_code in enumerate(core.ETF_POOL, 1):
             strategy_logger.info(
-                f"[{idx}/{total_etfs}] 下载 {stock_code} ({ETF_NAMES.get(stock_code, '未知')}) 的日线数据...")
+                f"[{idx}/{total_etfs}] 下载 {stock_code} ({core.etf_names.get(stock_code, '未知')}) 的日线数据...")
             # 下载当天的日线数据，会自动更新到本地数据文件
             xtdata.download_history_data(stock_code, '1d', start_time=today_str, end_time=today_str)
 
