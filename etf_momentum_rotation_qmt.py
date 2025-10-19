@@ -3,12 +3,10 @@
 # 原策略来源：https://www.joinquant.com/post/62008
 # 现在使用统一的ETF核心模块
 
-import math
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
-import numpy as np
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from xtquant import xtconstant, xtdata
@@ -17,9 +15,9 @@ from xtquant.xttype import StockAccount
 
 import getAllStockCsv as tools
 import updateAllStockDataCache as data_updater
+from etf_momentum_core import ETFMomentumCore
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
-from etf_momentum_core import ETFMomentumCore
 
 # ====== 全局配置 ======
 TOTAL_BUDGET = 5000  # 总投资预算
@@ -199,36 +197,36 @@ class ETFMomentumStrategy:
 
         # 遍历当前持仓，如果不在目标里，就清仓
         for stock_code in current_positions:
-            # 该持仓在策略ETF池中，它不是今天的目标ETF
-            if stock_code in self.core.ETF_POOL and stock_code not in target_codes:
+            # 该持仓在策略ETF池中，它不是今天的目标ETF（也就是需要卖出的票）
+            if stock_code in self.core.ETF_POOL:
                 stock_name = self.core.etf_names.get(stock_code, '未知')
-                self.logger.info(f"【卖出决策】标的 '{stock_name}({stock_code})' 被移出目标持仓，准备清仓。")
-                self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
+                if stock_code in target_codes:
+                    self.logger.info(f"【持仓检查】当前持仓 '{stock_name}({stock_code})' 与目标一致，无需卖出。")
+                else:
+                    self.logger.info(f"【卖出决策】标的 '{stock_name}({stock_code})' 已非目标，准备清仓。")
+                    self.execute_trade(stock_code, 0)  # 目标市值传0，即清仓
 
     def handle_buys(self):
         """处理买入逻辑"""
         self.logger.info("=== [2/2] 开始执行买入检查 ===")
 
-        target_etfs = self.filter_etfs()  # 再次计算，确保逻辑一致
+        # 1. 再次计算，确保逻辑一致性
+        target_etfs = self.filter_etfs()
         if not target_etfs:
             self.logger.warning("未找到目标ETF，不执行买入。")
             return
 
-        # 从目标etf列表中提取代码
-        target_codes = [etf['stock_code'] for etf in target_etfs]
-        # 因为MAX_ETF_COUNT=1，所以我们只关心列表中的第一个代码
-        if not target_codes:
-            self.logger.warning("目标代码列表为空，无法确定买入对象。")
-            return
-        target_code = target_codes[0]
+        target_code = target_etfs[0]['stock_code']
         etf_name = self.core.etf_names.get(target_code, '未知')
 
-        # 3. 获取当前持仓和可用资金，计算账户总资产，用于确定买入金额
+        # 2. 获取当前持仓并检查是否已持有目标
         current_positions = self.get_current_positions()
         if target_code in current_positions:
-            self.logger.info(f"已持有目标ETF {target_code}，无需买入。")
+            # 【关键优化】打印更清晰的提示日志
+            self.logger.info(f"【持仓检查】已持有目标ETF '{etf_name}({target_code})'，无需执行买入操作。")
             return
 
+        # 3. 获取当前持仓和可用资金，计算账户总资产，用于确定买入金额
         available_cash = self.get_available_cash()
         total_value = available_cash
         for pos_data in current_positions.values():
@@ -248,7 +246,7 @@ def download_daily_data():
     try:
         from etf_momentum_core import ETFMomentumCore
         core = ETFMomentumCore()
-        
+
         today_str = datetime.now().strftime('%Y%m%d')
         strategy_logger.info(f"=== 开始执行每日日线数据下载任务 ({today_str}) ===")
 
