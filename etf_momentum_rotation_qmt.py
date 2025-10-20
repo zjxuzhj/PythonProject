@@ -140,13 +140,19 @@ class ETFMomentumStrategy:
                     return False
 
                 available_cash = self.get_available_cash()
-                trade_value = volume_diff * reference_price
-                if trade_value > available_cash:
-                    volume_diff = int(available_cash / execution_price / 100) * 100
+                required_cash = volume_diff * execution_price  # 使用执行价计算实际成本
+                if required_cash > available_cash:
+                    self.logger.info(
+                        f"按计划买入({volume_diff}股)所需资金({required_cash:.2f}) > 可用现金({available_cash:.2f})，重新计算股数...")
+                    volume_diff = int(available_cash / execution_price / 100) * 100  # 根据可用现金和执行价计算能买的最大股数
+                    # 重新计算后再次检查
                     if volume_diff <= 0:
                         self.logger.warning(f"{stock_code} 资金不足，无法买入")
                         return False
-
+                    # 检查调整后的金额是否仍满足最小交易额
+                    if (volume_diff * execution_price) < MIN_TRADE_AMOUNT:
+                        self.logger.warning(f"{stock_code} 资金不足以满足最小交易金额，取消买入")
+                        return False
                 # 执行买入
                 self.trader.order_stock_async(
                     self.account, stock_code, xtconstant.STOCK_BUY,
