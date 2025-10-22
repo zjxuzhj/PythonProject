@@ -379,18 +379,18 @@ if __name__ == "__main__":
     # today_str_for_verify = datetime.now().strftime('%Y%m%d')
     # verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
 
-    # 任务1：每日10:55执行卖出
+    # 任务1：每日10:58执行卖出
     scheduler.add_job(
         strategy.handle_sells,  # 调用卖出函数
         trigger=CronTrigger(
             hour=10,
-            minute=55,
+            minute=58,
             day_of_week='mon-fri'
         ),
         misfire_grace_time=300,
         id='etf_sells_handler'
     )
-    print("定时任务已启动：每日10:55执行ETF卖出检查")
+    print("定时任务已启动：每日10:58执行ETF卖出检查")
 
     # 任务2：每日11:00执行买入
     scheduler.add_job(

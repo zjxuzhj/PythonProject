@@ -253,29 +253,28 @@ class ETFScoreQuery:
         Returns:
             历史价格数组或None
         """
-        try:
-            # 计算需要获取的天数（考虑周末和节假日，获取更多天数）
-            required_days = self.core.momentum_days + 10
-            
-            # 获取历史数据
-            historical_data = self.core.get_historical_data_for_backtest(etf_code, required_days, target_date)
-            
-            if historical_data is None or len(historical_data) == 0:
-                return None
-            
-            # 提取收盘价
-            prices = historical_data['close'].values
-            
-            # 确保有足够的数据点
-            if len(prices) < self.core.momentum_days:
-                return None
-            
-            # 只取最近的momentum_days天数据
-            return prices[-self.core.momentum_days:]
-            
-        except Exception as e:
-            print(f"获取历史数据失败: {str(e)}")
+        # 计算需要获取的天数（考虑周末和节假日，获取更多天数）
+        required_days = self.core.momentum_days + 10
+
+        # 获取历史数据
+        historical_data = self.core.get_historical_data_for_backtest(etf_code, required_days, target_date)
+
+        if historical_data is None or len(historical_data) == 0:
             return None
+
+        # 提取收盘价
+        prices = historical_data['close'].values
+
+        # 确保有足够的数据点
+        if len(prices) < self.core.momentum_days:
+            return None
+
+        # 只取最近的momentum_days天数据
+        return prices[-self.core.momentum_days:]
+        # try:
+        # except Exception as e:
+        #     print(f"获取历史数据失败: {str(e)}")
+        #     return None
     
     def _append_simulated_price(self, historical_prices, simulated_price: float):
         """
