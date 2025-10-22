@@ -402,7 +402,7 @@ class ETFMomentumCore:
     
     def get_top_etf(self, etf_scores: List[Dict]) -> Optional[Dict]:
         """
-        获取得分最高的ETF
+        获取得分最高的ETF，获取评分在6分以内最高的etf
         
         Args:
             etf_scores: ETF得分列表
@@ -411,6 +411,8 @@ class ETFMomentumCore:
             得分最高的ETF信息或None
         """
         valid_scores = [score for score in etf_scores if score['score'] > 0]
+        # 过滤有效得分的ETF
+        valid_scores = [score for score in etf_scores if 0 < score['score'] < 6]
         if valid_scores:
             return valid_scores[0]
         return None

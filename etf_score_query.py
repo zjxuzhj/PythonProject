@@ -111,7 +111,7 @@ class ETFScoreQuery:
             print(f"年化收益率: {top_etf['annualized_returns']:.2%}")
             print(f"R²值: {top_etf['r2']:.4f}")
             print(f"当前价格: {top_etf['current_price']:.2f}")
-            print(f"推荐理由: 在{date_str}具有最高的动量得分")
+            print(f"推荐理由: 在{date_str}具有在6分以内的最高的动量得分")
         else:
             print("当前没有合适的ETF可供买入")
             print("原因: 所有ETF的动量得分都为0或负数")
