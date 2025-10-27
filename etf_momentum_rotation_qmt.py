@@ -5,7 +5,7 @@
 
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -377,7 +377,8 @@ if __name__ == "__main__":
     # download_daily_data()
     # yesterday = datetime.now() - timedelta(days=1)
     # today_str_for_verify = datetime.now().strftime('%Y%m%d')
-    # verify_data_download(check_date_str=today_str_for_verify, stock_list=ETF_POOL)
+    # core = ETFMomentumCore()
+    # verify_data_download(check_date_str=today_str_for_verify, stock_list=core.ETF_POOL)
 
     # 任务1：每日10:58执行卖出
     scheduler.add_job(
