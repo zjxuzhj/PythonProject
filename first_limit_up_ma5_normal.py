@@ -14,7 +14,7 @@ from ConditionChecker import ConditionChecker
 from common_sell_logic import get_sell_decision, MarketDataContext
 from first_limit_up_ma5_normal_util import simulate_ma5_order_prices
 from stock_info import StockInfo
-from strategy_rules import RuleEnum
+from first_limit_up_ma5_normal_strategy_rules import RuleEnum
 
 
 @dataclass
