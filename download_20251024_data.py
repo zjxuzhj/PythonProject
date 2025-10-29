@@ -204,10 +204,12 @@ def update_parquet_files_with_miniqmt_data(target_date="20251024"):
                 df.loc[target_date_obj, list(new_data.keys())] = list(new_data.values())
                 print(f"[{idx}/{len(stock_codes)}] {stock_code}: 更新数据")
             else:
-                # 添加新数据
+                # 添加新数据，按时间顺序插入
                 new_row = pd.DataFrame([new_data], index=[target_date_obj])
                 df = pd.concat([df, new_row])
-                print(f"[{idx}/{len(stock_codes)}] {stock_code}: 新增数据")
+                # 按日期索引排序，确保时间顺序正确
+                df = df.sort_index()
+                print(f"[{idx}/{len(stock_codes)}] {stock_code}: 新增数据（按时间顺序插入）")
             
             # 保存更新后的数据
             df.to_parquet(cache_path, engine='fastparquet', compression='snappy')
