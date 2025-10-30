@@ -314,14 +314,6 @@ class ETFScoreQuery:
         print(f"动量得分: {result['score']:.4f}")
         print(f"年化收益率: {result['annualized_returns']:.2%}")
         print(f"R²值: {result['r2']:.4f}")
-        print(f"-" * 60)
-        
-        if result['score'] > 0:
-            print("✅ 该ETF在指定条件下具有正向动量")
-        else:
-            print("❌ 该ETF在指定条件下动量得分为0或负数")
-            
-        print(f"{'=' * 60}\n")
 
 
 def main():
@@ -363,7 +355,7 @@ def main():
                 continue
             
             # 获取日期
-            target_date = input("日期 (格式: YYYYMMDD, 例如: 20251015): ").strip()
+            target_date = input("日期 (格式: 20251015, 该日期为拼接价格前的最后一日，也就是模拟日减一): ").strip()
             if not target_date:
                 print("日期不能为空")
                 continue
