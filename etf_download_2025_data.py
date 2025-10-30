@@ -11,13 +11,13 @@ from datetime import datetime
 # ETF池配置 - 从etf_momentum_rotation_qmt.py中提取
 ETF_POOL = [
     # 境外
-    "513050.SH",  # 中概互联网ETF
-    "515030.SH",  # 中概互联网ETF
+    "516160.SH",  # 中概互联网ETF
+    # "159796.SZ",  # 中概互联网ETF
 ]
 
 # 时间范围设置 - 2025年全年
 start_date = "20250101"
-end_date = "20251021"
+end_date = "20251030"
 period = "1d"  # 日线数据
 
 def download_etf_data():
