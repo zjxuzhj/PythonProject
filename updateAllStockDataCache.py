@@ -4,8 +4,6 @@ from datetime import datetime
 
 import akshare as ak
 import pandas as pd
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 import getAllStockCsv
 import http_util
@@ -44,10 +42,14 @@ def update_all_daily_data():
     print(f"开始执行每日数据更新任务 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 30)
 
+    use_sina = True
     # 1. 获取全市场实时行情数据
     try:
         print("步骤 1/4: 获取全市场实时行情...")
-        spot_df = ak.stock_zh_a_spot_em()
+        if use_sina:
+            spot_df = ak.stock_zh_a_spot()
+        else:
+            spot_df = ak.stock_zh_a_spot_em()
         if spot_df.empty:
             print("错误：未能从akshare获取到实时行情数据，任务终止。")
             return
@@ -67,8 +69,17 @@ def update_all_daily_data():
             cache_dir = "data_cache"
             os.makedirs(cache_dir, exist_ok=True)
 
-            file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
+            if len(symbol) > 7:
+                file_name = f"stock_{symbol}_20240201.parquet"
+            else:
+                file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
             cache_path = os.path.join(cache_dir, file_name)
+
+            # 1. 在读取前，先检查文件是否存在
+            if not os.path.exists(cache_path):
+                # 2. 如果文件不存在，跳过此股票的后续所有处理
+                # print(f"文件 {cache_path} 不存在，跳过。") # (可选：取消注释以查看跳过了哪些)
+                continue
 
             try:
                 df = pd.read_parquet(cache_path, engine='fastparquet')
@@ -81,12 +92,35 @@ def update_all_daily_data():
             today_str = datetime.now().strftime("%Y-%m-%d")
             new_date = pd.to_datetime(today_str)
 
-            new_data = {
-                "股票代码": symbol, "open": row['今开'], "close": row['最新价'],
-                "high": row['最高'], "low": row['最低'], "volume": row['成交量'],
-                "成交额": row['成交额'], "振幅": row['振幅'], "涨跌幅": row['涨跌幅'],
-                "涨跌额": row['涨跌额'], "换手率": row['换手率']
-            }
+            if use_sina:
+                high = row['最高']
+                low = row['最低']
+                current_price = row['最新价']
+                change_amount = row['涨跌额']  # 涨跌额
+                yesterday_close = current_price - change_amount
+                amplitude_pct = 0.0
+                if yesterday_close > 0:
+                    amplitude_pct = round(((high - low) / yesterday_close) * 100, 2)
+                new_data = {
+                    "股票代码": getAllStockCsv.get_numeric_code(symbol),
+                    "open": row['今开'],
+                    "close": current_price,
+                    "high": high,
+                    "low": low,
+                    "volume": row['成交量'] / 100,
+                    "成交额": row['成交额'],
+                    "涨跌幅": row['涨跌幅'],
+                    "涨跌额": change_amount,
+                    "振幅": amplitude_pct
+                }
+
+            else:
+                new_data = {
+                    "股票代码": symbol, "open": row['今开'], "close": row['最新价'],
+                    "high": row['最高'], "low": row['最低'], "volume": row['成交量'],
+                    "成交额": row['成交额'], "振幅": row['振幅'], "涨跌幅": row['涨跌幅'],
+                    "涨跌额": row['涨跌额'], "换手率": row['换手率']
+                }
 
             if not df.empty and new_date in df.index:
                 df.loc[new_date, list(new_data.keys())] = list(new_data.values())
@@ -111,14 +145,15 @@ def update_all_daily_data():
         print(f"更新涨停数据失败: {e}")
 
     # 4. 更新股票市值
-    if query_tool:
-        try:
-            print("\n步骤 4/4: 更新股票市值...")
-            time.sleep(1)
-            query_tool.update_stock_market_value(spot_df)
-            print("股票市值更新完毕。")
-        except Exception as e:
-            print(f"更新股票市值失败: {e}")
+    if not use_sina:
+        if query_tool:
+            try:
+                print("\n步骤 4/4: 更新股票市值...")
+                time.sleep(1)
+                query_tool.update_stock_market_value(spot_df)
+                print("股票市值更新完毕。")
+            except Exception as e:
+                print(f"更新股票市值失败: {e}")
 
     print("\n" + "=" * 30)
     print(f"所有数据均更新完毕 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -128,7 +163,6 @@ def update_all_daily_data():
 # ----------------- 脚本执行入口 -----------------
 
 if __name__ == "__main__":
-
     # --- 方案一：直接运行一次 ---
     update_all_daily_data()
 

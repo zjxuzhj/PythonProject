@@ -5,7 +5,7 @@ import time
 import akshare as ak
 import numpy as np
 import pandas as pd
-
+import re
 
 class StockQuery:
     root_dir = os.path.dirname(os.path.abspath(__file__))
@@ -691,6 +691,31 @@ def code_add_prefix(stock_code):
     else:
         raise ValueError(f"无法识别的股票代码开头：{first_digit}")
 
+
+def get_numeric_code(code_input):
+    """
+    无论输入是 "sh600001", "600001.SH", 还是 "600001",
+    都只返回 6 位的数字代码 "600001"。
+
+    通过移除所有非数字字符来实现。
+    """
+    code_str = str(code_input).strip()
+
+    # 使用正则表达式移除所有非数字字符
+    # "sh600001" -> "600001"
+    # "600001.SH" -> "600001"
+    # "600001" -> "600001"
+    numeric_part = re.sub(r'[^0-9]', '', code_str)
+
+    # 验证结果是否为6位数字
+    if len(numeric_part) == 6 and numeric_part.isdigit():
+        return numeric_part
+
+    # 检查原始输入是否就是6位数字（应对 re.sub 无法处理的罕见情况）
+    if code_str.isdigit() and len(code_str) == 6:
+        return code_str
+
+    raise ValueError(f"无法从 '{code_input}' 中提取 6 位数字代码")
 
 # 使用示例（单独执行此类时）
 if __name__ == "__main__":
