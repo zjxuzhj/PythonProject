@@ -74,7 +74,7 @@ class StockPoolManager:
             basic_check_count = 0
             limit_up_check_count = 0
             
-            for stock_code in all_stocks[:100]:  # 限制检查前100只股票以提高效率
+            for stock_code in all_stocks[:1000]:  # 限制检查前100只股票以提高效率
                 try:
                     # 检查基本条件
                     if not self._check_basic_conditions(stock_code, current_date):
@@ -148,6 +148,7 @@ class StockPoolManager:
         try:
             # 1. 检查是否为ST股票
             if self._is_st_stock(stock_code):
+                # log.warning(f"isST")
                 return False
             
             # 2. 检查上市时间（放宽到30天）
@@ -156,7 +157,8 @@ class StockPoolManager:
                 return False
             
             list_days = self._get_trading_days_between(stock_info.start_date, current_date)
-            if list_days < 30:  # 放宽上市时间要求
+            # log.warning(f"islist_days:{list_days}")
+            if list_days < 250:  # 放宽上市时间要求
                 return False
             
             # 3. 检查流通市值（放宽范围）
@@ -245,6 +247,7 @@ class StockPoolManager:
         """判断是否为ST股票"""
         try:
             security_info = get_security_info(stock_code)
+            # print(security_info.display_name)
             return 'ST' in security_info.display_name or '*ST' in security_info.display_name
         except:
             return True
@@ -252,8 +255,11 @@ class StockPoolManager:
     def _get_trading_days_between(self, start_date, end_date):
         """获取两个日期之间的交易日数"""
         try:
-            trading_days = get_trade_days(start_date=start_date, end_date=end_date)
-            return len(trading_days) - 1
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            delta_days = (end_dt - start_dt).days
+            estimated_days = delta_days * 0.9
+            return max(0, estimated_days)
         except:
             return 0
     
@@ -272,6 +278,10 @@ class StockPoolManager:
             log.warning(f"获取股票 {stock_code} 流通市值时出错: {e}")
             return 0
     
+    def get_tracking_stocks(self):
+        """获取当前跟踪的股票列表"""
+        return list(self.tracking_pool.keys())
+    
     def get_stock_day_count(self, stock_code):
         """获取股票在跟踪池中的天数"""
         if stock_code in self.tracking_pool:
@@ -287,6 +297,178 @@ class BuyTimingManager:
         self.ma5_tolerance = StrategyConfig.MA5_TOLERANCE
         self.position_ratio = StrategyConfig.MAX_POSITION_RATIO
         self.slippage_ratio = StrategyConfig.SLIPPAGE_RATIO
+        self.predict_ratio = 1.04  # 预测涨幅系数
+        self.target_ma5_prices = {}  # 存储每只股票的目标MA5价格
+    
+    def calculate_dynamic_ma5_price(self, stock_code, current_date):
+        """
+        动态计算预估MA5价格
+        参考modify_last_days_and_calc_ma5方法的逻辑
+        """
+        try:
+            # 获取过去6天的数据（用于计算MA5）
+            price_data = get_price(stock_code, count=6, end_date=current_date, 
+                                 fields=['close'])
+            
+            if len(price_data) < 5:
+                log.warning(f"股票 {stock_code} 数据不足，无法计算动态MA5")
+                return None
+            
+            # 模拟预测逻辑：基于最后一天价格预测今日价格
+            last_close = price_data.iloc[-1]['close']
+            predicted_today_price = last_close * self.predict_ratio
+            
+            # 创建包含预测价格的数据序列
+            close_prices = price_data['close'].tolist()
+            close_prices.append(predicted_today_price)
+            
+            # 计算包含预测价格的MA5
+            if len(close_prices) >= 5:
+                ma5_price = sum(close_prices[-5:]) / 5
+                log.info(f"股票 {stock_code} 动态MA5价格: {ma5_price:.2f} (基于预测价格 {predicted_today_price:.2f})")
+                return round(ma5_price, 2)
+            
+            return None
+            
+        except Exception as e:
+            log.warning(f"计算股票 {stock_code} 动态MA5价格时出错: {e}")
+            return None
+    
+    def update_target_ma5_prices(self, context, stock_pool_manager, current_date):
+        """更新所有跟踪股票的目标MA5价格"""
+        try:
+            tracking_stocks = stock_pool_manager.get_tracking_stocks()
+            log.info(f"更新 {len(tracking_stocks)} 只股票的目标MA5价格")
+            
+            for stock_code in tracking_stocks:
+                target_price = self.calculate_dynamic_ma5_price(stock_code, current_date)
+                if target_price:
+                    self.target_ma5_prices[stock_code] = target_price
+                    log.info(f"股票 {stock_code} 目标MA5价格: {target_price:.2f}")
+            
+        except Exception as e:
+            log.error(f"更新目标MA5价格时出错: {e}")
+
+    def check_price_trigger_buy(self, context, tracking_stocks=None):
+        """检查是否有股票价格触发买入条件 - 优化版本支持分钟级检测"""
+        buy_candidates = []
+        
+        try:
+            # 如果没有传入跟踪股票列表，使用目标价格字典的股票
+            if tracking_stocks is None:
+                tracking_stocks = list(self.target_ma5_prices.keys())
+            
+            # 如果没有跟踪股票或目标价格，直接返回
+            if not tracking_stocks or not self.target_ma5_prices:
+                return []
+            
+            # 获取当前数据（批量获取，提高效率）
+            current_data = get_current_data()
+            
+            # 获取当前持仓股票列表，避免重复查询
+            current_positions_stocks = set([stock for stock, position in context.portfolio.positions.items() 
+                                          if position.total_amount > 0])
+            
+            # 计算当前持仓数量
+            current_positions_count = len(current_positions_stocks)
+            
+            # 如果已达到最大持仓数，直接返回
+            if current_positions_count >= StrategyConfig.MAX_POSITIONS:
+                 return []
+            
+            # 只检查有目标价格且未持仓的股票
+            valid_stocks = [stock for stock in tracking_stocks 
+                          if stock in self.target_ma5_prices and stock not in current_positions_stocks]
+            
+            if not valid_stocks:
+                return []
+            
+            # 批量检查价格触发条件
+            for stock_code in valid_stocks:
+                # 检查是否达到最大持仓数
+                if len(buy_candidates) + current_positions_count >= StrategyConfig.MAX_POSITIONS:
+                     break
+                
+                # 获取目标MA5价格
+                target_ma5_price = self.target_ma5_prices.get(stock_code)
+                if not target_ma5_price:
+                    continue
+                
+                # 获取当前价格
+                if stock_code not in current_data:
+                    continue
+                
+                current_price = current_data[stock_code].last_price
+                if not current_price or current_price <= 0:
+                    continue
+                
+                # 检查价格是否触发买入（当前价格接近或达到目标MA5价格）
+                price_diff_ratio = abs(current_price - target_ma5_price) / target_ma5_price
+                
+                if price_diff_ratio <= self.ma5_tolerance:
+                    # 进一步检查其他买入条件（简化版本，减少API调用）
+                    can_buy, reason = self._check_additional_buy_conditions_fast(
+                        context, stock_code, current_data[stock_code])
+                    
+                    if can_buy:
+                        buy_candidates.append({
+                            'stock_code': stock_code,
+                            'current_price': current_price,
+                            'target_ma5_price': target_ma5_price,
+                            'reason': f"价格触发MA5买入: 当前价格{current_price:.2f}, 目标MA5{target_ma5_price:.2f}"
+                        })
+                        
+                        # 详细日志（仅在有买入机会时记录）
+                        log.info(f"价格触发买入: {stock_code}, 当前价格: {current_price:.2f}, "
+                               f"目标MA5: {target_ma5_price:.2f}, 差异: {price_diff_ratio:.3f}")
+            
+            return buy_candidates
+            
+        except Exception as e:
+            log.error(f"检查价格触发买入时出错: {e}")
+            return []
+    
+    def _check_additional_buy_conditions_fast(self, context, stock_code, stock_data):
+        """快速检查其他买入条件 - 减少API调用的优化版本"""
+        try:
+            # 检查股票是否停牌
+            if stock_data.paused:
+                return False, "股票停牌"
+            
+            # 检查是否涨停（涨停时无法买入）
+            if stock_data.high_limit and stock_data.last_price >= stock_data.high_limit * 0.999:
+                return False, "股票涨停"
+            
+            # 检查是否跌停（跌停时风险较大）
+            if stock_data.low_limit and stock_data.last_price <= stock_data.low_limit * 1.001:
+                return False, "股票跌停"
+            
+            # 检查仓位限制
+            if not self._check_position_limit(context, stock_code):
+                return False, "超出仓位限制"
+            
+            return True, "满足买入条件"
+            
+        except Exception as e:
+            log.warning(f"检查买入条件时出错 {stock_code}: {e}")
+            return False, f"检查出错: {e}"
+    
+    def _check_additional_buy_conditions(self, context, stock_code, current_date):
+        """检查除价格外的其他买入条件"""
+        try:
+            # 检查是否跌停
+            if self._is_limit_down(stock_code, current_date):
+                return False, "当日跌停"
+            
+            # 检查仓位限制
+            if not self._check_position_limit(context, stock_code):
+                return False, "仓位限制"
+            
+            return True, "符合条件"
+            
+        except Exception as e:
+            log.warning(f"检查股票 {stock_code} 额外买入条件时出错: {e}")
+            return False, f"检查异常: {e}"
     
     def get_buy_candidates(self, context, stock_pool_manager, current_date):
         """获取买入候选股票"""
@@ -301,7 +483,9 @@ class BuyTimingManager:
             log.info(f"[调试] 检查股票 {stock_code} {stock_info['name']} 第{day_count}天")
             
             # 检查买入条件
-            if self._check_buy_conditions(context, stock_code, day_count, current_date):
+            is_ok, reason_msg = self._check_buy_conditions(context, stock_code, day_count, current_date)
+            
+            if is_ok:
                 candidates.append({
                     'code': stock_code,
                     'name': stock_info['name'],
@@ -310,7 +494,8 @@ class BuyTimingManager:
                 })
                 log.info(f"[调试] 股票 {stock_code} 符合买入条件")
             else:
-                log.info(f"[调试] 股票 {stock_code} 不符合买入条件")
+                # 打印不符合买入条件的具体原因
+                log.info(f"[调试] 股票 {stock_code} 不符合买入条件: {reason_msg}")
         
         # 按优先级排序（第2天优先于第4天）
         candidates.sort(key=lambda x: x['day_count'])
@@ -320,31 +505,79 @@ class BuyTimingManager:
         return candidates
     
     def _check_buy_conditions(self, context, stock_code, day_count, current_date):
-        """检查买入条件"""
+        """
+        检查买入条件
+        【已修改】返回 (bool, str)，str为不符合条件的原因
+        """
         try:
             # 1. 检查是否为有效买入日
             if day_count not in self.valid_buy_days:
-                return False
+                return False, f"不在有效买入日(第{day_count}天)"
             
             # 2. 检查当日是否跌停
             if self._is_limit_down(stock_code, current_date):
-                return False
+                return False, "当日跌停"
             
             # 3. 检查MA5回踩
             if not self._check_ma5_pullback(stock_code, current_date):
-                return False
+                return False, "未回踩MA5"
             
             # 4. 检查仓位限制
             if not self._check_position_limit(context, stock_code):
-                return False
+                return False, "仓位限制(已持仓或总仓位已满)"
             
-            return True
+            return True, "符合所有条件"
             
         except Exception as e:
             log.warning(f"检查股票 {stock_code} 买入条件时出错: {e}")
-            return False
+            return False, f"检查时出现异常: {e}"
     
-    def execute_buy_order(self, context, stock_code, current_date):
+    def execute_buy_order_fast(self, context, stock_code, reason):
+        """快速执行买入订单 - 分钟级检测优化版本"""
+        try:
+            # 检查股票是否有效
+            current_data = get_current_data()
+            if stock_code not in current_data:
+                log.warning(f"股票 {stock_code} 数据不可用")
+                return False
+            
+            stock_data = current_data[stock_code]
+            
+            # 检查股票状态
+            if stock_data.paused:
+                log.warning(f"股票 {stock_code} 停牌，无法买入")
+                return False
+            
+            # 计算买入金额（使用固定比例）
+            total_value = context.portfolio.total_value
+            position_value = total_value * StrategyConfig.MAX_POSITION_RATIO
+            
+            # 获取当前价格
+            current_price = stock_data.last_price
+            if not current_price or current_price <= 0:
+                log.warning(f"股票 {stock_code} 价格异常: {current_price}")
+                return False
+            
+            # 计算买入股数（100股的整数倍）
+            shares = int(position_value / current_price / 100) * 100
+            
+            if shares < 100:
+                log.warning(f"股票 {stock_code} 买入金额不足100股")
+                return False
+            
+            # 执行买入订单
+            order_id = order(stock_code, shares)
+            
+            if order_id:
+                log.info(f"买入订单已提交: {stock_code}, 股数: {shares}, 价格: {current_price:.2f}, 原因: {reason}")
+                return True
+            else:
+                log.warning(f"买入订单提交失败: {stock_code}")
+                return False
+                
+        except Exception as e:
+            log.error(f"执行买入订单时出错 {stock_code}: {e}")
+            return False
         """执行买入订单"""
         try:
             # 计算买入金额
@@ -656,34 +889,206 @@ class SellTimingManager:
 
 def initialize(context):
     """初始化函数"""
-    log.info("=== 首板回踩MA5策略初始化 ===")
+    log.info("开始初始化策略...")
     
-    # 设定沪深300作为基准
-    g['benchmark'] = '000300.XSHG'
-    set_benchmark(g['benchmark'])
-    
-    # 设定手续费
-    set_order_cost(OrderCost(close_tax=0.001, open_commission=0.0003, 
-                            close_commission=0.0003, min_commission=5), type='stock')
-    
-    # 初始化策略组件
+    # 初始化全局变量
     g['stock_pool_manager'] = StockPoolManager()
     g['buy_timing_manager'] = BuyTimingManager()
     g['sell_timing_manager'] = SellTimingManager()
     
-    # 统计变量
-    g['trade_count'] = 0
-    g['win_count'] = 0
-    g['total_return'] = 0.0
+    # 初始化分钟级监控相关变量
+    g['last_minute_check'] = None  # 记录上次检查的分钟
+    g['minute_check_count'] = 0    # 每日检查次数统计
+    g['daily_buy_count'] = 0       # 每日买入次数统计
+    g['max_daily_buys'] = 20       # 每日最大买入次数限制
     
-    # 运行函数
-    run_daily(trade_logic, time='09:30', reference_security='000300.XSHG')
-    run_daily(after_market_close, time='after_close', reference_security='000300.XSHG')
+    # 初始化交易统计变量
+    g['trade_count'] = 0           # 总交易次数
+    g['win_count'] = 0             # 盈利交易次数
+    g['total_return'] = 0.0        # 总收益率
     
-    log.info("策略初始化完成")
+    # 设置基准
+    set_benchmark('000300.XSHG')  # 沪深300
+    
+    # 设置手续费
+    set_order_cost(OrderCost(
+        close_tax=0.001,      # 印花税
+        open_commission=0.0003,  # 开仓佣金
+        close_commission=0.0003, # 平仓佣金
+        min_commission=5      # 最小佣金
+    ), type='stock')
+    
+    # 设置滑点
+    set_slippage(FixedSlippage(0.02))
+    
+    # 设置每日开盘运行（股票池更新和目标价格计算）
+    run_daily(daily_market_open, time='09:30')
+    
+    # 设置分钟级价格监控（交易时间内每分钟运行）
+    # 上午时段：09:31-11:30
+    for hour in range(9, 12):
+        start_minute = 31 if hour == 9 else 0
+        end_minute = 30 if hour == 11 else 59
+        for minute in range(start_minute, end_minute + 1):
+            if hour == 11 and minute > 30:  # 11:30后停止
+                break
+            run_daily(minute_price_monitor, time=f'{hour:02d}:{minute:02d}')
+    
+    # 下午时段：13:01-15:00
+    for hour in range(13, 16):
+        start_minute = 1 if hour == 13 else 0
+        end_minute = 0 if hour == 15 else 59
+        for minute in range(start_minute, end_minute + 1):
+            if hour == 15 and minute > 0:  # 15:00后停止
+                break
+            run_daily(minute_price_monitor, time=f'{hour:02d}:{minute:02d}')
+    
+    # 设置收盘后处理
+    run_daily(after_market_close, time='15:30')
+    
+    log.info("策略初始化完成 - 已设置分钟级价格监控")
+
+def daily_market_open(context):
+    """每日开盘时执行的主要逻辑"""
+    current_time = context.current_dt
+    log.info(f"=== {current_time.strftime('%Y-%m-%d')} 开盘交易逻辑开始 ===")
+    
+    # 重置每日计数器
+    g['daily_buy_count'] = 0
+    g['minute_check_count'] = 0
+    
+    # 执行卖出逻辑
+    execute_sell_logic(context, context.current_dt.date())
+    
+    # 更新股票池
+    target_stocks = g['stock_pool_manager'].get_target_stocks(context, context.current_dt.date())
+    log.info(f"股票池更新完成，当前跟踪 {len(target_stocks)} 只股票")
+    
+    # 更新目标MA5价格
+    g['buy_timing_manager'].update_target_ma5_prices(
+        context, g['stock_pool_manager'], context.current_dt.date())
+    
+    # 执行开盘买入检查
+    execute_dynamic_buy_logic(context, context.current_dt.date())
+    
+    log.info(f"开盘逻辑执行完成，当前持仓数量: {len([p for p in context.portfolio.positions.values() if p.total_amount > 0])}")
+
+def minute_price_monitor(context):
+    """分钟级价格监控函数"""
+    current_time = context.current_dt
+    current_minute = current_time.strftime('%H:%M')
+    
+    # 避免重复检查同一分钟
+    if g.get('last_minute_check') == current_minute:
+        return
+    
+    g['last_minute_check'] = current_minute
+    g['minute_check_count'] = g.get('minute_check_count', 0) + 1
+    
+    # 检查是否超过每日买入限制
+    if g.get('daily_buy_count', 0) >= g.get('max_daily_buys', 5):
+        if g['minute_check_count'] % 30 == 1:  # 每30分钟提醒一次
+            log.info(f"[{current_minute}] 已达到每日最大买入次数限制({g['max_daily_buys']})")
+        return
+    
+    # 检查当前持仓数量
+    current_positions = [p for p in context.portfolio.positions.values() if p.total_amount > 0]
+    if len(current_positions) >= StrategyConfig.MAX_POSITIONS:
+        if g['minute_check_count'] % 30 == 1:  # 每30分钟提醒一次
+            log.info(f"[{current_minute}] 已达到最大持仓数量限制({StrategyConfig.MAX_POSITIONS})")
+        return
+    
+    # 获取跟踪股票列表
+    tracking_stocks = g['stock_pool_manager'].get_tracking_stocks()
+    if not tracking_stocks:
+        if g['minute_check_count'] % 60 == 1:  # 每小时提醒一次
+            log.info(f"[{current_minute}] 当前无跟踪股票")
+        return
+    
+    # 执行价格触发买入检查
+    buy_candidates = g['buy_timing_manager'].check_price_trigger_buy(context, tracking_stocks)
+    
+    if buy_candidates:
+        log.info(f"[{current_minute}] 发现 {len(buy_candidates)} 个买入机会: {[stock for stock, _ in buy_candidates]}")
+        
+        # 执行买入操作
+        for stock_code, reason in buy_candidates:
+            if g.get('daily_buy_count', 0) >= g.get('max_daily_buys', 5):
+                log.info(f"[{current_minute}] 达到每日买入限制，停止买入")
+                break
+                
+            if len([p for p in context.portfolio.positions.values() if p.total_amount > 0]) >= StrategyConfig.MAX_POSITIONS:
+                log.info(f"[{current_minute}] 达到持仓限制，停止买入")
+                break
+            
+            success = g['buy_timing_manager'].execute_buy_order_fast(context, stock_code, reason)
+            if success:
+                g['daily_buy_count'] = g.get('daily_buy_count', 0) + 1
+                log.info(f"[{current_minute}] 成功买入 {stock_code}，今日买入次数: {g['daily_buy_count']}")
+    else:
+        # 每10分钟记录一次检测状态
+        if g['minute_check_count'] % 10 == 1:
+            log.info(f"[{current_minute}] 检测 {len(tracking_stocks)} 只股票，暂无买入机会 (检测次数: {g['minute_check_count']})")
+
+def after_market_close(context):
+    """收盘后处理"""
+    current_time = context.current_dt
+    log.info(f"=== {current_time.strftime('%Y-%m-%d')} 收盘后处理 ===")
+    
+    # 统计今日活动
+    current_positions = [p for p in context.portfolio.positions.values() if p.total_amount > 0]
+    
+    # 详细统计信息
+    total_value = context.portfolio.total_value
+    available_cash = context.portfolio.available_cash
+    positions_value = total_value - available_cash
+    
+    log.info(f"=== 今日分钟级策略执行统计 ===")
+    log.info(f"分钟级检测次数: {g.get('minute_check_count', 0)}")
+    log.info(f"今日买入次数: {g.get('daily_buy_count', 0)}")
+    log.info(f"当前持仓数量: {len(current_positions)}")
+    log.info(f"账户总价值: {total_value:.2f}")
+    log.info(f"可用现金: {available_cash:.2f}")
+    log.info(f"持仓市值: {positions_value:.2f}")
+    log.info(f"仓位使用率: {(positions_value/total_value)*100:.1f}%")
+    
+    # 持仓详情
+    if current_positions:
+        log.info("=== 当前持仓详情 ===")
+        for position in current_positions:
+            stock_code = position.security
+            shares = position.total_amount
+            avg_cost = position.avg_cost
+            current_price = position.price
+            market_value = position.value
+            pnl_ratio = (current_price - avg_cost) / avg_cost * 100 if avg_cost > 0 else 0
+            
+            log.info(f"{stock_code}: 股数{shares}, 成本{avg_cost:.2f}, 现价{current_price:.2f}, "
+                   f"市值{market_value:.2f}, 盈亏{pnl_ratio:+.1f}%")
+    
+    # 跟踪股票池状态
+    tracking_stocks = g['stock_pool_manager'].get_tracking_stocks()
+    target_prices = g['buy_timing_manager'].target_ma5_prices
+    
+    log.info(f"=== 股票池状态 ===")
+    log.info(f"跟踪股票数量: {len(tracking_stocks)}")
+    log.info(f"有目标价格股票数量: {len(target_prices)}")
+    
+    if tracking_stocks:
+        log.info(f"跟踪股票列表: {tracking_stocks[:10]}{'...' if len(tracking_stocks) > 10 else ''}")
+    
+    # 重置计数器
+    g['minute_check_count'] = 0
+    g['daily_buy_count'] = 0
+    g['last_minute_check'] = None
+    
+    log.info("=== 收盘后处理完成 ===")
+
+# 删除重复的after_market_close函数
+
 
 def trade_logic(context):
-    """主要交易逻辑"""
+    """主要交易逻辑 - 支持动态MA5价格触发买入"""
     current_date = context.current_dt.date()
     log.info(f"[调试] ========== 开始执行交易逻辑 {current_date} ==========")
     
@@ -692,13 +1097,17 @@ def trade_logic(context):
         target_stocks = g['stock_pool_manager'].get_target_stocks(context, current_date)
         log.info(f"[调试] 股票池更新完成，目标股票数量: {len(target_stocks)}")
         
-        # 2. 执行卖出逻辑
+        # 2. 更新目标MA5价格（每日开盘前计算）
+        g['buy_timing_manager'].update_target_ma5_prices(
+            context, g['stock_pool_manager'], current_date)
+        
+        # 3. 执行卖出逻辑
         execute_sell_logic(context, current_date)
         
-        # 3. 执行买入逻辑
-        execute_buy_logic(context, current_date)
+        # 4. 执行动态买入逻辑（价格触发）
+        execute_dynamic_buy_logic(context, current_date)
         
-        # 4. 记录当日状态
+        # 5. 记录当日状态
         log_daily_status(context, current_date)
         
         log.info(f"[调试] ========== 交易逻辑执行完成 {current_date} ==========")
@@ -737,8 +1146,49 @@ def execute_sell_logic(context, current_date):
                 
                 log.info(f"卖出成功: {stock_code}, 原因: {reason}, 收益率: {return_rate*100:.2f}%")
 
+def execute_dynamic_buy_logic(context, current_date):
+    """执行动态买入逻辑 - 基于价格触发"""
+    log.info("--- 执行动态买入逻辑（价格触发） ---")
+    
+    # 检查仓位限制
+    current_positions = len([pos for pos in context.portfolio.positions.values() 
+                           if pos.total_amount > 0])
+    
+    if current_positions >= StrategyConfig.MAX_POSITIONS:
+        log.info(f"已达最大持仓数量限制: {current_positions}/{StrategyConfig.MAX_POSITIONS}")
+        return
+    
+    # 检查价格触发的买入候选
+    buy_candidates = g['buy_timing_manager'].check_price_trigger_buy(context)
+    
+    if not buy_candidates:
+        log.info("无价格触发买入的股票")
+        return
+    
+    log.info(f"发现 {len(buy_candidates)} 只价格触发买入的股票")
+    
+    # 执行买入
+    bought_count = 0
+    max_buy_count = StrategyConfig.MAX_POSITIONS - current_positions
+    
+    for candidate in buy_candidates[:max_buy_count]:
+        stock_code = candidate['stock_code']
+        current_price = candidate['current_price']
+        target_ma5_price = candidate['target_ma5_price']
+        
+        success = g['buy_timing_manager'].execute_buy_order_fast(context, stock_code, "价格触发买入")
+        
+        if success:
+            bought_count += 1
+            log.info(f"价格触发买入成功: {stock_code}, 当前价格: {current_price:.2f}, "
+                   f"目标MA5: {target_ma5_price:.2f}")
+        else:
+            log.warning(f"价格触发买入失败: {stock_code}")
+    
+    log.info(f"本日价格触发买入股票数量: {bought_count}")
+
 def execute_buy_logic(context, current_date):
-    """执行买入逻辑"""
+    """执行买入逻辑（原有逻辑，保留作为备用）"""
     log.info("--- 执行买入逻辑 ---")
     
     # 检查仓位限制
@@ -764,18 +1214,14 @@ def execute_buy_logic(context, current_date):
     bought_count = 0
     max_buy_count = StrategyConfig.MAX_POSITIONS - current_positions
     
-    for candidate in buy_candidates[:max_buy_count]:
-        stock_code = candidate['code']
-        stock_name = candidate['name']
-        reason = candidate['reason']
-        
-        success = g['buy_timing_manager'].execute_buy_order(context, stock_code, current_date)
+    for stock_code in buy_candidates[:max_buy_count]:
+        success = g['buy_timing_manager'].execute_buy_order_fast(context, stock_code, "常规买入")
         
         if success:
             bought_count += 1
-            log.info(f"买入成功: {stock_code} {stock_name}, {reason}")
+            log.info(f"买入成功: {stock_code}")
         else:
-            log.warning(f"买入失败: {stock_code} {stock_name}")
+            log.warning(f"买入失败: {stock_code}")
     
     log.info(f"本日买入股票数量: {bought_count}")
 
@@ -807,47 +1253,47 @@ def log_daily_status(context, current_date):
                 log.info(f"  {stock_code}: 持仓{position.total_amount}, 成本{position.avg_cost:.2f}, "
                         f"现价{current_price:.2f}, 收益{return_rate:.2f}%, 第{day_count}天")
 
-def after_market_close(context):
-    """收盘后运行函数"""
-    current_date = context.current_dt.date()
-    
-    # 清理跟踪池
-    g['stock_pool_manager']._clean_expired_stocks()
-    
-    # 输出策略统计
-    if g['trade_count'] > 0:
-        win_rate = g['win_count'] / g['trade_count'] * 100
-        avg_return = g['total_return'] / g['trade_count'] * 100
-        
-        log.info(f"=== 策略统计 ===")
-        log.info(f"总交易次数: {g['trade_count']}")
-        log.info(f"胜率: {win_rate:.2f}%")
-        log.info(f"平均收益率: {avg_return:.2f}%")
-
-# ==================== 策略说明 ====================
+# ==================== 分钟级策略说明 ====================
 """
-使用说明：
+分钟级五日线买入策略 - 使用说明：
 
 1. 复制本文件全部内容到聚宽策略编辑器
 2. 设置回测参数：
    - 起始资金：1000000元（100万）
    - 基准指数：沪深300 (000300.XSHG)
-   - 回测时间：建议至少6个月
+   - 回测时间：建议至少3个月
 3. 点击运行回测
 
-策略核心逻辑：
+策略核心逻辑（分钟级版本）：
 - 股票池：每日筛选首板涨停股票，建立5日跟踪池
-- 买入：首板后第2天或第4天，价格回踩至MA5附近（±2%）
+- 分钟级监控：交易时间内每分钟检测股价与MA5的关系
+- 买入：实时检测到股价触碰动态计算的MA5时立即执行买入
 - 卖出：收盘价跌破MA5、持仓超过15天、炸板等条件
+
+分钟级优化特性：
+- 每分钟实时价格监控（09:31-11:30, 13:01-15:00）
+- 动态MA5计算，精确捕捉买入时机
+- 智能限流机制，避免过度交易
+- 详细的分钟级日志记录
+- 优化的API调用，减少系统资源消耗
 
 风险控制：
 - 最大持仓10只股票
 - 单股仓位不超过10%
+- 每日最大买入次数限制
 - 严格的买卖条件判断
 - 完整的止盈止损机制
 
+性能优化：
+- 批量数据获取，减少API调用
+- 快速条件检查，提高执行效率
+- 智能缓存机制，避免重复计算
+- 分钟级计数器，监控系统负载
+
 注意事项：
-- 策略适用于A股市场
+- 策略适用于A股市场分钟级交易
+- 分钟级模式会增加计算资源消耗
 - 建议充分回测后再考虑实盘
-- 可根据市场情况调整参数
+- 可根据市场情况调整MA5容差和限流参数
+- 实盘使用时注意API调用频率限制
 """

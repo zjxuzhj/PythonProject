@@ -382,7 +382,7 @@ def prepare_data(df: pd.DataFrame, symbol: str, config: StrategyConfig) -> pd.Da
 
 
 def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_limit_day: pd.Timestamp,
-                                config: StrategyConfig, query_tool) -> Optional[RuleEnum]:
+                                config: StrategyConfig) -> Optional[RuleEnum]:
     """
     检查给定的某一天是否是符合所有条件的首板涨停日。默认获得涨停后一日的数据
     :return: 如果通过所有检查, 返回True; 如果任何一个检查失败, 返回False。
@@ -1401,7 +1401,7 @@ def find_first_limit_up(stock_info: StockInfo, df, config: StrategyConfig, query
         if day < pd.Timestamp(config.BACKTEST_DATE_FILTERING) and not config.USE_2019_DATA:
             continue
         if not config.EVALUATE_REJECTION_RULES:
-            rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config, query_tool)
+            rejection_rule = is_valid_first_limit_up_day(stock_info, df, day, config)
             if not rejection_rule:
                 valid_days.append(day)
         else:
