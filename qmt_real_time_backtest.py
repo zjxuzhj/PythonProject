@@ -551,7 +551,7 @@ class Backtester:
 if __name__ == '__main__':
     # START_DATE = "20241201"
     START_DATE = "20250815"
-    END_DATE = "20251102"
+    END_DATE = "20250830"
     INITIAL_CAPITAL = 200000.0
     POSITION_SIZE_PER_TRADE = 20000
 

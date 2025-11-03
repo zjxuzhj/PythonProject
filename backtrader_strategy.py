@@ -408,19 +408,37 @@ class FirstLimitUpStrategy(bt.Strategy):
             return []
     
     def _calculate_buy_target_price(self, stock_code, current_date_str):
-        """计算买入目标价格"""
+        """
+        计算买入目标价格 - 与QMT系统保持一致
+        基于前4天的收盘价加上当天预测价格来计算目标买入价
+        """
         try:
-            # 获取前一日数据计算MA5
-            prev_date = (datetime.strptime(current_date_str, "%Y%m%d") - timedelta(days=5)).strftime("%Y%m%d")
-            df = self.data_manager.get_stock_data(stock_code, prev_date, current_date_str)
+            current_date = datetime.strptime(current_date_str, "%Y%m%d")
+            # 获取当前日期之前的4个交易日的数据
+            start_fetch_date = (current_date - timedelta(days=15)).strftime("%Y%m%d")
+            end_fetch_date = (current_date - timedelta(days=1)).strftime("%Y%m%d")
+
+            df = self.data_manager.get_stock_data(stock_code, start_fetch_date, end_fetch_date)
             
-            if len(df) < 2:
+            if df.empty or len(df) < 4:
+                print(f"  - [信息] {stock_code} 的历史数据不足，无法计算买入价。")
                 return None
-                
-            # 使用前一日的MA5作为买入目标价格
-            ma5_price = df.iloc[-2]['ma5']  # 前一日的MA5
-            
-            return ma5_price if pd.notna(ma5_price) else None
+
+            # 取最后4天的数据
+            last_4_days = df.tail(4)
+            if len(last_4_days) < 4:
+                return None
+
+            last_close = last_4_days.iloc[-1]['close']
+            predicted_close = last_close * 1.04
+
+            # 将历史收盘价与预测收盘价合并
+            prices = last_4_days['close'].tolist()
+            prices.append(predicted_close)
+
+            # 计算5日均价
+            target_price = round(sum(prices) / 5, 2)
+            return target_price
             
         except Exception as e:
             print(f"计算股票 {stock_code} 买入目标价格时出错: {e}")
