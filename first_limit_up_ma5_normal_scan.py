@@ -110,7 +110,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         print("--- 执行策略验证安全锁 ---")
         VALIDATION_DATE = "20250728"
         EXPECTED_STOCKS = {
-            "002889.SZ", "603109.SH", "600410.SH"
+            "002889.SZ", "603109.SH", "600410.SH",'600515.SH'
         }
 
         # 以静默模式运行验证回测
