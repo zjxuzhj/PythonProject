@@ -1,0 +1,84 @@
+{
+  "config": {
+    "start_date": "2024-01-01",
+    "end_date": "2024-12-31",
+    "initial_cash": 1000000.0,
+    "commission": 0.0003,
+    "strategy_params": {
+      "position_size": 50000.0,
+      "max_positions": 20,
+      "sell_ma5_days": 3,
+      "sell_loss_pct": 0.08,
+      "limit_up_ratio": 0.095,
+      "limit_down_ratio": -0.095,
+      "buy_start_time": "09:30",
+      "buy_end_time": "14:50",
+      "sell_start_time": "09:30",
+      "sell_end_time": "14:50",
+      "buy_cutoff_time": "14:30",
+      "sell_check_time": "14:57",
+      "benchmark_ticker": "000300.SH",
+      "risk_free_rate": 0.02,
+      "cache_path": "all_targets_cache_5.csv",
+      "use_cache": true
+    }
+  },
+  "individual_results": {
+    "000001.SZ": {
+      "return_pct": 0.0,
+      "max_drawdown_pct": -0.0,
+      "sharpe_ratio": 0.0,
+      "num_trades": 0,
+      "start_value": 1719964800.0,
+      "end_value": 1735603200.0
+    },
+    "000002.SZ": {
+      "return_pct": 0.0,
+      "max_drawdown_pct": -0.0,
+      "sharpe_ratio": 0.0,
+      "num_trades": 0,
+      "start_value": 1719964800.0,
+      "end_value": 1735603200.0
+    },
+    "000858.SZ": {
+      "return_pct": 0.0,
+      "max_drawdown_pct": -0.0,
+      "sharpe_ratio": 0.0,
+      "num_trades": 0,
+      "start_value": 1719964800.0,
+      "end_value": 1735603200.0
+    },
+    "002415.SZ": {
+      "return_pct": 0.0,
+      "max_drawdown_pct": -0.0,
+      "sharpe_ratio": 0.0,
+      "num_trades": 0,
+      "start_value": 1719964800.0,
+      "end_value": 1735603200.0
+    },
+    "600000.SH": {
+      "return_pct": 0.0,
+      "max_drawdown_pct": -0.0,
+      "sharpe_ratio": 0.0,
+      "num_trades": 0,
+      "start_value": 1719964800.0,
+      "end_value": 1735603200.0
+    }
+  },
+  "combined_results": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "avg_return": 0.0,
+    "avg_profit": 0.0,
+    "avg_loss": 0.0,
+    "max_profit": 0.0,
+    "max_loss": 0.0,
+    "total_return": 0.0,
+    "sharpe_ratio": 0.0,
+    "max_drawdown": 0.0,
+    "traded_stocks": 0
+  },
+  "timestamp": "2025-11-03T17:36:52.543009"
+}
