@@ -276,8 +276,8 @@ def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, b
 if __name__ == '__main__':
     # 获取目标股票列表
     target_stocks, fourth_day_stocks = get_target_stocks()
-    #
-    # target_date = "20250806"
+
+    # target_date = "20251103"
     # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
