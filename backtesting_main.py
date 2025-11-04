@@ -243,7 +243,8 @@ class BacktestingRunner:
         if self.daily_values:
             daily_df = pd.DataFrame(self.daily_values)
             daily_df['date'] = pd.to_datetime(daily_df['date'])
-            daily_df = daily_df.set_index('date')
+            # 按日期排序，确保月度统计的边界准确
+            daily_df = daily_df.set_index('date').sort_index()
             
             # 计算日收益率
             daily_df['returns'] = daily_df['total_value'].pct_change()
@@ -279,6 +280,24 @@ class BacktestingRunner:
                     print(f"Alpha: {alpha:.2%}")
             except Exception as e:
                 self.logger.warning(f"计算基准比较失败: {e}")
+
+            # 按自然月统计涨幅（1-31为自然月边界）
+            try:
+                monthly_groups = daily_df['total_value'].groupby(daily_df.index.to_period('M')).agg(['first', 'last'])
+                monthly_groups['monthly_pct'] = (monthly_groups['last'] / monthly_groups['first'] - 1) * 100
+
+                print("\n=== 按自然月统计涨幅 ===")
+                header = f"{'月份':<10} {'当月起始净值':>12} {'当月结束净值':>12} {'月涨幅(%)':>10}"
+                print(header)
+                print("-" * len(header))
+                for period, row in monthly_groups.iterrows():
+                    month_str = period.strftime('%Y-%m')
+                    start_val = row['first']
+                    end_val = row['last']
+                    pct = row['monthly_pct']
+                    print(f"{month_str:<10} {start_val:>12.2f} {end_val:>12.2f} {pct:>10.2f}")
+            except Exception as e:
+                self.logger.warning(f"月度涨幅统计失败: {e}")
         
         return {
             'total_trades': len(trades_df),
@@ -504,7 +523,7 @@ class BacktestingRunner:
 def main():
     """主函数"""
     # 回测参数
-    START_DATE = "20250815"
+    START_DATE = "20251001"
     END_DATE = "20251102"
     INITIAL_CAPITAL = 200000.0
     POSITION_SIZE_PER_TRADE = 20000
