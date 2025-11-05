@@ -313,7 +313,8 @@ if __name__ == '__main__':
     # 获取目标股票列表
     # target_stocks, fourth_day_stocks = get_target_stocks()
 
-    target_date = "20251010"
+    # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
+    target_date = "20251103"
     target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
