@@ -15,6 +15,72 @@ from common_sell_logic import get_sell_decision, MarketDataContext
 from first_limit_up_ma5_normal_util import simulate_ma5_order_prices
 from stock_info import StockInfo
 from first_limit_up_ma5_normal_strategy_rules import RuleEnum
+from typing import List
+import logging
+
+# 原有 TradingCalendarUtil 依赖已移除，改为使用本地数据直接判断交易日
+
+def filter_df_to_trading_days_local(df: pd.DataFrame, logger: Optional[logging.Logger] = None) -> pd.DataFrame:
+    """
+    基于本地缓存的股票日线数据直接判定交易日并过滤：
+    - 使用 df 自身索引作为候选日期集合
+    - 移除周末（weekday>=5）
+    - 移除与前一日完全相同的K线（OHLCV全等），通常是非交易日的填充数据
+    - 保留原始顺序
+
+    注意：此方法不依赖 miniQMT 或外部交易日历，保证与历史缓存一致性。
+    """
+    if df is None or df.empty:
+        return df
+    if not isinstance(df.index, pd.DatetimeIndex):
+        # 尽可能兼容：若存在'date'列则设为索引，否则尝试转换现有索引
+        if 'date' in df.columns:
+            df = df.set_index('date')
+        df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+
+    # 周末过滤
+    weekend_mask = df.index.weekday >= 5
+
+    # 与前一日完全相同的K线（OHLCV与volume全部相等），常见于节假日的填充行
+    # 若不存在 volume 列，则退化为仅比较 OHLC
+    same_open = df['open'] == df['open'].shift(1)
+    same_high = df['high'] == df['high'].shift(1)
+    same_low = df['low'] == df['low'].shift(1)
+    same_close = df['close'] == df['close'].shift(1)
+    if 'volume' in df.columns:
+        same_vol = df['volume'] == df['volume'].shift(1)
+        same_bar = same_open & same_high & same_low & same_close & same_vol
+    else:
+        same_bar = same_open & same_high & same_low & same_close
+
+    # 第一行 same_bar 为NaN，视为交易日
+    same_bar = same_bar.fillna(False)
+
+    # 非交易日：周末 或 复制K线
+    non_trading_mask = weekend_mask | same_bar
+    filtered = df.loc[~non_trading_mask]
+
+    # 日志记录
+    try:
+        removed_dates = df.index[non_trading_mask]
+        weekend_removed = int(weekend_mask.sum())
+        duplicate_removed = int(same_bar.sum())
+        if logger is None:
+            logger = logging.getLogger('TradingDayFilter')
+            if not logger.handlers:
+                logging.basicConfig(level=logging.INFO)
+        if len(removed_dates) > 0:
+            sample = [d.strftime('%Y-%m-%d') for d in removed_dates[:5]]
+            # logger.info(
+            #     f"交易日过滤: 总移除 {len(removed_dates)} 天 | 周末: {weekend_removed} | 复制K线: {duplicate_removed} | 示例: {sample}"
+            # )
+        else:
+            logger.info("交易日过滤: 未发现需要移除的日期，全部保留。")
+    except Exception:
+        pass
+
+    return filtered
 
 
 @dataclass
@@ -1902,6 +1968,8 @@ def process_single_stock(stock_info_task):
     df, _ = get_stock_data(code, config)
     if df is None or df.empty:
         return []  # 如果没有数据，返回空列表
+    # 基于本地数据过滤到交易日，避免周末/节假日填充导致的错误偏移
+    df = filter_df_to_trading_days_local(df)
     df = prepare_data(df, code, config)
     stock_info = StockInfo(
         code=code,
