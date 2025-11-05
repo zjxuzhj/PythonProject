@@ -27,6 +27,40 @@ def get_stock_data(symbol, isNeedLog):
     return pd.DataFrame()
 
 
+def get_previous_trading_day(df: pd.DataFrame, end_date, n: int = 1):
+    """基于已有数据索引，获取给定日期之前的第 n 个交易日。
+
+    - 自动跳过周末/节假日/停牌导致的无数据日期（以 df.index 为准）
+    - 若 end_date 非交易日，则从最近一个不晚于 end_date 的交易日开始回溯
+    - 返回 pd.Timestamp；若不足 n 天或数据异常，返回 None
+    """
+    try:
+        if df is None or df.empty or n < 0:
+            return None
+
+        # 统一索引为时间类型并升序
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        df = df.sort_index(ascending=True)
+
+        end_ts = pd.Timestamp(end_date)
+        unique_days = df.index.unique().sort_values()
+
+        # 找到 <= end_date 的最近一个交易日位置
+        pos = unique_days.searchsorted(end_ts, side='right') - 1
+        if pos < 0:
+            # end_date 早于最早数据，无法回溯
+            return None
+
+        target_pos = pos - n
+        if target_pos < 0:
+            return None
+
+        return unique_days[target_pos]
+    except Exception:
+        return None
+
+
 def find_recent_first_limit_up(stock_info: StockInfo, df):
     """识别最近days个交易日内存在的首板涨停日并排除连板"""
     config = StrategyConfig()
@@ -42,10 +76,12 @@ def find_recent_first_limit_up(stock_info: StockInfo, df):
     # date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
     # df = old_df.loc[date_mask].copy()
 
-    # 筛选最近days个交易日内的涨停日（核心筛选范围）
-    # recent_days_mask = (df.index > (end_date - pd.offsets.BDay(days)).strftime("%Y%m%d")) & (df.index <= end_date)
-    # 只筛选第二天和第四天）：
-    target_days = [end_date - pd.offsets.BDay(1), end_date - pd.offsets.BDay(3)]
+    # 基于交易日索引动态定位：涨停后第2天/第4天对应的涨停日应为 end_date 的前1/3个交易日
+    d1 = get_previous_trading_day(df, end_date, 1)
+    d3 = get_previous_trading_day(df, end_date, 3)
+    target_days = [d for d in [d1, d3] if d is not None]
+    if not target_days:
+        return []
     recent_days_mask = df.index.isin(target_days)
 
     limit_days = df[df['is_limit'] & recent_days_mask].index.tolist()
@@ -167,12 +203,14 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             if not rejection_rule:
                 score, reasons = normal.calculate_quality_score(stock_info, df, base_day_idx, offset, config)
                 theme = query_tool.get_theme_by_code(code)
-                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme, score))
+                # 使用实际交易日差（offset-1）作为 delta_days，避免节假日/周末误差
+                delta_days_actual = max(0, offset - 1)
+                limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme, score, delta_days_actual))
 
     days_groups = {}
     if isNeedLog: print(f"\n总计发现 {len(limit_up_stocks)} 只符合初步要求的股票")
 
-    for code, name, limit_date_str, theme, score in limit_up_stocks:
+    for code, name, limit_date_str, theme, score, delta_days in limit_up_stocks:
         # 排除特定板块和股票
         if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651","sz002548","sz002636","sz002815","sh605178","sz002418","sh603698",
                     "sz002949","sh600797"]:
@@ -189,8 +227,6 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         if score < 10:
             excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
             continue
-        limit_day = datetime.strptime(limit_date_str, "%Y-%m-%d").date()
-        delta_days = np.busday_count(limit_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
         days_groups.setdefault(delta_days, []).append((code, name, limit_date_str, theme, score))
 
     target_stocks_list = []
