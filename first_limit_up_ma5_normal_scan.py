@@ -28,15 +28,21 @@ def get_stock_data(symbol, isNeedLog):
 
 
 def get_previous_trading_day(df: pd.DataFrame, end_date, n: int = 1):
-    """基于已有数据索引，获取给定日期之前的第 n 个交易日。
+    """基于本地数据的交易日索引，返回 end_date 之前的第 n 个交易日。
 
-    - 自动跳过周末/节假日/停牌导致的无数据日期（以 df.index 为准）
+    - 先使用策略文件中的本地交易日过滤（移除周末/复制K线），统一交易日口径
     - 若 end_date 非交易日，则从最近一个不晚于 end_date 的交易日开始回溯
     - 返回 pd.Timestamp；若不足 n 天或数据异常，返回 None
     """
     try:
         if df is None or df.empty or n < 0:
             return None
+
+        # 使用统一的本地交易日过滤，避免节假日填充导致的误判
+        try:
+            df = normal.filter_df_to_trading_days_local(df)
+        except Exception:
+            pass
 
         # 统一索引为时间类型并升序
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -86,11 +92,10 @@ def find_recent_first_limit_up(stock_info: StockInfo, df):
 
     limit_days = df[df['is_limit'] & recent_days_mask].index.tolist()
 
-    # 排除涨停日是最后一天的情况
+    # 排除涨停日是最后一天的情况（若存在），但不因 last_day 涨停而整体退出
     last_day = df.index.max()
-    last_day_is_limit = df.loc[last_day, 'is_limit']
     limit_days = [day for day in limit_days if day != last_day]
-    if not limit_days or last_day_is_limit:
+    if not limit_days:
         return []
 
     # 按时间降序排序（最近的排在前面）
@@ -177,6 +182,13 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             df = df[df.index < pd.Timestamp(today)]
             if df.empty: continue
 
+        # 统一使用本地交易日过滤，避免节假日填充/周末导致的偏移错误
+        before_len = len(df)
+        df = normal.filter_df_to_trading_days_local(df)
+        after_len = len(df)
+        # if isNeedLog and before_len != after_len:
+        #     print(f"[{code}] 交易日过滤: 原始 {before_len} 天 -> 保留 {after_len} 天 -> 移除 {before_len - after_len} 天")
+
         if pd.isna(df["close"].iloc[-1]):
             if isNeedLog:
                 print(f"股票{code}最新收盘价为NaN（可能停牌或数据问题），跳过")
@@ -197,14 +209,15 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
         for day in first_limit_days:
             base_day_idx = df.index.get_loc(day)
-            offset = len(df) - base_day_idx
+            # 使用从涨停日到最近一日(含)的交易日计数，直接映射为 T+N
+            offset = len(df) - base_day_idx  # T+N 中的 N = offset
 
             rejection_rule = normal.is_valid_buy_opportunity(stock_info, df, base_day_idx, offset, StrategyConfig())
             if not rejection_rule:
                 score, reasons = normal.calculate_quality_score(stock_info, df, base_day_idx, offset, config)
                 theme = query_tool.get_theme_by_code(code)
-                # 使用实际交易日差（offset-1）作为 delta_days，避免节假日/周末误差
-                delta_days_actual = max(0, offset - 1)
+                # 直接使用 offset 映射为 T+N，避免 off-by-one
+                delta_days_actual = offset
                 limit_up_stocks.append((code, name, day.strftime("%Y-%m-%d"), theme, score, delta_days_actual))
 
     days_groups = {}
@@ -241,7 +254,7 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             target_stocks_list.append(code)
             if isNeedLog: print("  " + "   ".join(map(str, stock_data)) + "  ")
 
-    # ===== 提取涨停后第四天的股票(delta_days=3) =====
+    # ===== 提取涨停后第四天的股票 (delta_days = 4) =====
     if 4 in days_groups:
         for stock_data in days_groups[4]:
             fourth_day_stocks_set.add(getAllStockCsv.convert_to_standard_format(stock_data[0]))
@@ -314,7 +327,7 @@ if __name__ == '__main__':
     # target_stocks, fourth_day_stocks = get_target_stocks()
 
     # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
-    target_date = "20251013"
+    target_date = "20251017"
     target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")

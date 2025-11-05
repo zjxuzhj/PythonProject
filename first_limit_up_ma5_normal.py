@@ -61,24 +61,24 @@ def filter_df_to_trading_days_local(df: pd.DataFrame, logger: Optional[logging.L
     non_trading_mask = weekend_mask | same_bar
     filtered = df.loc[~non_trading_mask]
 
-    # 日志记录
-    try:
-        removed_dates = df.index[non_trading_mask]
-        weekend_removed = int(weekend_mask.sum())
-        duplicate_removed = int(same_bar.sum())
-        if logger is None:
-            logger = logging.getLogger('TradingDayFilter')
-            if not logger.handlers:
-                logging.basicConfig(level=logging.INFO)
-        if len(removed_dates) > 0:
-            sample = [d.strftime('%Y-%m-%d') for d in removed_dates[:5]]
-            # logger.info(
-            #     f"交易日过滤: 总移除 {len(removed_dates)} 天 | 周末: {weekend_removed} | 复制K线: {duplicate_removed} | 示例: {sample}"
-            # )
-        else:
-            logger.info("交易日过滤: 未发现需要移除的日期，全部保留。")
-    except Exception:
-        pass
+    # # 日志记录
+    # try:
+    #     removed_dates = df.index[non_trading_mask]
+    #     weekend_removed = int(weekend_mask.sum())
+    #     duplicate_removed = int(same_bar.sum())
+    #     if logger is None:
+    #         logger = logging.getLogger('TradingDayFilter')
+    #         if not logger.handlers:
+    #             logging.basicConfig(level=logging.INFO)
+    #     if len(removed_dates) > 0:
+    #         sample = [d.strftime('%Y-%m-%d') for d in removed_dates[:5]]
+    #         logger.info(
+    #             f"交易日过滤: 总移除 {len(removed_dates)} 天 | 周末: {weekend_removed} | 复制K线: {duplicate_removed} | 示例: {sample}"
+    #         )
+    #     else:
+    #         logger.info("交易日过滤: 未发现需要移除的日期，全部保留。")
+    # except Exception:
+    #     pass
 
     return filtered
 
