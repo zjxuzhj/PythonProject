@@ -5,6 +5,11 @@ import xtquant.xtdata as xtdata
 import getAllStockCsv
 
 query_tool = getAllStockCsv.StockQuery()
+# 扩展数据需要下载的步骤
+# 1.现在日线级别的沪深300的数据
+# 2.下载分钟级别所有股票数据3010个，用于确认日内何时买入
+# 3.下载日线级别所有股票数据3010个，用于模拟计算五日线价格
+
 
 # 设置股票代码和时间范围
 # stock_code = "000300.SH"
@@ -30,7 +35,7 @@ end_date = "20251102"
 
 # 2. 设置数据周期
 # 注意：迅投支持的周期包括 1d, 1m, 5m, 15m, 30m, 60m 等
-period = "1m"
+period = "1d"
 
 if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
@@ -43,7 +48,7 @@ if __name__ == '__main__':
     start_index = 900
     total_stocks = len(stock_list)
 
-    # for idx, (stock_code, stock_name) in enumerate(stock_list[start_index:], start_index + 1):
+    # for idx, (stock_code, stock_name) in enumerate(stock_list[start  _index:], start_index + 1):
     for idx, (stock_code, stock_name) in enumerate(stock_list, 1):
         standard_code = getAllStockCsv.convert_to_standard_format(stock_code)
         print(f"[{idx}/{total_stocks}] 开始处理: {standard_code} ({stock_name})")
