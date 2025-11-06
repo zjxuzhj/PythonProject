@@ -7,6 +7,7 @@ import numpy as np
 import first_limit_up_ma5_normal as normal
 import getAllStockCsv
 from first_limit_up_ma5_normal import StrategyConfig
+from stock_exclusion_manager import StockExclusionManager
 from stock_info import StockInfo
 
 query_tool = getAllStockCsv.StockQuery()
@@ -223,14 +224,18 @@ def get_target_stocks(isNeedLog=True, target_date=None):
     days_groups = {}
     if isNeedLog: print(f"\n总计发现 {len(limit_up_stocks)} 只符合初步要求的股票")
 
+    # 统一排除管理（单例，配置化）
+    exclusion_manager = StockExclusionManager.get_instance()
+
     for code, name, limit_date_str, theme, score, delta_days in limit_up_stocks:
-        # 排除特定板块和股票
-        if code in ["sz002506", "sz002153", "sh600184", "sz002492", "sz002715","sh600651","sz002548","sz002636","sz002815","sh605178","sz002418","sh603698",
-                    "sz002949","sh600797"]:
-            excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
-            continue
-        if "白酒" in theme or "光伏" in theme:
-            continue
+        # 统一的排除判断（名称/题材模式匹配 + 代码黑名单）
+        try:
+            if exclusion_manager.should_exclude(code, name, theme):
+                excluded_stocks.add(getAllStockCsv.convert_to_standard_format(code))
+                continue
+        except Exception:
+            # 排除判断异常不影响后续逻辑
+            pass
         # 排除分数小于或等于10的股票
         # if score < 10:
         if score < 10:
@@ -323,7 +328,7 @@ if __name__ == '__main__':
     # target_stocks, fourth_day_stocks = get_target_stocks()
 
     # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
-    target_date = "20251030"
+    target_date = "20250915"
     target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")

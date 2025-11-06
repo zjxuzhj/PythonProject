@@ -20,6 +20,13 @@ import logging
 
 # 原有 TradingCalendarUtil 依赖已移除，改为使用本地数据直接判断交易日
 
+# ====================== 排除规则管理（单例） ======================
+from stock_exclusion_manager import StockExclusionManager
+
+
+# StockExclusionManager 已迁移至独立模块 stock_exclusion_manager.py
+
+
 def filter_df_to_trading_days_local(df: pd.DataFrame, logger: Optional[logging.Logger] = None) -> pd.DataFrame:
     """
     基于本地缓存的股票日线数据直接判定交易日并过滤：
@@ -518,8 +525,9 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_l
     if 200 < market_value <= 250 and market_value > 300:
         return RuleEnum.MARKET_CAP_TOO_HIGH
 
+    exclusion_manager = StockExclusionManager.get_instance()
     # 条件1：排除特定题材
-    if "证券" in name or "金融" in name or "证券" in theme or "金融" in theme or "外贸" in theme or "环境" in name or "环境" in theme:
+    if exclusion_manager.should_exclude(code, name, theme):
         return RuleEnum.IS_FINANCE_OR_SECURITY
 
     # 条件2：排除前一日涨停和后一日涨停 (连板)
