@@ -199,7 +199,7 @@ class Backtester:
         else:
             return "Other"
 
-    def log_trade(self, date_time, stock_code, action, shares, price, reason="", pnl=None, buy_time_category=None):
+    def log_trade(self, date_time, stock_code, action, shares, price, reason="", pnl=None, buy_time_category=None, price_type=None, ref_price=None):
         """将一笔交易记录到交易日志中。"""
         amount = shares * price
         log_entry = {
@@ -211,7 +211,9 @@ class Backtester:
             "金额": amount,
             "原因": reason,
             "盈亏": pnl if pnl is not None else "",
-            "买入时段": buy_time_category
+            "买入时段": buy_time_category,
+            "价格类型": price_type if price_type else "",
+            "参考买入价": ref_price if ref_price is not None else ""
         }
         self.trade_log.append(log_entry)
         if action == "SELL":
@@ -221,10 +223,11 @@ class Backtester:
         trade_time_str = date_time.strftime('%H:%M')  # 提取时间，格式化为 HH:MM
         action_cn = "买入" if action == "BUY" else "卖出"
         reason_str = f" ({reason})" if reason else ""
-
+        price_type_str = f" | 价格类型: {price_type}" if price_type else ""
+        ref_price_str = f" | 参考买入价: {ref_price:.2f}" if ref_price is not None else ""
         pnl_str = f" | 盈亏: {pnl:,.2f}" if pnl is not None else ""
         print(
-            f"  -> {trade_time_str} {action_cn}: {query_tool.get_name_by_code(stock_code)} | {shares} 股 @ {price:.2f} | 金额: {amount:,.2f}{reason_str}{pnl_str}")
+            f"  -> {trade_time_str} {action_cn}: {query_tool.get_name_by_code(stock_code)} | {shares} 股 @ {price:.2f} | 金额: {amount:,.2f}{price_type_str}{ref_price_str}{reason_str}{pnl_str}")
 
     def check_sell_conditions(self, stock_code, position, current_dt):
         """
@@ -403,14 +406,49 @@ class Backtester:
                     if self.cash < self.position_size: break
                     buy_target_price = self.calculate_buy_target_price(stock_code, date_str)
                     if buy_target_price is None: continue
+                    # 获取分钟与当日开盘数据，用于优先采用开盘价买入
                     min_df = self.get_minute_data(stock_code, date_str)
-                    if min_df.empty: continue
-                    touched_df = min_df[(min_df['low'] <= buy_target_price) & (min_df['high'] >= buy_target_price)]
-                    if not touched_df.empty:
-                        first_touch_time = touched_df.index[0]
-                        if first_touch_time.time() < self.BUY_CUTOFF_TIME:
-                            potential_buys.append(
-                                {'time': first_touch_time, 'stock': stock_code, 'price': buy_target_price})
+                    day_df = self.get_daily_data(stock_code, date_str, date_str)
+
+                    # 优先策略：当日开盘价<=预估买入价，则采用开盘价作为实际买入价格
+                    open_candidate_added = False
+                    day_open = None
+                    open_dt = None
+                    if not day_df.empty and 'open' in day_df.columns:
+                        try:
+                            day_open = float(day_df.iloc[-1]['open'])
+                        except Exception:
+                            day_open = None
+                    # 计算开盘时间（优先使用分钟数据的首条时间；否则退化为09:30）
+                    if not min_df.empty:
+                        open_dt = min_df.index[0]
+                    else:
+                        open_dt = datetime.combine(current_dt.date(), time(9, 30))
+
+                    if (day_open is not None) and (not np.isnan(day_open)) and (day_open <= buy_target_price):
+                        if open_dt.time() < self.BUY_CUTOFF_TIME:
+                            potential_buys.append({
+                                'time': open_dt,
+                                'stock': stock_code,
+                                'price': day_open,
+                                'price_type': '开盘价',
+                                'ref_price': buy_target_price
+                            })
+                            open_candidate_added = True
+
+                    # 原有逻辑：分钟触价采用预估买入价（作为参考基准）
+                    if not min_df.empty:
+                        touched_df = min_df[(min_df['low'] <= buy_target_price) & (min_df['high'] >= buy_target_price)]
+                        if not touched_df.empty:
+                            first_touch_time = touched_df.index[0]
+                            if first_touch_time.time() < self.BUY_CUTOFF_TIME and not open_candidate_added:
+                                potential_buys.append({
+                                    'time': first_touch_time,
+                                    'stock': stock_code,
+                                    'price': buy_target_price,
+                                    'price_type': '预估买入价',
+                                    'ref_price': buy_target_price
+                                })
 
                 potential_buys.sort(key=lambda x: x['time'])
                 print(f"在 {self.BUY_CUTOFF_TIME.strftime('%H:%M')} 前发现 {len(potential_buys)} 个潜在买入机会。")
@@ -423,6 +461,8 @@ class Backtester:
                         continue  # 跳过这笔交易，继续检查下一个
                     if self.cash >= self.position_size:
                         buy_price = buy_order['price']
+                        price_type = buy_order.get('price_type', '预估买入价')
+                        ref_price = buy_order.get('ref_price', None)
                         shares_to_buy = math.floor((self.position_size / buy_price) / 100) * 100
                         if shares_to_buy > 0:
                             cost = shares_to_buy * buy_price
@@ -434,8 +474,16 @@ class Backtester:
                                 'buy_date': date_str,
                                 'hold_days': 0, 'buy_time_category': buy_time_cat
                             }
-                            self.log_trade(buy_order['time'], buy_order['stock'], "BUY", shares_to_buy, buy_price,
-                                           buy_time_category=buy_time_cat)
+                            self.log_trade(
+                                date_time=buy_order['time'],
+                                stock_code=buy_order['stock'],
+                                action="BUY",
+                                shares=shares_to_buy,
+                                price=buy_price,
+                                buy_time_category=buy_time_cat,
+                                price_type=price_type,
+                                ref_price=ref_price
+                            )
                         else:
                             print(f"  - [跳过] 资金不足以购买至少100股的 {buy_order['stock']} (价格: {buy_price:.2f})。")
                             skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
