@@ -231,10 +231,6 @@ def get_target_stocks(isNeedLog=True, target_date=None):
             continue
         if "白酒" in theme or "光伏" in theme:
             continue
-        if "地产" in theme or "地产" in name:
-            continue
-        if "酒店" in theme or "酒店" in name:
-            continue
         # 排除分数小于或等于10的股票
         # if score < 10:
         if score < 10:
@@ -327,7 +323,7 @@ if __name__ == '__main__':
     # target_stocks, fourth_day_stocks = get_target_stocks()
 
     # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
-    target_date = "20251017"
+    target_date = "20251030"
     target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")

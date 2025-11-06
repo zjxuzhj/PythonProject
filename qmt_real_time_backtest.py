@@ -1,6 +1,7 @@
 import math
 import os
 from datetime import datetime, timedelta, time
+import json
 
 import numpy as np
 import pandas as pd
@@ -402,10 +403,13 @@ class Backtester:
                 print("今天没有发现目标股票。")
             else:
                 potential_buys = []
+                late_opportunities = []  # 收集14:30后触价但未买入的机会
                 for stock_code in target_stocks:
-                    if self.cash < self.position_size: break
+                    if self.cash < self.position_size:
+                        break
                     buy_target_price = self.calculate_buy_target_price(stock_code, date_str)
-                    if buy_target_price is None: continue
+                    if buy_target_price is None:
+                        continue
                     # 获取分钟与当日开盘数据，用于优先采用开盘价买入
                     min_df = self.get_minute_data(stock_code, date_str)
                     day_df = self.get_daily_data(stock_code, date_str, date_str)
@@ -449,6 +453,21 @@ class Backtester:
                                     'price_type': '预估买入价',
                                     'ref_price': buy_target_price
                                 })
+                            else:
+                                # 触价时间晚于买入截止时间，输出结构化日志（JSON）
+                                if not open_candidate_added and first_touch_time.time() >= self.BUY_CUTOFF_TIME:
+                                    planned_shares = math.floor((self.position_size / buy_target_price) / 100) * 100
+                                    # 收集到当天的人类可读清单
+                                    late_opportunities.append({
+                                        'time': first_touch_time,
+                                        'stock': stock_code,
+                                        'name': query_tool.get_name_by_code(stock_code),
+                                        'price': buy_target_price,
+                                        'shares': int(planned_shares),
+                                        'amount': float(planned_shares * buy_target_price),
+                                        'price_type': '预估买入价',
+                                        'ref_price': buy_target_price
+                                    })
 
                 potential_buys.sort(key=lambda x: x['time'])
                 print(f"在 {self.BUY_CUTOFF_TIME.strftime('%H:%M')} 前发现 {len(potential_buys)} 个潜在买入机会。")
@@ -489,6 +508,14 @@ class Backtester:
                             skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
                     else:
                         skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
+
+                if late_opportunities:
+                    # 输出14:30后潜在买入机会清单（人类可读格式）
+                    print("今日可买入但买入时间在14:30后的股票清单：")
+                    for op in late_opportunities:
+                        print(
+                            f"  [14:30后] {op['time'].strftime('%H:%M')} 可买: {op['name']} | {op['shares']} 股 @ {op['price']:.2f} | 金额: {op['amount']:.2f} | 价格类型: {op['price_type']} | 参考买入价: {op['ref_price']:.2f} | 原因: 触价时间晚于14:30"
+                        )
 
                 # 循环结束后，检查错过的列表是否为空
                 if skipped_buys:
@@ -598,8 +625,8 @@ class Backtester:
 
 if __name__ == '__main__':
     # START_DATE = "20241201"
-    START_DATE = "20251001"
-    END_DATE = "20251102"
+    START_DATE = "20250901"
+    END_DATE = "20251001"
     INITIAL_CAPITAL = 200000.0
     POSITION_SIZE_PER_TRADE = 20000
 
