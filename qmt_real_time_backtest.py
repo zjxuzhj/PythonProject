@@ -45,7 +45,7 @@ class Backtester:
         self.daily_portfolio_values = []  # 记录每日投资组合净值
 
         # 交易时间限制
-        self.BUY_CUTOFF_TIME = time(14, 30)  # 买入截止时间
+        self.BUY_CUTOFF_TIME = time(14, 45)  # 买入截止时间
         self.SELL_CHECK_TIME = time(14, 57)  # 卖出检查时间
 
     # --- 加载总缓存文件的方法 ---
@@ -403,7 +403,7 @@ class Backtester:
                 print("今天没有发现目标股票。")
             else:
                 potential_buys = []
-                late_opportunities = []  # 收集14:30后触价但未买入的机会
+                late_opportunities = []  # 收集14:45后触价但未买入的机会
                 for stock_code in target_stocks:
                     if self.cash < self.position_size:
                         break
@@ -510,11 +510,11 @@ class Backtester:
                         skipped_buys.append(query_tool.get_name_by_code(buy_order['stock']))
 
                 if late_opportunities:
-                    # 输出14:30后潜在买入机会清单（人类可读格式）
-                    print("今日可买入但买入时间在14:30后的股票清单：")
+                    # 输出14:45后潜在买入机会清单（人类可读格式）
+                    print("今日可买入但买入时间在14:45后的股票清单：")
                     for op in late_opportunities:
                         print(
-                            f"  [14:30后] {op['time'].strftime('%H:%M')} 可买: {op['name']} | {op['shares']} 股 @ {op['price']:.2f} | 金额: {op['amount']:.2f} | 价格类型: {op['price_type']} | 参考买入价: {op['ref_price']:.2f} | 原因: 触价时间晚于14:30"
+                            f"  [14:45后] {op['time'].strftime('%H:%M')} 可买: {op['name']} | {op['shares']} 股 @ {op['price']:.2f} | 金额: {op['amount']:.2f} | 价格类型: {op['price_type']} | 参考买入价: {op['ref_price']:.2f} | 原因: 触价时间晚于14:45"
                         )
 
                 # 循环结束后，检查错过的列表是否为空
@@ -625,8 +625,8 @@ class Backtester:
 
 if __name__ == '__main__':
     # START_DATE = "20241201"
-    START_DATE = "20250901"
-    END_DATE = "20251001"
+    START_DATE = "20250801"
+    END_DATE = "20250901"
     INITIAL_CAPITAL = 200000.0
     POSITION_SIZE_PER_TRADE = 20000
 
