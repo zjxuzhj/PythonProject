@@ -997,8 +997,8 @@ def main():
     # 是否生成图表由代码变量控制，不使用命令行参数
     GENERATE_PLOT = True
     # 回测参数
-    START_DATE = "20250601"
-    END_DATE = "20251031"
+    START_DATE = "20220601"
+    END_DATE = "20251109"
     INITIAL_CAPITAL = 200000.0  # 总资产金额
     MAX_POSITIONS = 10          # 最大持仓数量
     POSITION_SIZE_PER_TRADE = 20000  # 保留旧参数兼容（未启用比例制时使用）

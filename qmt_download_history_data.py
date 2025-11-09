@@ -5,23 +5,19 @@ import xtquant.xtdata as xtdata
 import getAllStockCsv
 
 query_tool = getAllStockCsv.StockQuery()
-# 扩展数据需要下载的步骤
+# 扩展数据需要下载的步骤 (注意，1m和5m的数据只有近一年的)
 # 1.现在日线级别的沪深300的数据，
 # 数据覆盖 2018-01-30至2025-11-04
 # 2.下载分钟级别所有股票数据3010个，用于确认日内何时买入。
-# 分钟数据 2024-7-24至2025-10-31
+# 分钟数据 2024-7-4至2025-10-31
 # 3.下载日线级别所有股票数据3010个，用于模拟计算五日线价格
-# 日线数据 2023-5-31至2025-10-31
-# 2023-7-5
-# 2023-9-20
-# 2023-2-10
-
+# 日线数据 2024-7-4至2025-10-31
 
 
 # 设置股票代码和时间范围
 # stock_code = "000300.SH"
-# start_date = "20250815"
-# end_date = "20251102"
+# start_date = "20200101"
+# end_date = "20240801"
 #
 # # 下载历史行情数据
 # xtdata.download_history_data2(
@@ -36,13 +32,12 @@ query_tool = getAllStockCsv.StockQuery()
 # print(f"下载完成: {stock_code} {start_date} 至 {end_date} 的1分钟数据")
 
 # 1. 设置时间范围
-# start_date = "20240201"
-start_date = "20200101"
-end_date = "20240801"
+start_date = "20251031"
+end_date = "20251109"
 
 # 2. 设置数据周期
 # 注意：迅投支持的周期包括 1d, 1m, 5m, 15m, 30m, 60m 等
-period = "1d"
+period = "1m"
 
 if __name__ == '__main__':
     filtered_stocks = query_tool.get_all_filter_stocks()
@@ -78,7 +73,7 @@ if __name__ == '__main__':
             continue
 
         # 建议在每次请求之间加入短暂延时，避免请求过于频繁
-        time.sleep(0.5)  # 延时0.5秒
+        time.sleep(0.2)  # 延时0.5秒
 
     print("-" * 30)
     print("所有股票数据处理完毕！")
