@@ -1,7 +1,7 @@
 pattern_rules:
   - type: name
     patterns: ["证券", "金融", "环境","水泥"]
-  - type: theme
+  - type: themeF
     patterns: ["证券","金融","白酒","环境", "光伏", "外贸","水泥"]
 blacklist_codes:
   - "sz002506"
