@@ -18,9 +18,11 @@ import updateAllStockDataCache as data_updater
 from etf_momentum_core import ETFMomentumCore
 from miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_logging_utils import setup_logger
+import os
 
 # ====== 全局配置 ======
-TOTAL_BUDGET = 5000  # 总投资预算
+_env_alloc = os.environ.get('ALLOCATED_CAPITAL')
+TOTAL_BUDGET = float(_env_alloc) if _env_alloc else 5000  # 总投资预算（可由主控程序覆盖）
 MIN_TRADE_AMOUNT = 1000  # 最小交易金额
 MOMENTUM_DAYS = 25  # 动量计算天数
 MAX_ETF_COUNT = 1  # 最大持有ETF数量
@@ -44,7 +46,12 @@ class ETFMomentumStrategy:
         self.account = account
         self.logger = logger
         self.core = ETFMomentumCore(MOMENTUM_DAYS)  # 使用统一的核心模块
-        self.max_etf_count = MAX_ETF_COUNT
+        # 支持环境变量覆盖最大ETF数量（来自主控程序）
+        try:
+            env_max = os.environ.get('MAX_POSITIONS')
+            self.max_etf_count = int(env_max) if env_max else MAX_ETF_COUNT
+        except Exception:
+            self.max_etf_count = MAX_ETF_COUNT
 
     def filter_etfs(self):
         """筛选ETF并计算得分"""
