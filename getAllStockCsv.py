@@ -49,7 +49,7 @@ class StockQuery:
         is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '30', '68'))
         is_st = df['stock_name'].str.contains(r'ST|\*ST|退市', na=False)
 
-        # 新增黑名单过滤
+        # 新增黑名单过滤，使用的是merged_report_2024Q3.csv中的数据，记得同时修改stock_code_name.csvv中的数据
         is_about_to_st = df['clean_code'].isin(self.blacklist['about_to_st'])
         is_bad_shareholder = df['clean_code'].isin(self.blacklist['bad_shareholders'])
         is_easy_a_kill = df['clean_code'].isin(self.blacklist['easy_a_kill'])
