@@ -769,3 +769,5 @@
 2025-11-12 10:18:51,772 - INFO - 回测初始化完成: 20240704 - 20251109, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-13 08:41:42,374 - INFO - 回测初始化完成: 20240704 - 20251109, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-13 08:45:24,976 - INFO - 回测初始化完成: 20240704 - 20251109, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-13 08:56:20,113 - INFO - 回测初始化完成: 20240704 - 20251109, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-13 09:05:12,624 - INFO - 回测初始化完成: 20240704 - 20251109, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both

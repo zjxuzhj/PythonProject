@@ -227,8 +227,31 @@ class BacktestingRunner:
         self.trade_log.append(trade_record)
         
         action_desc = "买入" if action == "BUY" else "卖出"
-        pnl_desc = f", 盈亏: {pnl:.2f}" if pnl is not None else ""
-        print(f"  - {action_desc} {trade_record['stock_name']} {shares}股 @ {price:.2f}{pnl_desc}")
+        if action == "BUY":
+            # 详细买入日志格式：
+            # -> HH:MM 买入: [股票名称] | [数量] 股 @ [价格] | 金额: [金额] | 价格类型: [类型] | 参考买入价: [参考价]
+            try:
+                time_str = date_time.strftime("%H:%M")
+            except Exception:
+                time_str = ""
+            name = trade_record['stock_name']
+            amount = float(shares) * float(price)
+            price_type_str = str(trade_record.get('price_type', '') or '')
+            ref_val = trade_record.get('ref_price', '')
+            ref_str = ""
+            try:
+                if isinstance(ref_val, (int, float)):
+                    ref_str = f"{float(ref_val):.2f}"
+                elif isinstance(ref_val, str) and ref_val.strip() != "":
+                    ref_str = f"{float(ref_val):.2f}"
+            except Exception:
+                ref_str = ""
+            print(
+                f"-> {time_str} 买入: {name} | {shares} 股 @ {price:.2f} | 金额: {amount:,.2f} | 价格类型: {price_type_str} | 参考买入价: {ref_str}"
+            )
+        else:
+            pnl_desc = f", 盈亏: {pnl:.2f}" if pnl is not None else ""
+            print(f"  - {action_desc} {trade_record['stock_name']} {shares}股 @ {price:.2f}{pnl_desc}")
 
     def _calc_commission(self, gross_amount: float) -> float:
         """计算每笔交易手续费。支持比例或固定值，并应用最低手续费。"""
