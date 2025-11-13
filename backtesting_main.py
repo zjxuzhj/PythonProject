@@ -1000,7 +1000,7 @@ def main():
     START_DATE = "20240704"
     END_DATE = "20251109"
     INITIAL_CAPITAL = 200000.0  # 总资产金额
-    MAX_POSITIONS = 10          # 最大持仓数量
+    MAX_POSITIONS = 5        # 最大持仓数量
     POSITION_SIZE_PER_TRADE = 20000  # 保留旧参数兼容（未启用比例制时使用）
     # 交易成本参数（示例配置，执行前设置）
     COMMISSION = 0.0005      # 0.05% 手续费
