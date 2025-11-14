@@ -46,10 +46,11 @@ def monitor_strategy_status(logger):
         try:
             refresh_account_status()
             status_msg = (
-                f"策略运行正常 | "
+                f"小市值策略运行正常 | "
+                f"总资产: {total_asset:.2f} | "
                 f"可用资金: {available_cash:.2f} | "
-                f"持仓数量: {len(hold_stocks)} | "
-                f"总持仓: {position_total_dict}"
+                f"持仓数量: {len(hold_stocks)} "
+                # f"总持仓: {position_total_dict}"
             )
             logger.info(status_msg)
             # 仅查询可撤委托
@@ -598,15 +599,13 @@ def analyze_trigger_performance(days=5):
 
 def refresh_account_status():
     """刷新账户状态"""
-    global available_cash, hold_stocks, positions, position_total_dict, position_available_dict
+    global available_cash,total_asset, hold_stocks, positions, position_total_dict, position_available_dict
 
     # 更新可用资金
     account_info = xt_trader.query_stock_asset(acc)
     if account_info:
-        tmp_cash = getattr(account_info, 'cash', None)
-        if tmp_cash is None:
-            tmp_cash = getattr(account_info, 'm_dCash', 0)
-        available_cash = float(tmp_cash) if tmp_cash is not None else 0.0
+        available_cash = account_info.cash
+        total_asset = account_info.total_asset
     else:
         available_cash = 0.0
 
@@ -641,7 +640,7 @@ if __name__ == "__main__":
 
         # 初始化日志记录器
         strategy_logger = setup_logger()
-        strategy_logger.info("===== 策略启动 =====")
+        strategy_logger.info("===== 小市值涨停回踩五日线策略启动 =====")
 
         # 创建并启动监控线程
         monitor_thread = threading.Thread(

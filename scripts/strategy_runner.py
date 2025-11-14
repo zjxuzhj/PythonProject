@@ -160,7 +160,7 @@ class StrategyProcess:
                 'ALLOCATED_CAPITAL': self.env.get('ALLOCATED_CAPITAL'),
                 'PER_STOCK_TOTAL_BUDGET': self.env.get('PER_STOCK_TOTAL_BUDGET'),
                 'MAX_POSITIONS': self.env.get('MAX_POSITIONS'),
-                'PYTHONIOENCODING': self.env.get('PYTHONIOENCODING'),
+                # 'PYTHONIOENCODING': self.env.get('PYTHONIOENCODING'),
             }
             print(f"[{self.name}] started pid={self.proc.pid} env={env_summary}")
         except Exception:
@@ -248,17 +248,13 @@ class StrategyRunner:
         self.monitor_thread.start()
 
     def _monitor_loop(self):
-        print("StrategyRunner monitor started (heartbeat every ~10s)")
+        # print("StrategyRunner monitor started (heartbeat every ~10s)")
         while not self._stop_event.is_set():
             try:
                 ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"[monitor] {ts} checking child processes...")
+                # print(f"[monitor] {ts} checking child processes...")
                 for name, proc in list(self.strategy_procs.items()):
                     status = 'running' if (proc.proc and proc.proc.poll() is None) else f"stopped(exit={proc.proc.poll() if proc.proc else 'N/A'})"
-                    uptime = 0.0
-                    if proc.start_time:
-                        uptime = (time.time() - proc.start_time) / 60.0
-                    print(f"[monitor] {name} status={status} pid={proc.proc.pid if proc.proc else 'N/A'} uptime={uptime:.1f}min")
                     if status.startswith('stopped'):
                         ok = proc.ensure_running()
                         print(f"[monitor] {name} restart_attempts={proc.restart_attempts} restarted={ok}")

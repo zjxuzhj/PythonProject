@@ -284,12 +284,12 @@ def monitor_strategy_status():
     """监控策略状态"""
     while True:
         try:
-            asset = xt_trader.query_stock_asset(acc)
+            account_info = xt_trader.query_stock_asset(acc)
             positions = xt_trader.query_stock_positions(acc)
 
-            if asset:
-                available_cash = asset.cash  # 修改此处
-                total_asset = asset.total_asset  # 修改此处
+            if account_info:
+                available_cash = account_info.cash
+                total_asset = account_info.total_asset
 
                 position_count = len([p for p in positions if p.volume > 0])  # 同样修改 p.m_nVolume
 
@@ -440,7 +440,7 @@ if __name__ == "__main__":
         id='daily_data_small_downloader',
         misfire_grace_time=300
     )
-    print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
+    print("定时任务已启动：每日16:05执行小市值策略日线数据下载")
 
     # 忽略父进程的 Ctrl-C 信号，避免非预期退出
     try:
