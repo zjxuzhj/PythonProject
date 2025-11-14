@@ -30,7 +30,8 @@ def can_cancel_order_status(status_code):
         xtconstant.ORDER_UNREPORTED,
         xtconstant.ORDER_WAIT_REPORTING,
         xtconstant.ORDER_REPORTED,
-        xtconstant.ORDER_PART_SUCC
+        xtconstant.ORDER_PART_SUCC,
+        xtconstant.ORDER_WAIT_CANCEL
     }
     # 判断传入的状态码是否在该集合中
     return status_code in cancellable_statuses

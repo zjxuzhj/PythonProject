@@ -26,6 +26,7 @@ from stock_info import StockInfo
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
 import os
+import shutil
 
 # 支持环境变量覆盖（由主控程序传入），便于按比例进行资金分配
 _env_per_stock = os.environ.get('PER_STOCK_TOTAL_BUDGET')
@@ -36,6 +37,8 @@ daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时自动创建空列表
 # 在全局定义日志记录控制变量
 log_throttle = defaultdict(lambda: {'last_log_time': 0, 'last_log_price': 0})
+trigger_prices_lock = threading.Lock()
+order_ops_lock = threading.Lock()
 
 config = StrategyConfig()
 
@@ -330,10 +333,17 @@ def process_stock_quote(stock_code, current_price, current_time):
         log_throttle[stock_code] = {'last_log_time': current_time, 'last_log_price': current_price}
 
     # 2. 每60秒记录一次
-    if current_time - log_throttle[stock_code]['last_log_time'] > 60:
+    def _log_interval():
+        hm = int(datetime.now().strftime('%H%M'))
+        if (930 <= hm <= 1130) or (1300 <= hm <= 1500):
+            return 20
+        return 60
+    if current_time - log_throttle[stock_code]['last_log_time'] > _log_interval():
         closest_tier = None
         min_diff = float('inf')
-        for tier in trigger_prices.get(stock_code, []):
+        with trigger_prices_lock:
+            tiers_copy = list(trigger_prices.get(stock_code, []))
+        for tier in tiers_copy:
             if tier['triggered']:  # 跳过已触发的层级
                 continue
 
@@ -353,7 +363,9 @@ def process_stock_quote(stock_code, current_price, current_time):
         log_throttle[stock_code]['last_log_time'] = current_time
 
     # 4. 触发条件检查
-    for tier in trigger_prices.get(stock_code, []):
+    with trigger_prices_lock:
+        tiers_exec = list(trigger_prices.get(stock_code, []))
+    for tier in tiers_exec:
         if tier['triggered']:
             continue
 
@@ -361,7 +373,8 @@ def process_stock_quote(stock_code, current_price, current_time):
         if current_price <= tier['price']:
             strategy_logger.info(f"触发条件: {name_display} 当前价 {current_price} ≤ 目标价 {tier['price']}")
             execute_trigger_order(name_display, stock_code, tier)
-            tier['triggered'] = True
+            with trigger_prices_lock:
+                tier['triggered'] = True
 
 
 def execute_trigger_order(name_display, stock_code, tier):
@@ -387,16 +400,30 @@ def execute_trigger_order(name_display, stock_code, tier):
     tier['trigger_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     tier['triggered'] = True
 
+    tick = xtdata.get_full_tick([stock_code])
+    current_price = None
+    if isinstance(tick, dict) and stock_code in tick and tick[stock_code]:
+        q = tick[stock_code]
+        current_price = q.get('lastPrice') if isinstance(q, dict) else None
+    exec_price = tier['price']
+    if current_price and current_price > 0:
+        low_bound = round(current_price * 0.98, 2)
+        high_bound = round(current_price * 1.02, 2)
+        adjusted = max(min(exec_price, high_bound), low_bound)
+        if adjusted != exec_price:
+            strategy_logger.info(f"价格调整 {name_display} 原价 {exec_price} → 调整后 {adjusted} 最新价 {current_price}")
+        exec_price = adjusted
+
     # 异步挂单（限价委托）
     xt_trader.order_stock_async(
         acc, stock_code, xtconstant.STOCK_BUY,
         buy_shares, xtconstant.FIX_PRICE,
-        tier['price'], 'MA5触发策略', ''
+        exec_price, 'MA5触发策略', ''
     )
-    print(f"{prefix}触发挂单：{name_display} {buy_shares}股 @ {tier['price']}")
+    print(f"{prefix}触发挂单：{name_display} {buy_shares}股 @ {exec_price}")
 
-    # 立即保存更新后的触发状态
-    save_trigger_prices_to_csv(trigger_prices)
+    with trigger_prices_lock:
+        save_trigger_prices_to_csv(trigger_prices)
 
 
 def daily_pre_market_orders():
@@ -568,6 +595,66 @@ def adjust_orders_at_910():
         print("===== 9:10定时任务完成 =====")
 
 
+def cancel_and_reset_preopen_orders():
+    try:
+        now = datetime.now().strftime("%H:%M:%S")
+        print(f"===== 执行9:31撤单与重置任务 ({now}) =====")
+        with order_ops_lock:
+            orders = xt_trader.query_stock_orders(acc, cancelable_only=False)
+            to_cancel = []
+            for o in orders:
+                if can_cancel_order_status(o.order_status) or o.order_status == xtconstant.ORDER_WAIT_CANCEL:
+                    to_cancel.append(o)
+            canceled_details = []
+            for o in to_cancel:
+                seq = getattr(o, 'order_seq', None)
+                if seq is None:
+                    seq = getattr(o, 'order_id', None)
+                stock_code = getattr(o, 'stock_code', '')
+                vol = getattr(o, 'order_volume', 0)
+                price = getattr(o, 'price', 0)
+                try:
+                    if hasattr(xt_trader, 'cancel_order_stock_async') and seq is not None:
+                        xt_trader.cancel_order_stock_async(acc, seq)
+                    elif hasattr(xt_trader, 'cancel_order_stock') and seq is not None:
+                        xt_trader.cancel_order_stock(acc, seq)
+                    canceled_details.append((stock_code, vol, price))
+                except Exception as e:
+                    strategy_logger.error(f"撤单失败 {stock_code}: {str(e)}")
+            strategy_logger.info(f"撤单数量: {len(canceled_details)}")
+            for s, v, p in canceled_details[:50]:
+                strategy_logger.info(f"撤单: {s} 数量 {v} 价格 {p}")
+
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
+            if os.path.exists(filename):
+                backup_name = os.path.join("output", f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
+                shutil.copyfile(filename, backup_name)
+                df = pd.read_csv(filename)
+                if 'triggered' in df.columns:
+                    df['triggered'] = False
+                if 'trigger_time' in df.columns:
+                    df['trigger_time'] = ''
+                tmp_name = filename + ".tmp"
+                df.to_csv(tmp_name, index=False, encoding='utf-8-sig')
+                os.replace(tmp_name, filename)
+                strategy_logger.info(f"CSV已重置并备份: {backup_name}")
+            data = load_trigger_prices_from_csv()
+            with trigger_prices_lock:
+                trigger_prices.clear()
+                if data:
+                    for k, v in data.items():
+                        trigger_prices[k] = v
+            filtered_stocks = list(trigger_prices.keys())
+            if filtered_stocks:
+                subscribe_target_stocks(filtered_stocks)
+                strategy_logger.info(f"重新订阅股票: {', '.join(filtered_stocks[:20])}{'...' if len(filtered_stocks) > 20 else ''}")
+            else:
+                strategy_logger.info("无可订阅股票")
+    except Exception as e:
+        strategy_logger.error(f"9:31任务异常: {str(e)}")
+
+
 def analyze_trigger_performance(days=5):
     """分析最近N天的触发价格执行情况"""
     analysis_results = []
@@ -656,6 +743,19 @@ if __name__ == "__main__":
         hold_stocks = {pos.stock_code for pos in positions}
 
         adjust_orders_at_910()
+
+        scheduler.add_job(
+            cancel_and_reset_preopen_orders,
+            trigger=CronTrigger(
+                hour=9,
+                minute=31,
+                second=0,
+                day_of_week='mon-fri'
+            ),
+            misfire_grace_time=60,
+            id='cancel_reset_931'
+        )
+        print("定时任务已添加：每日9:31撤单与重置触发记录")
 
         scheduler.add_job(
             sell_breached_stocks,
