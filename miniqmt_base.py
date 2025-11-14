@@ -26,6 +26,7 @@ from stock_info import StockInfo
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
 import os
+
 # 支持环境变量覆盖（由主控程序传入），便于按比例进行资金分配
 _env_per_stock = os.environ.get('PER_STOCK_TOTAL_BUDGET')
 PER_STOCK_TOTAL_BUDGET = float(_env_per_stock) if _env_per_stock else 10000  # 每只股票的总买入预算
@@ -601,75 +602,95 @@ def refresh_account_status():
 
     # 更新可用资金
     account_info = xt_trader.query_stock_asset(acc)
-    available_cash = account_info.m_dCash
+    if account_info:
+        tmp_cash = getattr(account_info, 'cash', None)
+        if tmp_cash is None:
+            tmp_cash = getattr(account_info, 'm_dCash', 0)
+        available_cash = float(tmp_cash) if tmp_cash is not None else 0.0
+    else:
+        available_cash = 0.0
 
     # 更新持仓
     positions = xt_trader.query_stock_positions(acc)
     hold_stocks = {pos.stock_code for pos in positions}
-    position_total_dict = {i.stock_code: i.m_nVolume for i in positions}
-    position_available_dict = {i.stock_code: i.m_nCanUseVolume for i in positions}
+    position_total_dict = {i.stock_code: (getattr(i, 'volume', None) if getattr(i, 'volume', None) is not None else getattr(i, 'm_nVolume', 0)) for i in positions}
+    position_available_dict = {i.stock_code: (getattr(i, 'can_use_volume', None) if getattr(i, 'can_use_volume', None) is not None else getattr(i, 'm_nCanUseVolume', 0)) for i in positions}
 
     print(f"账户状态更新：可用资金={available_cash:.2f}, 持仓数量={len(hold_stocks)}")
 
 
 if __name__ == "__main__":
-    xtdata.enable_hello = False
-    path = r'D:\备份\国金证券QMT交易端\userdata_mini'
-    session_id = int(time.time())
-    xt_trader = XtQuantTrader(path, session_id)
+    try:
+        xtdata.enable_hello = False
+        path = r'D:\备份\国金证券QMT交易端\userdata_mini'
+        session_id = int(time.time())
+        xt_trader = XtQuantTrader(path, session_id)
 
-    acc = StockAccount('8886969255', 'STOCK')
-    # 创建交易回调类对象，并声明接收回调
-    callback = MyXtQuantTraderCallback(query_tool)
-    xt_trader.register_callback(callback)
-    # 启动交易线程
-    xt_trader.start()
-    # 建立交易连接，返回0表示连接成功
-    connect_result = xt_trader.connect()
-    print('建立交易连接，返回0表示连接成功', connect_result)
-    # 对交易回调进行订阅，订阅后可以收到交易主推，返回0表示订阅成功
-    subscribe_result = xt_trader.subscribe(acc)
-    print('对交易回调进行订阅，订阅后可以收到交易主推，返回0表示订阅成功', subscribe_result)
+        acc = StockAccount('8886969255', 'STOCK')
+        # 创建交易回调类对象，并声明接收回调
+        callback = MyXtQuantTraderCallback(query_tool)
+        xt_trader.register_callback(callback)
+        # 启动交易线程
+        xt_trader.start()
+        # 建立交易连接，返回0表示连接成功
+        connect_result = xt_trader.connect()
+        print('建立交易连接，返回0表示连接成功', connect_result)
+        # 对交易回调进行订阅，订阅后可以收到交易主推，返回0表示订阅成功
+        subscribe_result = xt_trader.subscribe(acc)
+        print('对交易回调进行订阅，订阅后可以收到交易主推，返回0表示订阅成功', subscribe_result)
 
-    # 初始化日志记录器
-    strategy_logger = setup_logger()
-    strategy_logger.info("===== 策略启动 =====")
+        # 初始化日志记录器
+        strategy_logger = setup_logger()
+        strategy_logger.info("===== 策略启动 =====")
 
-    # 创建并启动监控线程
-    monitor_thread = threading.Thread(
-        target=monitor_strategy_status,
-        args=(strategy_logger,),
-        daemon=True  # 设为守护线程，主程序退出时自动结束
-    )
-    monitor_thread.start()
-    scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
-
-    # 获取当前持仓股票集合
-    positions = xt_trader.query_stock_positions(acc)
-    hold_stocks = {pos.stock_code for pos in positions}
-
-    adjust_orders_at_910()
-
-    scheduler.add_job(
-        sell_breached_stocks,
-        trigger=CronTrigger(
-            hour=14,
-            minute=56,
-            day_of_week='mon-fri'
-        ),
-        misfire_grace_time=60
-    )
-    print("定时任务已启动：每日14:54执行MA5止损检测")
-
-    scheduler.add_job(
-        analyze_trigger_performance,
-        trigger=CronTrigger(
-            hour=15,
-            minute=1,
-            day_of_week='mon-fri'
+        # 创建并启动监控线程
+        monitor_thread = threading.Thread(
+            target=monitor_strategy_status,
+            args=(strategy_logger,),
+            daemon=True  # 设为守护线程，主程序退出时自动结束
         )
-    )
-    print("定时任务已添加：每日15:01执行触发价格分析")
+        monitor_thread.start()
+        scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
-    scheduler.start()
-    xtdata.run()
+        # 获取当前持仓股票集合
+        positions = xt_trader.query_stock_positions(acc)
+        hold_stocks = {pos.stock_code for pos in positions}
+
+        adjust_orders_at_910()
+
+        scheduler.add_job(
+            sell_breached_stocks,
+            trigger=CronTrigger(
+                hour=14,
+                minute=56,
+                day_of_week='mon-fri'
+            ),
+            misfire_grace_time=60
+        )
+        print("定时任务已启动：每日14:54执行MA5止损检测")
+
+        scheduler.add_job(
+            analyze_trigger_performance,
+            trigger=CronTrigger(
+                hour=15,
+                minute=1,
+                day_of_week='mon-fri'
+            )
+        )
+        print("定时任务已添加：每日15:01执行触发价格分析")
+
+        scheduler.start()
+        xtdata.run()
+    except Exception:
+        import traceback, sys, os
+
+        err_text = traceback.format_exc()
+        # 输出到 stderr，让主控能捕获完整堆栈
+        sys.stderr.write(err_text + "\n")
+        # 额外落盘到分析目录，方便定位
+        try:
+            os.makedirs('analysis_results', exist_ok=True)
+            with open(os.path.join('analysis_results', 'miniqmt_runner_error.log'), 'a', encoding='utf-8') as f:
+                f.write(err_text + "\n")
+        except Exception:
+            pass

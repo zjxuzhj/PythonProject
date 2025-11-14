@@ -5,6 +5,10 @@
 
 import threading
 import time
+import signal
+import sys
+import os
+import traceback
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -438,13 +442,33 @@ if __name__ == "__main__":
     )
     print("定时任务已启动：每日16:00执行小市值策略日线数据下载")
 
+    # 忽略父进程的 Ctrl-C 信号，避免非预期退出
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        if hasattr(signal, 'SIGBREAK'):
+            signal.signal(signal.SIGBREAK, signal.SIG_IGN)
+    except Exception:
+        pass
+
     # 启动调度器
     scheduler.start()
 
-    # 保持程序运行
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("程序退出")
-        scheduler.shutdown()
+        try:
+            strategy_logger and strategy_logger.info("忽略Ctrl-C信号，继续运行")
+        except Exception:
+            pass
+        while True:
+            time.sleep(1)
+    except Exception:
+        err = traceback.format_exc()
+        sys.stderr.write(err + "\n")
+        try:
+            os.makedirs('analysis_results', exist_ok=True)
+            with open(os.path.join('analysis_results', 'etf_runner_error.log'), 'a', encoding='utf-8') as f:
+                f.write(err + "\n")
+        except Exception:
+            pass

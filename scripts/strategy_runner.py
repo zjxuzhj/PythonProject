@@ -28,6 +28,91 @@ from typing import Dict, Optional, Tuple
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 PYTHON = sys.executable
 
+def fetch_total_capital_from_qmt() -> Optional[float]:
+    """尝试通过 miniQMT 读取账户总资金，参考 miniqmt_base.py 的资产查询。"""
+    try:
+        from xtquant import xtdata
+        from xtquant.xttrader import XtQuantTrader
+        from xtquant.xttype import StockAccount
+        xtdata.enable_hello = False
+        user_dir = os.environ.get('QMT_USERDATA_DIR') or r'D:\备份\国金证券QMT交易端\userdata_mini'
+        account_id = os.environ.get('QMT_ACCOUNT_ID') or '8886969255'
+        session_id = int(time.time())
+        trader = XtQuantTrader(user_dir, session_id)
+        trader.start()
+        try:
+            trader.connect()
+        except Exception:
+            pass
+        acc = StockAccount(account_id, 'STOCK')
+        asset_val: Optional[float] = None
+        asset = trader.query_stock_asset(acc)
+        if asset:
+            for field in ('m_dTotalAsset', 'm_dTotalCapital', 'm_dTotalEquity', 'm_dCash'):
+                val = getattr(asset, field, None)
+                try:
+                    if val and float(val) > 0:
+                        asset_val = float(val)
+                        break
+                except Exception:
+                    continue
+        # 主动停止 trader 线程，避免长连接占用资源
+        try:
+            trader.stop()
+        except Exception:
+            pass
+        return asset_val
+    except Exception:
+        return None
+
+
+def _tail_file(path: str, n_lines: int = 10) -> str:
+    """读取文件末尾若干行，优先用 UTF-8 解码，失败时回退 GBK/CP936，避免中文乱码。"""
+    try:
+        if not path or not os.path.exists(path):
+            return "<no file>"
+        with open(path, 'rb') as f:
+            lines = f.readlines()
+        tail = lines[-n_lines:] if len(lines) > n_lines else lines
+        raw = b''.join(tail)
+        try:
+            return raw.decode('utf-8').strip()
+        except UnicodeDecodeError:
+            try:
+                return raw.decode('gbk').strip()
+            except Exception:
+                return raw.decode('utf-8', errors='replace').strip()
+    except Exception as e:
+        return f"<tail error: {e}>"
+
+
+def _read_new(path: str, offsets: dict, max_bytes: int = 8192) -> str:
+    try:
+        if not path or not os.path.exists(path):
+            return ""
+        size = os.path.getsize(path)
+        last = int(offsets.get(path, 0) or 0)
+        if last > size:
+            last = 0
+        with open(path, 'rb') as f:
+            f.seek(last)
+            data = f.read(max(0, size - last))
+        offsets[path] = last + len(data)
+        if not data:
+            return ""
+        try:
+            s = data.decode('utf-8').strip()
+        except UnicodeDecodeError:
+            try:
+                s = data.decode('gbk').strip()
+            except Exception:
+                s = data.decode('utf-8', errors='replace').strip()
+        if len(s) > max_bytes:
+            return s[-max_bytes:]
+        return s
+    except Exception:
+        return ""
+
 
 def compute_allocations(total_capital: float, allocations: Dict[str, float], max_positions: Dict[str, int]) -> Dict[str, Dict]:
     """按总资金和分配比计算每个策略的资金与每只标的预算。
@@ -58,14 +143,28 @@ class StrategyProcess:
         self.proc: Optional[subprocess.Popen] = None
         self.restart_attempts = 0
         self.max_restarts = 3
+        self.start_time: Optional[float] = None
 
     def start(self):
         cmd = [PYTHON, '-u', self.script_path]
         out_f = open(self.stdout_path, 'a', encoding='utf-8')
         err_f = open(self.stderr_path, 'a', encoding='utf-8')
+        # 强制子进程 stdout/stderr 使用 UTF-8，避免中文乱码
+        self.env['PYTHONIOENCODING'] = 'utf-8'
         self.proc = subprocess.Popen(cmd, env=self.env, stdout=out_f, stderr=err_f, cwd=ROOT)
         self.restart_attempts = 0
-        print(f"[{self.name}] started pid={self.proc.pid}")
+        self.start_time = time.time()
+        # 打印环境覆盖摘要，帮助核对分配参数是否正确
+        try:
+            env_summary = {
+                'ALLOCATED_CAPITAL': self.env.get('ALLOCATED_CAPITAL'),
+                'PER_STOCK_TOTAL_BUDGET': self.env.get('PER_STOCK_TOTAL_BUDGET'),
+                'MAX_POSITIONS': self.env.get('MAX_POSITIONS'),
+                'PYTHONIOENCODING': self.env.get('PYTHONIOENCODING'),
+            }
+            print(f"[{self.name}] started pid={self.proc.pid} env={env_summary}")
+        except Exception:
+            print(f"[{self.name}] started pid={self.proc.pid}")
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
@@ -86,6 +185,11 @@ class StrategyProcess:
                 print(f"[{self.name}] reached max restart attempts ({self.max_restarts}), not restarting automatically")
                 return False
             print(f"[{self.name}] restarting (attempt {self.restart_attempts})...")
+            # 退避重试，避免快速重启导致频繁失败
+            backoff = min(30, self.restart_attempts * 5)
+            if backoff > 0:
+                print(f"[{self.name}] backoff {backoff}s before restart")
+                time.sleep(backoff)
             try:
                 self.start()
                 return True
@@ -104,6 +208,7 @@ class StrategyRunner:
         self.strategy_procs: Dict[str, StrategyProcess] = {}
         self.monitor_thread = None
         self._stop_event = threading.Event()
+        self._log_offsets = {}
 
         # strategy -> script mapping (local project paths)
         self.scripts = {
@@ -131,21 +236,42 @@ class StrategyRunner:
             proc = StrategyProcess(sname, script, env, stdout, stderr)
             proc.start()
             self.strategy_procs[sname] = proc
+            try:
+                self._log_offsets[stdout] = os.path.getsize(stdout) if os.path.exists(stdout) else 0
+                self._log_offsets[stderr] = os.path.getsize(stderr) if os.path.exists(stderr) else 0
+            except Exception:
+                self._log_offsets[stdout] = 0
+                self._log_offsets[stderr] = 0
 
         # start monitor
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
 
     def _monitor_loop(self):
-        print("StrategyRunner monitor started")
+        print("StrategyRunner monitor started (heartbeat every ~10s)")
         while not self._stop_event.is_set():
-            for name, proc in list(self.strategy_procs.items()):
-                if not proc.ensure_running():
-                    # reached max restarts; alert and continue
-                    print(f"[{name}] not running and max restarts reached")
-                else:
-                    # optional: inspect log files for network errors and restart
-                    pass
+            try:
+                ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[monitor] {ts} checking child processes...")
+                for name, proc in list(self.strategy_procs.items()):
+                    status = 'running' if (proc.proc and proc.proc.poll() is None) else f"stopped(exit={proc.proc.poll() if proc.proc else 'N/A'})"
+                    uptime = 0.0
+                    if proc.start_time:
+                        uptime = (time.time() - proc.start_time) / 60.0
+                    print(f"[monitor] {name} status={status} pid={proc.proc.pid if proc.proc else 'N/A'} uptime={uptime:.1f}min")
+                    if status.startswith('stopped'):
+                        ok = proc.ensure_running()
+                        print(f"[monitor] {name} restart_attempts={proc.restart_attempts} restarted={ok}")
+                    new_out = _read_new(proc.stdout_path, self._log_offsets)
+                    new_err = _read_new(proc.stderr_path, self._log_offsets)
+                    if new_out:
+                        print(f"[monitor] {name} stdout new:\n{new_out}")
+                    if new_err:
+                        print(f"[monitor] {name} stderr new:\n{new_err}")
+                    if new_out and '程序退出' in new_out:
+                        print(f"[monitor] {name} detected exit marker '程序退出' in stdout")
+            except Exception as e:
+                print(f"[monitor] error: {e}")
             time.sleep(10)
 
     def stop_all(self):
@@ -155,9 +281,15 @@ class StrategyRunner:
 
     def daily_reallocate(self, new_total: Optional[float] = None):
         """在每日开盘前按比例重新分配资金（实现为重启子进程以更新 env 变量）。"""
-        if new_total:
+        if new_total is None:
+            # 优先尝试从QMT读取最新总资金
+            fresh = fetch_total_capital_from_qmt()
+            if fresh is not None and fresh > 0:
+                print(f"[reallocate] fetched total capital from QMT: {fresh:,.2f}")
+                self.total_capital = float(fresh)
+        else:
             self.total_capital = float(new_total)
-        print("Daily reallocation: recomputing allocations and restarting strategy processes")
+        print(f"[reallocate] recomputing allocations with total_capital={self.total_capital:,.2f}")
         allocs = compute_allocations(self.total_capital, self.allocations, self.max_positions)
         # restart each process with updated ENV
         for sname, proc in self.strategy_procs.items():
@@ -170,19 +302,26 @@ class StrategyRunner:
                 'PER_STOCK_TOTAL_BUDGET': str(v['per_stock_budget']),
                 'MAX_POSITIONS': str(v['max_positions'])
             })
+            print(f"[reallocate] {sname} new env={{'ALLOCATED_CAPITAL': {v['allocated']}, 'PER_STOCK_TOTAL_BUDGET': {v['per_stock_budget']}, 'MAX_POSITIONS': {v['max_positions']}}}")
             proc.start()
 
 
 def main():
     # 默认配置（可由外部配置文件或命令行注入）
-    TOTAL_CAPITAL = float(os.environ.get('TOTAL_CAPITAL', '180000'))
+    qc = fetch_total_capital_from_qmt()
+    if qc is not None and qc > 0:
+        TOTAL_CAPITAL = float(qc)
+        print(f"[strategy_runner] 从 miniQMT 读取账户总资金: {TOTAL_CAPITAL:,.2f}")
+    else:
+        TOTAL_CAPITAL = float(os.environ.get('TOTAL_CAPITAL', '180000'))
+        print(f"[strategy_runner] 使用默认/环境总资金: {TOTAL_CAPITAL:,.2f}")
     ALLOC = {
-        'miniqmt': float(os.environ.get('ALLOC_MINIQMT', '0.45')),
-        'etf': float(os.environ.get('ALLOC_ETF', '0.55'))
+        'miniqmt': float(os.environ.get('ALLOC_MINIQMT', '0.7')),
+        'etf': float(os.environ.get('ALLOC_ETF', '0.3'))
     }
     MAX_POS = {
         'miniqmt': int(os.environ.get('MAX_POS_MINIQMT', '10')),
-        'etf': int(os.environ.get('MAX_POS_ETF', '5'))
+        'etf': int(os.environ.get('MAX_POS_ETF', '1'))
     }
 
     runner = StrategyRunner(TOTAL_CAPITAL, ALLOC, MAX_POS, work_dir=ROOT)
