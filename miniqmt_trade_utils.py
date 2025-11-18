@@ -25,15 +25,19 @@ def save_force_sell_list(data):
         json.dump(data, f, indent=4)
 
 def can_cancel_order_status(status_code):
-    # 定义一个包含所有可撤销状态的集合
-    cancellable_statuses = {
-        xtconstant.ORDER_UNREPORTED,
-        xtconstant.ORDER_WAIT_REPORTING,
-        xtconstant.ORDER_REPORTED,
-        xtconstant.ORDER_PART_SUCC,
-        xtconstant.ORDER_WAIT_CANCEL
-    }
-    # 判断传入的状态码是否在该集合中
+    cancellable_statuses = set()
+    for name in (
+        'ORDER_UNREPORTED',
+        'ORDER_WAIT_REPORTING',
+        'ORDER_REPORTED',
+        'ORDER_PART_SUCC',
+        'ORDER_WAIT_CANCEL',
+        'ORDER_CANCELING',
+        'ORDER_PENDING_CANCEL'
+    ):
+        val = getattr(xtconstant, name, None)
+        if val is not None:
+            cancellable_statuses.add(val)
     return status_code in cancellable_statuses
 
 

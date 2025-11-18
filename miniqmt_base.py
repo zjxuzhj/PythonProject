@@ -603,7 +603,7 @@ def cancel_and_reset_preopen_orders():
             orders = xt_trader.query_stock_orders(acc, cancelable_only=False)
             to_cancel = []
             for o in orders:
-                if can_cancel_order_status(o.order_status) or o.order_status == xtconstant.ORDER_WAIT_CANCEL:
+                if can_cancel_order_status(o.order_status):
                     to_cancel.append(o)
             canceled_details = []
             for o in to_cancel:
