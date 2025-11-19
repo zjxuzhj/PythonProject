@@ -631,14 +631,19 @@ def cancel_and_reset_preopen_orders():
                 backup_name = os.path.join("output", f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
                 shutil.copyfile(filename, backup_name)
                 df = pd.read_csv(filename)
-                if 'triggered' in df.columns:
-                    df['triggered'] = False
-                if 'trigger_time' in df.columns:
-                    df['trigger_time'] = ''
+                canceled_codes = {s for (s, _, _) in canceled_details}
+                refresh_account_status()
+                held_codes = set(position_total_dict.keys())
+                if 'stock_code' in df.columns and 'triggered' in df.columns:
+                    mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
+                    df.loc[mask, 'triggered'] = False
+                if 'stock_code' in df.columns and 'trigger_time' in df.columns:
+                    mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
+                    df.loc[mask, 'trigger_time'] = ''
                 tmp_name = filename + ".tmp"
                 df.to_csv(tmp_name, index=False, encoding='utf-8-sig')
                 os.replace(tmp_name, filename)
-                strategy_logger.info(f"CSV已重置并备份: {backup_name}")
+                strategy_logger.info(f"CSV已选择性更新并备份: {backup_name}")
             data = load_trigger_prices_from_csv()
             with trigger_prices_lock:
                 trigger_prices.clear()
