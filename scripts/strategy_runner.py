@@ -312,8 +312,8 @@ def main():
         TOTAL_CAPITAL = float(os.environ.get('TOTAL_CAPITAL', '180000'))
         print(f"[strategy_runner] 使用默认/环境总资金: {TOTAL_CAPITAL:,.2f}")
     ALLOC = {
-        'miniqmt': float(os.environ.get('ALLOC_MINIQMT', '0.45')),
-        'etf': float(os.environ.get('ALLOC_ETF', '0.55'))
+        'miniqmt': float(os.environ.get('ALLOC_MINIQMT', '0.5')),
+        'etf': float(os.environ.get('ALLOC_ETF', '0.5'))
     }
     MAX_POS = {
         'miniqmt': int(os.environ.get('MAX_POS_MINIQMT', '10')),
