@@ -624,38 +624,39 @@ def cancel_and_reset_preopen_orders():
             strategy_logger.info(f"撤单数量: {len(canceled_details)}")
             for s, v, p in canceled_details[:50]:
                 strategy_logger.info(f"撤单: {s} 数量 {v} 价格 {p}")
-
-            today_str = datetime.now().strftime('%Y-%m-%d')
-            filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
-            if os.path.exists(filename):
-                backup_name = os.path.join("output", f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
-                shutil.copyfile(filename, backup_name)
-                df = pd.read_csv(filename)
-                canceled_codes = {s for (s, _, _) in canceled_details}
-                refresh_account_status()
-                held_codes = set(position_total_dict.keys())
-                if 'stock_code' in df.columns and 'triggered' in df.columns:
-                    mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
-                    df.loc[mask, 'triggered'] = False
-                if 'stock_code' in df.columns and 'trigger_time' in df.columns:
-                    mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
-                    df.loc[mask, 'trigger_time'] = ''
-                tmp_name = filename + ".tmp"
-                df.to_csv(tmp_name, index=False, encoding='utf-8-sig')
-                os.replace(tmp_name, filename)
-                strategy_logger.info(f"CSV已选择性更新并备份: {backup_name}")
-            data = load_trigger_prices_from_csv()
-            with trigger_prices_lock:
-                trigger_prices.clear()
-                if data:
-                    for k, v in data.items():
-                        trigger_prices[k] = v
-            filtered_stocks = list(trigger_prices.keys())
-            if filtered_stocks:
-                subscribe_target_stocks(filtered_stocks)
-                strategy_logger.info(f"重新订阅股票: {', '.join(filtered_stocks[:20])}{'...' if len(filtered_stocks) > 20 else ''}")
-            else:
-                strategy_logger.info("无可订阅股票")
+            if canceled_details:
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
+                if os.path.exists(filename):
+                    backup_name = os.path.join("output", f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
+                    shutil.copyfile(filename, backup_name)
+                    df = pd.read_csv(filename)
+                    canceled_codes = {s for (s, _, _) in canceled_details}
+                    refresh_account_status()
+                    held_codes = set(position_total_dict.keys())
+                    if 'stock_code' in df.columns and 'triggered' in df.columns:
+                        mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
+                        df.loc[mask, 'triggered'] = False
+                    if 'stock_code' in df.columns and 'trigger_time' in df.columns:
+                        df['trigger_time'] = df['trigger_time'].astype(object)
+                        mask = df['stock_code'].isin(canceled_codes) & (~df['stock_code'].isin(held_codes))
+                        df.loc[mask, 'trigger_time'] = ''
+                    tmp_name = filename + ".tmp"
+                    df.to_csv(tmp_name, index=False, encoding='utf-8-sig')
+                    os.replace(tmp_name, filename)
+                    strategy_logger.info(f"CSV已选择性更新并备份: {backup_name}")
+                data = load_trigger_prices_from_csv()
+                with trigger_prices_lock:
+                    trigger_prices.clear()
+                    if data:
+                        for k, v in data.items():
+                            trigger_prices[k] = v
+                filtered_stocks = list(trigger_prices.keys())
+                if filtered_stocks:
+                    subscribe_target_stocks(filtered_stocks)
+                    strategy_logger.info(f"重新订阅股票: {', '.join(filtered_stocks[:20])}{'...' if len(filtered_stocks) > 20 else ''}")
+                else:
+                    strategy_logger.info("无可订阅股票")
     except Exception as e:
         strategy_logger.error(f"9:31任务异常: {str(e)}")
 

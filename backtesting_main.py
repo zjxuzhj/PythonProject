@@ -353,8 +353,8 @@ class BacktestingRunner:
         
         print("\n=== 交易统计 ===")
         print(f"总交易次数: {len(trades_df)}")
-        print(f"买入次数: {len(buy_trades)}")
-        print(f"卖出次数: {len(sell_trades)}")
+        # print(f"买入次数: {len(buy_trades)}")
+        # print(f"卖出次数: {len(sell_trades)}")
         
         if len(sell_trades) > 0:
             # 计算盈亏统计
@@ -365,12 +365,14 @@ class BacktestingRunner:
             win_rate = len(win_trades) / len(sell_trades) * 100
             avg_win = win_trades['pnl'].mean() if len(win_trades) > 0 else 0
             avg_loss = lose_trades['pnl'].mean() if len(lose_trades) > 0 else 0
-            
-            print(f"总盈亏: {total_pnl:.2f}")
-            print(f"胜率: {win_rate:.2f}%")
-            print(f"平均盈利: {avg_win:.2f}")
-            print(f"平均亏损: {avg_loss:.2f}")
-            
+            if abs(avg_loss) > 0:
+                profit_loss_ratio = avg_win / abs(avg_loss)
+            else:
+                profit_loss_ratio = np.inf
+            print(f"总盈亏: {total_pnl:.2f}，胜率: {win_rate:.2f}%，盈亏比: {'无穷大' if profit_loss_ratio == np.inf else f'{profit_loss_ratio:.2f}:1'}")
+            # print(f"平均盈利: {avg_win:.2f}")
+            # print(f"平均亏损: {avg_loss:.2f}")
+
             # 按买入时段统计
             if 'buy_time_category' in sell_trades.columns:
                 print("\n=== 按买入时段统计 ===")
@@ -402,12 +404,10 @@ class BacktestingRunner:
             # 计算夏普比率
             annual_volatility = daily_df['returns'].std() * np.sqrt(252)
             sharpe_ratio = (annual_return - self.RISK_FREE_RATE) / annual_volatility if annual_volatility > 0 else 0
-            
+            calmar_ratio = annual_return / abs(max_drawdown)
+
             print(f"\n=== 收益与风险指标 ===")
-            print(f"总收益率: {total_return:.2%}")
-            print(f"年化收益率: {annual_return:.2%}")
-            print(f"最大回撤: {max_drawdown:.2%}")
-            print(f"年化波动率: {annual_volatility:.2%}")
+            print(f"总收益率: {total_return:.2%}，最大回撤: {max_drawdown:.2%},年化收益率: {annual_return:.2%}，卡玛率:{calmar_ratio:.2f}，年化波动率: {annual_volatility:.2%}")
             print(f"夏普比率: {sharpe_ratio:.2f}")
             
             # 与基准比较（如果有基准数据）
@@ -1020,10 +1020,10 @@ def main():
     # 是否生成图表由代码变量控制，不使用命令行参数
     GENERATE_PLOT = True
     # 回测参数
-    START_DATE = "20240704"
-    END_DATE = "20251109"
+    START_DATE = "20250810"
+    END_DATE = "20251030"
     INITIAL_CAPITAL = 200000.0  # 总资产金额
-    MAX_POSITIONS = 5        # 最大持仓数量
+    MAX_POSITIONS = 11   # 最大持仓数量
     POSITION_SIZE_PER_TRADE = 20000  # 保留旧参数兼容（未启用比例制时使用）
     # 交易成本参数（示例配置，执行前设置）
     COMMISSION = 0.0005      # 0.05% 手续费

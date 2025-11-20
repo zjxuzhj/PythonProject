@@ -316,7 +316,7 @@ def main():
         'etf': float(os.environ.get('ALLOC_ETF', '0.5'))
     }
     MAX_POS = {
-        'miniqmt': int(os.environ.get('MAX_POS_MINIQMT', '10')),
+        'miniqmt': int(os.environ.get('MAX_POS_MINIQMT', '5')),
         'etf': int(os.environ.get('MAX_POS_ETF', '1'))
     }
 
