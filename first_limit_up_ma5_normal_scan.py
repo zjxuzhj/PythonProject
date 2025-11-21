@@ -82,7 +82,6 @@ def find_recent_first_limit_up(stock_info: StockInfo, df):
     # start_date = (end_date - pd.offsets.BDay(extended_days)).strftime("%Y%m%d")
     # date_mask = (old_df.index >= start_date) & (old_df.index <= end_date)
     # df = old_df.loc[date_mask].copy()
-
     # 基于交易日索引动态定位：涨停后第2天/第4天对应的涨停日应为 end_date 的前1/3个交易日
     d1 = get_previous_trading_day(df, end_date, 1)
     d3 = get_previous_trading_day(df, end_date, 3)
