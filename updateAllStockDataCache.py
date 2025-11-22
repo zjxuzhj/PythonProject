@@ -32,6 +32,23 @@ def get_stock_prefix(code):
         return f"unknown{code_str}"
 
 
+def compute_up_down_counts(spot_df: pd.DataFrame) -> tuple[int, int]:
+    ret_col = None
+    for c in ["涨跌幅", "涨跌率", "pct_chg", "pct_change", "returns", "change_pct", "return", "ret", "chg_pct"]:
+        if c in spot_df.columns:
+            ret_col = c
+            break
+    if ret_col is None:
+        raise RuntimeError("未找到涨跌幅列")
+    ser = spot_df[ret_col].astype(str).str.replace('%', '', regex=False)
+    ser = pd.to_numeric(ser, errors='coerce')
+    ser = ser.dropna()
+    ser = ser.where(ser.abs() <= 1, ser / 100.0)
+    up_count = int((ser > 0).sum())
+    down_count = int((ser <= 0).sum())
+    return up_count, down_count
+
+
 def update_all_daily_data():
     """
     【核心公共函数】
@@ -57,6 +74,15 @@ def update_all_daily_data():
     except Exception as e:
         print(f"获取akshare实时行情失败: {e}")
         return
+
+    try:
+        print("\n步骤 1.1: 统计当日涨跌家数...")
+        up_count, down_count = compute_up_down_counts(spot_df)
+        print(f"当日涨跌家数统计完成：上涨={up_count} 下跌={down_count}")
+    except Exception as e:
+        print(f"统计涨跌家数失败: {e}")
+        up_count = 0
+        down_count = 0
 
     # 2. 遍历行情，更新本地Parquet数据文件
     print("\n步骤 2/4: 更新本地个股Parquet数据文件...")
@@ -154,6 +180,16 @@ def update_all_daily_data():
                 print("股票市值更新完毕。")
             except Exception as e:
                 print(f"更新股票市值失败: {e}")
+
+    try:
+        print("\n步骤 4/4:同步写入当日市场统计...")
+        from daily_market_stats import update_counts_for_date
+        data_cache_dir = os.path.abspath("data_cache")
+        target_date = datetime.now().date()
+        update_counts_for_date(data_cache_dir, target_date, up_count, down_count, datetime.now())
+        print("市场统计写入完成。")
+    except Exception as e:
+        print(f"写入市场统计失败: {e}")
 
     print("\n" + "=" * 30)
     print(f"所有数据均更新完毕 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

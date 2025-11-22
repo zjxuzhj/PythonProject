@@ -792,10 +792,3 @@ if __name__ == "__main__":
         err_text = traceback.format_exc()
         # 输出到 stderr，让主控能捕获完整堆栈
         sys.stderr.write(err_text + "\n")
-        # 额外落盘到分析目录，方便定位
-        try:
-            os.makedirs('analysis_results', exist_ok=True)
-            with open(os.path.join('analysis_results', 'miniqmt_runner_error.log'), 'a', encoding='utf-8') as f:
-                f.write(err_text + "\n")
-        except Exception:
-            pass
