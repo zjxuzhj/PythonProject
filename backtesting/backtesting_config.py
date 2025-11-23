@@ -64,17 +64,17 @@ class BacktestingConfig:
         
         # ==================== 数据配置 ====================
         # 股票池文件路径
-        self.STOCK_POOL_FILE = 'all_targets_cache_5.csv'
+        self.STOCK_POOL_FILE = '../all_targets_cache_5.csv'
         
         # 数据缓存目录
-        self.DATA_CACHE_DIR = 'data_cache'
+        self.DATA_CACHE_DIR = '../data_cache'
         
         # 是否使用缓存
         self.USE_CACHE = True
         
         # ==================== 输出配置 ====================
         # 结果输出目录
-        self.OUTPUT_DIR = 'backtesting_results'
+        self.OUTPUT_DIR = '../backtesting_results'
         
         # 是否保存交易记录
         self.SAVE_TRADES = True

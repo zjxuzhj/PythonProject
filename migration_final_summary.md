@@ -98,15 +98,16 @@
 ## 使用指南
 
 ### 快速开始
+
 ```python
-from backtesting_main import BacktestingRunner
+from backtesting.backtesting_main import BacktestingRunner
 
 # 创建回测实例
 runner = BacktestingRunner(
-    start_date="20250815",
-    end_date="20250820",
-    initial_capital=100000.0,
-    position_size=10000.0
+   start_date="20250815",
+   end_date="20250820",
+   initial_capital=100000.0,
+   position_size=10000.0
 )
 
 # 运行回测
@@ -114,8 +115,9 @@ results = runner.run()
 ```
 
 ### 配置调整
+
 ```python
-from backtesting_config import BacktestingConfig
+from backtesting.backtesting_config import BacktestingConfig
 
 # 自定义配置
 config = BacktestingConfig()

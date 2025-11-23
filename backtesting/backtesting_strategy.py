@@ -73,7 +73,7 @@ class FirstLimitUpStrategy(Strategy):
     def load_scan_cache(self):
         """加载扫描缓存"""
         try:
-            cache_file = 'all_targets_cache_5.csv'
+            cache_file = '../all_targets_cache_5.csv'
             if os.path.exists(cache_file):
                 self.scan_cache_df = pd.read_csv(cache_file)
                 self.logger.info(f"加载扫描缓存成功，共 {len(self.scan_cache_df)} 条记录")
@@ -111,7 +111,7 @@ class FirstLimitUpStrategy(Strategy):
                     self.scan_cache_df = pd.concat([self.scan_cache_df, new_data], ignore_index=True)
                     
                     # 保存到文件
-                    cache_file = 'all_targets_cache_5.csv'
+                    cache_file = '../all_targets_cache_5.csv'
                     self.scan_cache_df.to_csv(cache_file, index=False)
                     
                     return target_stocks

@@ -37,7 +37,7 @@ class DataManager:
         self.query_tool = getAllStockCsv.StockQuery()
         
         # 扫描缓存相关
-        self.cache_path = getattr(config, 'SCAN_CACHE_FILE', 'all_targets_cache_5.csv')
+        self.cache_path = getattr(config, 'SCAN_CACHE_FILE', '../all_targets_cache_5.csv')
         self.scan_cache_df = None
         self.load_scan_cache()
         
