@@ -9,8 +9,8 @@ import re
 
 class StockQuery:
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    CSV_PATH = os.path.join(root_dir, "output", "stock_code_name.csv")
-    REPORT_CSV_PATH = os.path.join(root_dir, "output", "merged_report_2024Q3.csv")
+    CSV_PATH = os.path.join(root_dir, "reference_data", "stock_code_name.csv")
+    REPORT_CSV_PATH = os.path.join(root_dir, "reference_data", "merged_report_2024Q3.csv")
     POSITION_CSV_PATH = os.path.join(root_dir, "output", "position_report.csv")
 
     def load_position_csv(filepath):
@@ -323,7 +323,7 @@ class StockQuery:
             merged_df = merged_df[required_columns]
 
             # 保存结果
-            merged_df.to_csv("output/merged_report_2024Q3.csv", index=False)
+            merged_df.to_csv(self.REPORT_CSV_PATH, index=False)
         except Exception as e:
             print(f"接口调用失败: {str(e)}")
 
