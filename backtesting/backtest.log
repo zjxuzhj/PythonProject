@@ -809,3 +809,8 @@
 2025-11-20 16:16:15,357 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-20 16:16:58,554 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-20 16:17:41,809 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-23 22:48:12,188 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-23 22:48:32,252 - ERROR - 保存结果失败: Cannot save file into a non-existent directory: 'backtesting'
+2025-11-23 22:49:15,697 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-23 22:49:24,275 - ERROR - 保存结果失败: Cannot save file into a non-existent directory: 'backtesting'
+2025-11-23 22:57:51,718 - INFO - 回测初始化完成: 20250810 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both

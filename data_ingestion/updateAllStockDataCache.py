@@ -6,7 +6,7 @@ import akshare as ak
 import pandas as pd
 
 import getAllStockCsv
-import http_util
+from data_ingestion import http_util
 
 # ----------------- 全局对象初始化 -----------------
 # 这些对象在模块加载时创建，可以被后续的所有函数共享

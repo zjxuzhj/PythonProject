@@ -45,7 +45,7 @@ def save_trigger_prices_to_csv(trigger_prices,isAllRefresh=False):
     """将全局trigger_prices数据保存到CSV文件"""
     try:
         today_str = datetime.now().strftime('%Y-%m-%d')
-        filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
+        filename = os.path.join("miniqmt_etf", f"trigger_prices_{today_str}.csv")
 
         # 转换数据结构为DataFrame
         all_data = []
@@ -95,7 +95,7 @@ def load_trigger_prices_from_csv(date_str=None):
         date_str = datetime.now().strftime('%Y-%m-%d')
 
     try:
-        filename = os.path.join("output", f"trigger_prices_{date_str}.csv")
+        filename = os.path.join("miniqmt_etf", f"trigger_prices_{date_str}.csv")
         if not os.path.exists(filename):
             print(f"⚠未找到{date_str}的触发价格记录")
             return None

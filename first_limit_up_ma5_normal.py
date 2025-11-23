@@ -15,13 +15,12 @@ from common_sell_logic import get_sell_decision, MarketDataContext
 from first_limit_up_ma5_normal_util import simulate_ma5_order_prices
 from stock_info import StockInfo
 from first_limit_up_ma5_normal_strategy_rules import RuleEnum
-from typing import List
 import logging
 
 # 原有 TradingCalendarUtil 依赖已移除，改为使用本地数据直接判断交易日
 
 # ====================== 排除规则管理（单例） ======================
-from stock_exclusion_manager import StockExclusionManager
+from config.stock_exclusion_manager import StockExclusionManager
 
 
 # StockExclusionManager 已迁移至独立模块 stock_exclusion_manager.py

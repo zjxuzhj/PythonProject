@@ -3,11 +3,10 @@ import sys
 from datetime import datetime, time
 
 import pandas as pd
-import numpy as np
 import first_limit_up_ma5_normal as normal
 import getAllStockCsv
 from first_limit_up_ma5_normal import StrategyConfig
-from stock_exclusion_manager import StockExclusionManager
+from config.stock_exclusion_manager import StockExclusionManager
 from stock_info import StockInfo
 
 query_tool = getAllStockCsv.StockQuery()

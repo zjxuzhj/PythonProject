@@ -800,22 +800,29 @@ class BacktestingRunner:
     def save_results(self):
         """保存回测结果"""
         try:
+            import os
+            from pathlib import Path
+            out_dir = Path(__file__).resolve().parent
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
             # 保存交易记录
             if self.trade_log:
                 trades_df = pd.DataFrame(self.trade_log)
-                trades_df.to_csv('backtesting/trade_log.csv', index=False, encoding='utf-8')
+                trades_df.to_csv(str(out_dir / 'trade_log.csv'), index=False, encoding='utf-8')
                 print(f"交易记录已保存到 trade_log.csv")
             
             # 保存每日价值
             if self.daily_values:
                 daily_df = pd.DataFrame(self.daily_values)
-                daily_df.to_csv('backtesting/daily_values.csv', index=False, encoding='utf-8')
+                daily_df.to_csv(str(out_dir / 'daily_values.csv'), index=False, encoding='utf-8')
                 print(f"每日价值已保存到 daily_values.csv")
             
             # 保存调仓日志
             if hasattr(self, 'rebalancing_log') and self.rebalancing_log:
                 reb_df = pd.DataFrame(self.rebalancing_log)
-                reb_df.to_csv('backtesting/rebalancing_log.csv', index=False, encoding='utf-8')
+                reb_df.to_csv(str(out_dir / 'rebalancing_log.csv'), index=False, encoding='utf-8')
                 print(f"调仓日志已保存到 rebalancing_log.csv")
             
         except Exception as e:
@@ -979,7 +986,7 @@ class BacktestingRunner:
 
             # 解析输出格式与目录
             fmt = 'png'
-            out_dir = os.path.join('../results')
+            out_dir = os.path.join('results')
             if output_path:
                 # 若传入文件路径，使用其扩展名；若为目录，使用该目录
                 base, ext = os.path.splitext(output_path)

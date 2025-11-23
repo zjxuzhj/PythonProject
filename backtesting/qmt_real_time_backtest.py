@@ -34,7 +34,7 @@ class Backtester:
         self.RISK_FREE_RATE = 0.02  # 无风险利率，用于计算夏普比率 (年化)
 
         # 单一缓存文件设置
-        self.cache_path = '../all_targets_cache_5.csv'
+        self.cache_path = 'all_targets_cache_5.csv'
         self.load_scan_cache()
 
         # 投资组合状态

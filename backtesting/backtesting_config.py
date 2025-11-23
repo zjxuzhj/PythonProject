@@ -64,7 +64,7 @@ class BacktestingConfig:
         
         # ==================== 数据配置 ====================
         # 股票池文件路径
-        self.STOCK_POOL_FILE = '../all_targets_cache_5.csv'
+        self.STOCK_POOL_FILE = 'all_targets_cache_5.csv'
         
         # 数据缓存目录
         self.DATA_CACHE_DIR = '../data_cache'

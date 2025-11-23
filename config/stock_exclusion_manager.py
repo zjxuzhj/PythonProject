@@ -152,7 +152,7 @@ class StockExclusionManager:
     def _select_config_file(self, user_path: Optional[str]) -> Optional[str]:
         if user_path:
             return user_path
-        yaml_path = os.path.join("config", "stock_exclusions.yaml")
+        yaml_path = os.path.join("", "stock_exclusions.yaml")
         if _YAML_AVAILABLE:
             # 优先使用 YAML（可读性与注释支持更好）
             if os.path.exists(yaml_path):

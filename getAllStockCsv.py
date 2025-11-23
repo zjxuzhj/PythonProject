@@ -11,7 +11,7 @@ class StockQuery:
     root_dir = os.path.dirname(os.path.abspath(__file__))
     CSV_PATH = os.path.join(root_dir, "reference_data", "stock_code_name.csv")
     REPORT_CSV_PATH = os.path.join(root_dir, "reference_data", "merged_report_2024Q3.csv")
-    POSITION_CSV_PATH = os.path.join(root_dir, "output", "position_report.csv")
+    POSITION_CSV_PATH = os.path.join(root_dir, "reference_data", "position_report.csv")
 
     def load_position_csv(filepath):
         """
