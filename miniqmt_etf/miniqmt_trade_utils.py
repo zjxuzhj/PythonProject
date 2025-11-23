@@ -119,3 +119,4 @@ def load_trigger_prices_from_csv(date_str=None):
     except Exception as e:
         print(f"加载触发价格失败: {str(e)}")
         return None
+import os

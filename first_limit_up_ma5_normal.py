@@ -129,14 +129,14 @@ def get_stock_data(symbol, config: StrategyConfig):
     file_path = os.path.join(cache_dir, f"stock_{symbol}_{date_str}.parquet")
     if not os.path.exists(file_path):
         print(f"数据文件未找到: {symbol} at {file_path}")
-        return None
+        return pd.DataFrame(), False
     try:
         df = pd.read_parquet(file_path, engine='fastparquet')
         print(f"已从缓存加载数据: {symbol}")
         return df, True
     except Exception as e:
         print(f"读取缓存文件失败 {file_path}: {e}")
-        return None
+        return pd.DataFrame(), False
 
 
 def get_market_type(symbol: str) -> str:

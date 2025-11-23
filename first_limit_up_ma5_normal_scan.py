@@ -25,7 +25,7 @@ def get_stock_data(symbol, isNeedLog):
         except Exception as e:
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
     print(f"数据获取失败：{symbol}")
-    return pd.DataFrame()
+    return pd.DataFrame(), False
 
 
 def get_previous_trading_day(df: pd.DataFrame, end_date, n: int = 1):

@@ -16,10 +16,10 @@ import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools
 from common_sell_logic import get_sell_decision, MarketDataContext, SellStrategyConfig
 from first_limit_up_ma5_normal import StrategyConfig
-from miniqmt_callback import MyXtQuantTraderCallback
-from miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5, get_stock_data_not_today
-from miniqmt_logging_utils import setup_logger
-from miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
+from miniqmt_etf.miniqmt_callback import MyXtQuantTraderCallback
+from miniqmt_etf.miniqmt_data_utils import get_stock_data, get_ma5_price, modify_last_days_and_calc_ma5, get_stock_data_not_today
+from miniqmt_etf.miniqmt_logging_utils import setup_logger
+from miniqmt_etf.miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
     load_force_sell_list, save_force_sell_list
 from stock_info import StockInfo
 

@@ -455,3 +455,11 @@ class ETFMomentumCore:
                   f"{data['score']:<8.4f} {data['annualized_returns']:<10.2%} "
                   f"{data['r2']:<8.4f} {data['current_price']:<8.2f} {data['data_points']}")
         print(f"{'=' * 75}\n")
+"""
+ETF动量轮动策略核心模块
+统一的ETF池配置和动量计算方法，供回测和实盘策略共享使用
+"""
+import math
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta

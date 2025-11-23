@@ -87,3 +87,4 @@ class MyXtQuantTraderCallback(XtQuantTraderCallback):
 
     def on_account_status(self, status):
         print(datetime.now(), sys._getframe().f_code.co_name)
+import datetime

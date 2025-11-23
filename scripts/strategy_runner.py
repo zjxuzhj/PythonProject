@@ -212,8 +212,8 @@ class StrategyRunner:
 
         # strategy -> script mapping (local project paths)
         self.scripts = {
-            'miniqmt': os.path.join(ROOT, 'miniqmt_base.py'),
-            'etf': os.path.join(ROOT, 'etf_momentum_rotation_qmt.py')
+            'miniqmt': os.path.join(ROOT, 'miniqmt_etf', 'miniqmt_base.py'),
+            'etf': os.path.join(ROOT, 'miniqmt_etf', 'etf_momentum_rotation_qmt.py')
         }
 
     def prepare_and_start(self):

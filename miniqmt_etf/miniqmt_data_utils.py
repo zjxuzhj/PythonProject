@@ -48,7 +48,7 @@ def get_stock_data(symbol, isNeedLog):
             print(f"缓存读取失败：{e}（建议删除损坏文件：{cache_path}）")
 
     print(f"数据获取失败：{symbol}")
-    return pd.DataFrame()
+    return pd.DataFrame(), False
 
 def get_ma5_price(stock_code, current_date=None, current_price=None):
     """
@@ -109,5 +109,8 @@ def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
         window=5, min_periods=1
     ).mean().round(2)
     return modified_df
+
+
+import pandas as pd
 
 

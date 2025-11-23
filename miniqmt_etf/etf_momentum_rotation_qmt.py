@@ -19,9 +19,9 @@ from xtquant.xttype import StockAccount
 
 import getAllStockCsv as tools
 import updateAllStockDataCache as data_updater
-from etf_momentum_core import ETFMomentumCore
-from miniqmt_callback import MyXtQuantTraderCallback
-from miniqmt_logging_utils import setup_logger
+from miniqmt_etf.etf_momentum_core import ETFMomentumCore
+from miniqmt_etf.miniqmt_callback import MyXtQuantTraderCallback
+from miniqmt_etf.miniqmt_logging_utils import setup_logger
 import os
 
 # ====== 全局配置 ======
@@ -261,7 +261,7 @@ class ETFMomentumStrategy:
 def download_daily_data():
     """下载ETF池中所有证券的最新日线数据"""
     try:
-        from etf_momentum_core import ETFMomentumCore
+        from miniqmt_etf.etf_momentum_core import ETFMomentumCore
         core = ETFMomentumCore()
 
         today_str = datetime.now().strftime('%Y%m%d')

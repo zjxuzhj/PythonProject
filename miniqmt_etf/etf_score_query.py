@@ -5,7 +5,7 @@ ETF动量分值查询类
 """
 
 from datetime import datetime
-from etf_momentum_core import ETFMomentumCore
+from miniqmt_etf.etf_momentum_core import ETFMomentumCore
 import getAllStockCsv as tools
 
 
