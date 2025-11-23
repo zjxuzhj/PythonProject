@@ -154,6 +154,6 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("任务完成！")
     print(f"下载成功: {success_count}/{len(ETF_POOL)}")
-
+    
     success_verify = sum(1 for r in verification_results if r['status'] == 'success')
     print(f"验证成功: {success_verify}/{len(ETF_POOL)}")

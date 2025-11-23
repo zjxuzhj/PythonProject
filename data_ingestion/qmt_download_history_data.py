@@ -25,7 +25,7 @@ query_tool = getAllStockCsv.StockQuery()
 #     period="1d",           # 1分钟周期
 #     start_time=start_date,
 #     end_time=end_date,
-#     callback=lambda data: print(f"进度: {data['finished']}/{data['total']} {data['stockcode']}"),  # 进度回调
+#     callback=lambda data: print(f"进度: {data['finished']}/{data['total']} {data['stockcode']}") ,  # 进度回调
 #     incrementally=False    # 全量下载(非增量)
 # )
 #
