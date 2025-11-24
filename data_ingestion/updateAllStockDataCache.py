@@ -118,8 +118,8 @@ def update_all_daily_data():
         try:
             symbol = str(row['代码'])
 
-            # 确保文件夹存在
-            cache_dir = "data_cache"
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            cache_dir = os.path.join(base_dir, "data_cache")
             os.makedirs(cache_dir, exist_ok=True)
 
             if len(symbol) > 7:
@@ -128,18 +128,11 @@ def update_all_daily_data():
                 file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
             cache_path = os.path.join(cache_dir, file_name)
 
-            # 1. 在读取前，先检查文件是否存在
-            if not os.path.exists(cache_path):
-                # 2. 如果文件不存在，跳过此股票的后续所有处理
-                # print(f"文件 {cache_path} 不存在，跳过。") # (可选：取消注释以查看跳过了哪些)
-                continue
-
             try:
                 df = pd.read_parquet(cache_path, engine='fastparquet')
                 if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
                     df = df.set_index('date')
             except FileNotFoundError:
-                # 如果文件不存在，创建一个空的DataFrame，后续逻辑会新增行
                 df = pd.DataFrame()
 
             today_str = datetime.now().strftime("%Y-%m-%d")
@@ -211,7 +204,8 @@ def update_all_daily_data():
     try:
         print("\n步骤 4/4:同步写入当日市场统计...")
         dms = _import_daily_market_stats()
-        data_cache_dir = os.path.abspath("data_cache")
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        data_cache_dir = os.path.join(base_dir, "data_cache")
         target_date = datetime.now().date()
         dms.update_counts_for_date(data_cache_dir, target_date, up_count, down_count, datetime.now())
         print("市场统计写入完成。")
