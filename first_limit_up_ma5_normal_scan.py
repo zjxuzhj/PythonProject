@@ -14,7 +14,8 @@ query_tool = getAllStockCsv.StockQuery()
 
 def get_stock_data(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+    root_dir = os.path.abspath(os.path.dirname(__file__))
+    cache_path = os.path.join(root_dir, "data_cache", file_name)
     if os.path.exists(cache_path):
         try:
             df = pd.read_parquet(cache_path, engine='fastparquet')
@@ -130,7 +131,8 @@ def get_target_stocks(isNeedLog=True, target_date=None):
         # --- 实时模式下的缓存逻辑 ---
         today = datetime.now().date()
         today_str = today.strftime('%Y-%m-%d')
-        base_path, file_path = "output", os.path.join("output", "target_stocks_daily.csv")
+        base_path = os.path.join(os.path.dirname(__file__), "miniqmt_etf", "output")
+        file_path = os.path.join(base_path, "target_stocks_daily.csv")
         current_datetime, current_time = datetime.now(), datetime.now().time()
 
         if os.path.exists(file_path) and time(9, 20) <= current_time <= time(15, 0):
@@ -273,8 +275,10 @@ def get_target_stocks(isNeedLog=True, target_date=None):
     return target_stocks_list, fourth_day_stocks_list
 
 
-def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, base_path="output"):
+def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, base_path=None):
     """保存目标股票列表到CSV文件（股票代码按数字部分升序排序）"""
+    if base_path is None:
+        base_path = os.path.join(os.path.dirname(__file__), "miniqmt_etf", "output")
     os.makedirs(base_path, exist_ok=True)
     file_path = os.path.join(base_path, "target_stocks_daily.csv")
     current_date = datetime.now().strftime('%Y-%m-%d %H:%M')

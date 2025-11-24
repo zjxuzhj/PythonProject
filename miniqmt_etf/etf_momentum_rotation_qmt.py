@@ -17,8 +17,12 @@ from xtquant import xtconstant, xtdata
 from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
 
+import sys as _sys, os as _os
+_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..'))
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
 import getAllStockCsv as tools
-import updateAllStockDataCache as data_updater
+from data_ingestion import updateAllStockDataCache as data_updater
 from miniqmt_etf.etf_momentum_core import ETFMomentumCore
 from miniqmt_etf.miniqmt_callback import MyXtQuantTraderCallback
 from miniqmt_etf.miniqmt_logging_utils import setup_logger

@@ -147,6 +147,11 @@ class StrategyProcess:
 
     def start(self):
         cmd = [PYTHON, '-u', self.script_path]
+        out_dir = os.path.dirname(self.stdout_path)
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception:
+            pass
         out_f = open(self.stdout_path, 'a', encoding='utf-8')
         err_f = open(self.stderr_path, 'a', encoding='utf-8')
         # 强制子进程 stdout/stderr 使用 UTF-8，避免中文乱码
@@ -320,7 +325,8 @@ def main():
         'etf': int(os.environ.get('MAX_POS_ETF', '1'))
     }
 
-    runner = StrategyRunner(TOTAL_CAPITAL, ALLOC, MAX_POS, work_dir=ROOT)
+    scripts_dir = os.path.abspath(os.path.dirname(__file__))
+    runner = StrategyRunner(TOTAL_CAPITAL, ALLOC, MAX_POS, work_dir=scripts_dir)
     try:
         runner.prepare_and_start()
 

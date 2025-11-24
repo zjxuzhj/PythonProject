@@ -8,7 +8,8 @@ import getAllStockCsv as tools
 # 获得今天以前的数据
 def get_stock_data_not_today(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    cache_path = os.path.join(root_dir, "data_cache", file_name)
 
     if os.path.exists(cache_path):
         try:
@@ -36,7 +37,8 @@ def get_stock_data_not_today(symbol, isNeedLog):
 
 def get_stock_data(symbol, isNeedLog):
     file_name = f"stock_{symbol}_20240201.parquet"
-    cache_path = os.path.join("data_cache", file_name)
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    cache_path = os.path.join(root_dir, "data_cache", file_name)
 
     if os.path.exists(cache_path):
         try:

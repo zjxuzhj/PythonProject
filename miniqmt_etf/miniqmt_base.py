@@ -11,6 +11,11 @@ from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount
 
+import os as _os, sys as _sys
+_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..'))
+if _root not in _sys.path:
+    _sys.path.insert(0, _root)
+
 import first_limit_up_ma5_normal as normal
 import first_limit_up_ma5_normal_scan as scan
 import getAllStockCsv as tools

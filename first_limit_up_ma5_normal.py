@@ -125,7 +125,8 @@ def get_stock_data(symbol, config: StrategyConfig):
     """带本地缓存的数据获取"""
     date_str = "20190101" if config.USE_2019_DATA else "20240201"
     cache_dir = "back_test_data_cache" if config.USE_2019_DATA else "data_cache"
-    file_path = os.path.join(cache_dir, f"stock_{symbol}_{date_str}.parquet")
+    root_dir = os.path.abspath(os.path.dirname(__file__))
+    file_path = os.path.join(root_dir, cache_dir, f"stock_{symbol}_{date_str}.parquet")
     if not os.path.exists(file_path):
         print(f"数据文件未找到: {symbol} at {file_path}")
         return pd.DataFrame(), False
