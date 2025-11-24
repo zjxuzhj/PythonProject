@@ -327,11 +327,11 @@ def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, b
 
 if __name__ == '__main__':
     # 获取目标股票列表
-    target_stocks, fourth_day_stocks = get_target_stocks()
+    # target_stocks, fourth_day_stocks = get_target_stocks()
 
     # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
-    # target_date = "20250915"
-    # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
+    target_date = "20251124"
+    target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
     for stock in target_stocks:
