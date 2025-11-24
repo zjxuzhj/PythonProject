@@ -7,6 +7,9 @@ import pandas as pd
 
 import getAllStockCsv
 from data_ingestion import http_util
+import importlib
+import importlib.util
+from typing import Any
 
 # ----------------- 全局对象初始化 -----------------
 # 这些对象在模块加载时创建，可以被后续的所有函数共享
@@ -47,6 +50,30 @@ def compute_up_down_counts(spot_df: pd.DataFrame) -> tuple[int, int]:
     up_count = int((ser > 0).sum())
     down_count = int((ser <= 0).sum())
     return up_count, down_count
+
+
+def _import_daily_market_stats() -> Any:
+    """优先使用绝对导入方式加载统计模块，避免相对路径与循环依赖问题"""
+    try:
+        # 首选尝试包式绝对导入（若存在 statistics 包结构）
+        from statistics import daily_market_stats as dms  # type: ignore
+        if hasattr(dms, "update_counts_for_date"):
+            return dms
+    except Exception:
+        pass
+    # 兜底：使用 importlib 通过绝对文件路径加载，避免命名与标准库 statistics 冲突
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    mod_path = os.path.join(base_dir, "statistics", "daily_market_stats.py")
+    if not os.path.exists(mod_path):
+        raise ImportError(f"统计模块未找到: {mod_path}")
+    spec = importlib.util.spec_from_file_location("project_statistics_daily_market_stats", mod_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("无法构建统计模块加载规格")
+    dms = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dms)
+    if not hasattr(dms, "update_counts_for_date"):
+        raise ImportError("统计模块缺少 update_counts_for_date 导出")
+    return dms
 
 
 def update_all_daily_data():
@@ -183,10 +210,10 @@ def update_all_daily_data():
 
     try:
         print("\n步骤 4/4:同步写入当日市场统计...")
-        from daily_market_stats import update_counts_for_date
+        dms = _import_daily_market_stats()
         data_cache_dir = os.path.abspath("data_cache")
         target_date = datetime.now().date()
-        update_counts_for_date(data_cache_dir, target_date, up_count, down_count, datetime.now())
+        dms.update_counts_for_date(data_cache_dir, target_date, up_count, down_count, datetime.now())
         print("市场统计写入完成。")
     except Exception as e:
         print(f"写入市场统计失败: {e}")
