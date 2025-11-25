@@ -69,8 +69,9 @@ class BacktestingRunner:
         self.LIMIT_RATE = 0.10
         self.BENCHMARK_TICKER = "000300.SH"
         self.RISK_FREE_RATE = 0.03
-        self.BUY_CUTOFF_TIME = time(14, 45)
-        
+        # self.BUY_CUTOFF_TIME = time(14, 45)
+        self.BUY_CUTOFF_TIME = time(15, 00)
+
         # 参数验证
         if initial_capital is None or float(initial_capital) <= 0:
             raise ValueError("初始资金必须为正数")
@@ -1027,10 +1028,10 @@ def main():
     # 是否生成图表由代码变量控制，不使用命令行参数
     GENERATE_PLOT = True
     # 回测参数
-    START_DATE = "20250810"
-    END_DATE = "20251030"
+    START_DATE = "20240704"
+    END_DATE = "20250101"
     INITIAL_CAPITAL = 200000.0  # 总资产金额
-    MAX_POSITIONS = 11   # 最大持仓数量
+    MAX_POSITIONS = 5    # 最大持仓数量
     POSITION_SIZE_PER_TRADE = 20000  # 保留旧参数兼容（未启用比例制时使用）
     # 交易成本参数（示例配置，执行前设置）
     COMMISSION = 0.0005      # 0.05% 手续费

@@ -252,7 +252,7 @@ class BacktestingAnalyzer:
         """创建性能图表"""
         try:
             if save_dir is None:
-                save_dir = self.config.OUTPUT_DIR if self.config else 'backtesting_results'
+                save_dir = self.config.OUTPUT_DIR if self.config else 'results'
             
             os.makedirs(save_dir, exist_ok=True)
             
@@ -476,7 +476,7 @@ class BacktestingAnalyzer:
         try:
             if save_path is None:
                 save_path = os.path.join(
-                    self.config.OUTPUT_DIR if self.config else 'backtesting_results',
+                    self.config.OUTPUT_DIR if self.config else 'results',
                     'analysis_report.txt'
                 )
             

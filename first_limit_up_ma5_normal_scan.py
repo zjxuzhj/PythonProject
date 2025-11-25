@@ -137,13 +137,15 @@ def get_target_stocks(isNeedLog=True, target_date=None):
 
         if os.path.exists(file_path) and time(9, 20) <= current_time <= time(15, 0):
             existing_df = pd.read_csv(file_path)
-            existing_dates = existing_df['日期'].apply(lambda x: x.split()[0])
+            existing_dates = existing_df['日期'].apply(lambda x: str(x).split()[0] if pd.notna(x) and str(x).strip() else '')
             if today_str in existing_dates.values:
                 latest_today_record = existing_df[existing_dates == today_str].iloc[-1]
-                target_stocks = latest_today_record['目标股票'].split(',') if latest_today_record[
-                                                                                  '目标股票'] != '无' else []
-                fourth_day_stocks = latest_today_record['第四天股票'].split(',') if latest_today_record[
-                                                                                        '第四天股票'] != '无' else []
+                ts_val = latest_today_record['目标股票'] if '目标股票' in latest_today_record else ''
+                fd_val = latest_today_record['第四天股票'] if '第四天股票' in latest_today_record else ''
+                ts_str = str(ts_val) if pd.notna(ts_val) else ''
+                fd_str = str(fd_val) if pd.notna(fd_val) else ''
+                target_stocks = [] if ts_str.strip() in ['', '无', 'nan'] else [s for s in ts_str.split(',') if s]
+                fourth_day_stocks = [] if fd_str.strip() in ['', '无', 'nan'] else [s for s in fd_str.split(',') if s]
                 print(f"交易时段内，直接从缓存文件读取当日数据: {len(target_stocks)}只股票")
                 return target_stocks, fourth_day_stocks
         # --- 缓存逻辑结束 ---
@@ -327,11 +329,11 @@ def save_target_stocks(target_stocks, excluded_stocks, fourth_day_stocks=None, b
 
 if __name__ == '__main__':
     # 获取目标股票列表
-    # target_stocks, fourth_day_stocks = get_target_stocks()
+    target_stocks, fourth_day_stocks = get_target_stocks()
 
     # 填入的指定日期是当天收盘的日期，如果需要明天的买入列表就填前一日的日期
-    target_date = "20251124"
-    target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
+    # target_date = "20251124"
+    # target_stocks, fourth_day_stocks = get_target_stocks(target_date=target_date)
 
     # 打印结果    print("\n目标股票列表:")
     for stock in target_stocks:

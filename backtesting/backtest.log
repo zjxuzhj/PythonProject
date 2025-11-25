@@ -818,3 +818,16 @@
 2025-11-24 10:25:19,407 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-24 10:41:32,613 - INFO - 回测初始化完成: 20250501 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
 2025-11-24 10:45:30,090 - INFO - 回测初始化完成: 20250501 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 08:49:51,836 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 08:55:23,260 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:07:29,121 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:09:32,685 - ERROR - 保存结果失败: [Errno 13] Permission denied: 'C:\\Users\\melot\\PycharmProjects\\PythonProject\\backtesting\\trade_log.csv'
+2025-11-25 10:13:40,788 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:29:09,527 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:33:46,394 - INFO - 回测初始化完成: 20240704 - 20251030, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:37:40,559 - INFO - 回测初始化完成: 20250101 - 20251101, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 10:43:18,585 - INFO - 回测初始化完成: 20250101 - 20251101, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 11:15:03,424 - INFO - 回测初始化完成: 20250101 - 20251101, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 11:18:11,790 - INFO - 回测初始化完成: 20250101 - 20251101, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 12:32:07,294 - INFO - 回测初始化完成: 20250201 - 20250430, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both
+2025-11-25 14:11:42,399 - INFO - 回测初始化完成: 20240704 - 20250101, 初始资金: 200000.0; commission=0.0005, min_commission=5.0, slippage=0.001, mode=both

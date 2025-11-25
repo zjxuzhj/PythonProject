@@ -74,7 +74,7 @@ class BacktestingConfig:
         
         # ==================== 输出配置 ====================
         # 结果输出目录
-        self.OUTPUT_DIR = 'backtesting_results'
+        self.OUTPUT_DIR = 'results'
         
         # 是否保存交易记录
         self.SAVE_TRADES = True
