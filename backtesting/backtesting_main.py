@@ -1029,7 +1029,7 @@ def main():
     GENERATE_PLOT = True
     # 回测参数
     START_DATE = "20240704"
-    END_DATE = "20250101"
+    END_DATE = "20251031"
     INITIAL_CAPITAL = 200000.0  # 总资产金额
     MAX_POSITIONS = 5    # 最大持仓数量
     POSITION_SIZE_PER_TRADE = 20000  # 保留旧参数兼容（未启用比例制时使用）
