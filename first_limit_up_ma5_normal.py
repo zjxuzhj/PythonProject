@@ -1114,7 +1114,7 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
         if lowest_low_30d > 0:
             gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
             if 0.4 > gain_from_low > 0.35:
-                return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
+                return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT_20
 
         # 新策略开头对齐位置---------------------------------------------------
     # 二日专有策略结束 --------------------------------------------------------
@@ -1402,19 +1402,19 @@ def is_valid_buy_opportunity(stock_info: StockInfo, df: pd.DataFrame, limit_up_d
                 # print(f"[{code}] 在 {day_plus_3_day_date.date()} 出现高波动十字星，排除。")
                 return RuleEnum.EXHAUSTION_CANDLE_ON_T3
 
-        # 买前条件21：30日最低点在T+1日收阳线中
+        # 30天内已经从最低点反弹了36%到70%，但在此时此刻却没有任何均线支撑或均线粘合形态作为保护，那么就放弃买入
         if limit_up_day_idx >= 30:
             pre_limit_up_window = df.iloc[limit_up_day_idx - 30: limit_up_day_idx]
             lowest_low_30d = pre_limit_up_window['close'].min()
             price_before_limit_up = close_m1
             if lowest_low_30d > 0:
                 gain_from_low = (price_before_limit_up - lowest_low_30d) / lowest_low_30d
-                if (0.7 > gain_from_low > 0.3
+                if (0.70 > gain_from_low > 0.36
                         and not checker.is_120_p0m1m2_support()
                         and not checker.is_10_p1p2p3_support()
                         and not checker.is_120250_m1_nian_he()
                         and not checker.is_55120_m1_nian_he()):
-                    return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT
+                    return RuleEnum.EXCESSIVE_GAIN_FROM_LOW_POINT_30
 
         upper_shadow_p2 = high_p2 - close_p2
         candle_body_p2 = abs(open_p2 - close_p2)

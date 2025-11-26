@@ -102,15 +102,6 @@ def update_all_daily_data():
         print(f"获取akshare实时行情失败: {e}")
         return
 
-    try:
-        print("\n步骤 1.1: 统计当日涨跌家数...")
-        up_count, down_count = compute_up_down_counts(spot_df)
-        print(f"当日涨跌家数统计完成：上涨={up_count} 下跌={down_count}")
-    except Exception as e:
-        print(f"统计涨跌家数失败: {e}")
-        up_count = 0
-        down_count = 0
-
     # 2. 遍历行情，更新本地Parquet数据文件
     print("\n步骤 2/4: 更新本地个股Parquet数据文件...")
     total = len(spot_df)
@@ -201,8 +192,11 @@ def update_all_daily_data():
             except Exception as e:
                 print(f"更新股票市值失败: {e}")
 
+    # 5. 更新市场涨跌统计
     try:
         print("\n步骤 4/4:同步写入当日市场统计...")
+        up_count, down_count = compute_up_down_counts(spot_df)
+        print(f"当日涨跌家数统计完成：上涨={up_count} 下跌={down_count}")
         dms = _import_daily_market_stats()
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         data_cache_dir = os.path.join(base_dir, "data_cache")

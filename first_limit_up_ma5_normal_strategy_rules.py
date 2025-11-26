@@ -115,8 +115,13 @@ class RuleEnum(Enum):
         "涨停日或次日成交量，是过去120日内最大成交量的4倍以上，可能为出货天量"
     )
 
-    EXCESSIVE_GAIN_FROM_LOW_POINT = (
-        "涨停前30日内从最低点上涨超过30%",
+    EXCESSIVE_GAIN_FROM_LOW_POINT_30 = (
+        "涨停前30日内从最低点上涨超过36%到70%",
+        "量价",
+        "短期波段涨幅过大，追高风险高。")
+
+    EXCESSIVE_GAIN_FROM_LOW_POINT_20 = (
+        "涨停前20日内从最低点上涨超过35%到40%",
         "量价",
         "短期波段涨幅过大，追高风险高。")
 
