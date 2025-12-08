@@ -1,6 +1,8 @@
 import os
 import time
 from datetime import datetime
+from pathlib import Path
+
 import pandas as pd
 import xtquant.xtdata as xtdata
 import getAllStockCsv
@@ -19,6 +21,19 @@ def get_stock_prefix(code):
     else:
         return f"unknown{code_str}"
 
+
+def get_project_root() -> Path:
+    # 从当前脚本的绝对路径开始
+    current_path = Path(__file__).resolve()
+
+    # 遍历当前目录及其所有父目录
+    for parent in [current_path] + list(current_path.parents):
+        # 核心逻辑：如果在这个目录下发现了 .git 文件夹 或者 requirements.txt
+        if (parent / '.git').exists() or (parent / 'requirements.txt').exists():
+            return parent
+
+    # 如果都没找到，退回到当前脚本所在目录（兜底）
+    return current_path.parent
 
 def convert_to_miniqmt_format(stock_code):
     """
@@ -97,9 +112,9 @@ def download_stock_data_for_date(stock_codes, target_date="20251030"):
             # 每100只股票休息一下
             if idx % 50 == 0:
                 print(f"已处理 {idx} 只股票，休息2秒...")
-                time.sleep(3)
+                time.sleep(5)
             else:
-                time.sleep(0.1)  # 短暂延时避免请求过频
+                time.sleep(1)  # 短暂延时避免请求过频
 
         except Exception as e:
             print(f"下载 {stock_code} 失败: {e}")
@@ -157,10 +172,10 @@ def update_parquet_files_with_miniqmt_data(target_date="20251030"):
 
             # 获取当天数据
             day_data = data[miniqmt_code].iloc[0]
-
+            root_dir = get_project_root()
             # 构建parquet文件路径
             file_name = f"stock_{stock_code}_20240201.parquet"
-            cache_path = os.path.join(cache_dir, file_name)
+            cache_path = os.path.join(root_dir,cache_dir, file_name)
 
             # 读取现有parquet文件
             try:
@@ -250,12 +265,12 @@ def main():
     # 步骤2: 下载数据
     # 【已修改】日期更新为 30 号
     print(f"\n步骤2: 下载2025年10月30日数据...")
-    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20251030")
+    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20251205")
 
     # 步骤3: 更新parquet文件
     # 【已修改】日期更新为 30 号
     print(f"\n步骤3: 更新parquet缓存文件...")
-    update_parquet_files_with_miniqmt_data("20251030")
+    update_parquet_files_with_miniqmt_data("20251205")
 
     print("\n" + "=" * 50)
     print("数据下载和更新任务完成！")
