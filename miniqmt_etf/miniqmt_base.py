@@ -27,6 +27,7 @@ from miniqmt_etf.miniqmt_logging_utils import setup_logger
 from miniqmt_etf.miniqmt_trade_utils import can_cancel_order_status, save_trigger_prices_to_csv, load_trigger_prices_from_csv, \
     load_force_sell_list, save_force_sell_list
 from stock_info import StockInfo
+from data_ingestion import updateAllStockDataCache as data_updater
 
 query_tool = tools.StockQuery()
 # ====== 全局策略配置 ======
@@ -44,6 +45,8 @@ trigger_prices = defaultdict(list)  # 使用 defaultdict 确保键不存在时�
 log_throttle = defaultdict(lambda: {'last_log_time': 0, 'last_log_price': 0})
 trigger_prices_lock = threading.Lock()
 order_ops_lock = threading.Lock()
+
+RUNNER_MANAGED = bool(_env_per_stock or os.environ.get('STRATEGY_NAME') or os.environ.get('ALLOCATED_CAPITAL'))
 
 config = StrategyConfig()
 
@@ -716,6 +719,16 @@ def refresh_account_status():
     print(f"账户状态更新：可用资金={available_cash:.2f}, 持仓数量={len(hold_stocks)}")
 
 
+def run_etf_daily_download():
+    try:
+        import miniqmt_etf.etf_momentum_rotation_qmt as etf_mod
+        if getattr(etf_mod, "strategy_logger", None) is None:
+            etf_mod.strategy_logger = setup_logger()
+        etf_mod.download_daily_data()
+    except Exception as e:
+        print(f"ETF日线下载执行异常: {str(e)}")
+
+
 if __name__ == "__main__":
     try:
         xtdata.enable_hello = False
@@ -788,6 +801,34 @@ if __name__ == "__main__":
             )
         )
         print("定时任务已添加：每日15:01执行触发价格分析")
+
+        if not RUNNER_MANAGED:
+            scheduler.add_job(
+                run_etf_daily_download,
+                trigger=CronTrigger(
+                    hour=16,
+                    minute=0,
+                    day_of_week='mon-fri'
+                ),
+                id='etf_daily_data_downloader',
+                misfire_grace_time=300
+            )
+            print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
+
+        if not RUNNER_MANAGED:
+            scheduler.add_job(
+                data_updater.update_all_daily_data,
+                trigger=CronTrigger(
+                    hour=16,
+                    minute=5,
+                    day_of_week='mon-fri'
+                ),
+                id='daily_data_small_downloader',
+                misfire_grace_time=300
+            )
+            print("定时任务已启动：每日16:05执行小市值策略日线数据下载")
+        else:
+            print("检测到主控环境，跳过16:05数据下载定时任务")
 
         scheduler.start()
         xtdata.run()
