@@ -872,6 +872,80 @@ def is_valid_first_limit_up_day(stock_info: StockInfo, df: pd.DataFrame, first_l
             and cond_close_is_identical):
         return RuleEnum.T1_GRAVESTONE_REJECTION
 
+    if limit_up_day_idx >= 70:
+        # 定义两个时间窗口
+        # 窗口1: 涨停前60天到前30天
+        window_far = df.iloc[limit_up_day_idx - 70: limit_up_day_idx - 30]
+        # 窗口2: 涨停前30天到前5天
+        window_near = df.iloc[limit_up_day_idx - 30: limit_up_day_idx - 5]
+
+        # 1. 寻找远端窗口的最高价和最大成交量
+        idx_max_high_far = window_far['high'].idxmax()
+        idx_max_vol_far = window_far['volume'].idxmax()
+
+        # 条件A: 远端窗口的最高价和最大成交量必须出现在同一天 (Peak A)
+        if idx_max_high_far == idx_max_vol_far:
+            peak_a_data = window_far.loc[idx_max_high_far]
+            peak_a_high = peak_a_data['high']
+            peak_a_open = peak_a_data['open']
+            peak_a_loc = df.index.get_loc(idx_max_high_far)
+            peak_a_vol = peak_a_data['volume']
+
+            # 获取Peak A那一天的行号，以便找它的前一天和后一天
+            peak_a_loc = df.index.get_loc(idx_max_high_far)
+            # 2. 获取 Peak A 后10个交易日的窗口 (Post-A Window)
+            post_a_window = df.iloc[peak_a_loc + 1: peak_a_loc + 11]
+
+
+            # 安全检查：确保前后天有数据
+            if peak_a_loc > 0 and peak_a_loc + 1 < len(df):
+                peak_a_prev_high = df.iloc[peak_a_loc - 1]['high']
+                peak_a_next_high = df.iloc[peak_a_loc + 1]['high']
+
+                # 2. 获取近端窗口的最高价 (Peak B)
+                peak_b_high = window_near['high'].max()
+                idx_max_high_near = window_near['high'].idxmax()
+                peak_b_loc = df.index.get_loc(idx_max_high_near)
+                # 5. 量能判定 (新增核心逻辑)
+                # "第二高点或者他前后一天的量都必须小于第一个高点的量能"
+                # 意味着 Peak B 这一天，以及 B-1, B+1 这三天的成交量，必须全部小于 Peak A
+                vol_b = df.iloc[peak_b_loc]['volume']
+                vol_b_prev = df.iloc[peak_b_loc - 1]['volume']
+                # 考虑到 B 可能在昨天，B+1 可能是今天(尚未发生或不完整)，但此处 window_near 截止到 limit_up_day_idx - 5，数据肯定是有的
+                vol_b_next = df.iloc[peak_b_loc + 1]['volume']
+
+                cond_vol_shrink = (vol_b < peak_a_vol) and \
+                                  (vol_b_prev < peak_a_vol) and \
+                                  (vol_b_next < peak_a_vol)
+                # 6. T+1 压制与空间判定 (新增逻辑)
+                cond_t1_suppressed = high_p1 < peak_b_high
+                # 空间判定: 计算T+1收盘价距离上方次高点(Peak B)的距离
+                # 如果 (Peak B - Close P1) / Peak B > 0.15，说明此时离压力位还远(>15%)，有上涨空间，不排除。
+                # 反之，如果距离 <= 0.15，说明已经逼近压力位，风险较大，执行排除。
+                space_to_peak_b = (peak_b_high - close_p1) / peak_b_high
+                cond_close_to_resistance = space_to_peak_b <= 0.15
+
+                min_low_post_a = post_a_window['low'].min()
+                decline_pct = (peak_a_high - min_low_post_a) / peak_a_high
+                cond_panic_drop = 0.55>decline_pct > 0.2
+
+                # 小条件2：后10日没有收盘价大于Peak A的开盘价
+                cond_no_recover = (post_a_window['close'] <= peak_a_open).all()
+
+                # 3. 执行比较逻辑
+                # 子条件1: Peak B 高于 Peak A 的前一天最高价 或者 后一天最高价
+                cond_structure = (peak_b_high > peak_a_prev_high) or (peak_b_high > peak_a_next_high)
+                # 子条件2: Peak B 必须要低于 Peak A (形成高点降低趋势)
+                cond_lower_high = peak_b_high < peak_a_high
+                # 子条件3: 涨停后第一天(T+1)的最高价 低于 Peak B (受制于次高点)
+                # 注：high_p1 已经在函数前文定义过
+                cond_t1_suppressed = high_p1 < peak_b_high
+
+                if cond_structure and cond_lower_high and cond_t1_suppressed and cond_panic_drop and cond_no_recover\
+                        and cond_vol_shrink and cond_close_to_resistance:
+                    print(f"[{code}] 排除：远端量价同顶({peak_a_high})，近端次高({peak_b_high})压制T+1")
+                    return RuleEnum.REJECTED_BY_LOWER_HIGH_VOLUME_PEAK
+
     if config.USE_BUY_SINGLE_RULE == 1:  # 0和2的状态都要返回None
         return RuleEnum.ISLAND_REVERSAL_PATTERN
     else:
