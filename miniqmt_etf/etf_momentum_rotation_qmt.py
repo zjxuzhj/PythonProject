@@ -283,27 +283,6 @@ def download_daily_data():
     except Exception as e:
         strategy_logger.error(f"每日数据下载任务异常: {str(e)}")
 
-def download_daily_data_aaaaa():
-    try:
-        from miniqmt_etf.etf_momentum_core import ETFMomentumCore
-        core = ETFMomentumCore()
-
-        today_str = datetime.now().strftime('%Y%m%d')
-        strategy_logger.info(f"=== 开始执行每日日线数据下载任务 ({today_str}) ===")
-
-        total_etfs = len(core.ETF_POOL)
-        for idx, stock_code in enumerate(core.ETF_POOL, 1):
-            strategy_logger.info(
-                f"[{idx}/{total_etfs}] 下载 {stock_code} ({core.etf_names.get(stock_code, '未知')}) 的日线数据...")
-            # 下载当天的日线数据，会自动更新到本地数据文件
-            xtdata.download_history_data(stock_code, '1d', start_time="20251108", end_time="20251208")
-
-        strategy_logger.info("=== 所有ETF日线数据下载完成 ===")
-
-    except Exception as e:
-        strategy_logger.error(f"每日数据下载任务异常: {str(e)}")
-
-
 def monitor_strategy_status():
     """监控策略状态"""
     while True:
@@ -454,7 +433,6 @@ if __name__ == "__main__":
     )
     print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
 
-    download_daily_data_aaaaa()
     scheduler.add_job(
         data_updater.update_all_daily_data,
         trigger=CronTrigger(
