@@ -634,9 +634,11 @@ def cancel_and_reset_preopen_orders():
                 strategy_logger.info(f"撤单: {s} 数量 {v} 价格 {p}")
             if canceled_details:
                 today_str = datetime.now().strftime('%Y-%m-%d')
-                filename = os.path.join("output", f"trigger_prices_{today_str}.csv")
+                out_dir = os.path.join(os.path.dirname(__file__), "output")
+                os.makedirs(out_dir, exist_ok=True)
+                filename = os.path.join(out_dir, f"trigger_prices_{today_str}.csv")
                 if os.path.exists(filename):
-                    backup_name = os.path.join("output", f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
+                    backup_name = os.path.join(out_dir, f"trigger_prices_{today_str}.csv.bak_{datetime.now().strftime('%H%M%S')}")
                     shutil.copyfile(filename, backup_name)
                     df = pd.read_csv(filename)
                     canceled_codes = {s for (s, _, _) in canceled_details}
@@ -653,6 +655,8 @@ def cancel_and_reset_preopen_orders():
                     df.to_csv(tmp_name, index=False, encoding='utf-8-sig')
                     os.replace(tmp_name, filename)
                     strategy_logger.info(f"CSV已选择性更新并备份: {backup_name}")
+                else:
+                    strategy_logger.info(f"未找到触发记录文件，跳过重置: {filename}")
                 data = load_trigger_prices_from_csv()
                 with trigger_prices_lock:
                     trigger_prices.clear()
