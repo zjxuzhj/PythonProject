@@ -388,6 +388,29 @@ if __name__ == "__main__":
     # 配置定时任务
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
+    def shutdown_and_exit():
+        try:
+            strategy_logger and strategy_logger.info("当前时间已到17点, 程序准备退出")
+        except Exception:
+            pass
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        try:
+            xt_trader.stop()
+        except Exception:
+            pass
+        try:
+            signal.raise_signal(signal.SIGTERM)
+        except Exception:
+            pass
+        time.sleep(1)
+        os._exit(0)
+
+    if datetime.now().hour >= 17:
+        shutdown_and_exit()
+
     # download_daily_data()
     # yesterday = datetime.now() - timedelta(days=1)
     # today_str_for_verify = datetime.now().strftime('%Y%m%d')
@@ -444,6 +467,22 @@ if __name__ == "__main__":
         misfire_grace_time=300
     )
     print("定时任务已启动：每日16:05执行小市值策略日线数据下载")
+
+    try:
+        scheduler.remove_job('daily_exit_1700')
+    except Exception:
+        pass
+    scheduler.add_job(
+        shutdown_and_exit,
+        trigger=CronTrigger(
+            hour=17,
+            minute=0,
+            second=0,
+            day_of_week='mon-fri'
+        ),
+        id='daily_exit_1700',
+        misfire_grace_time=60
+    )
 
     # 忽略父进程的 Ctrl-C 信号，避免非预期退出
     try:

@@ -79,7 +79,7 @@ def download_stock_data_for_date(stock_codes, target_date="20251030"):
     failed_stocks = []
 
     # 假设你想从第 2230 个股票开始下载
-    start_item_number = 1
+    start_item_number = 2500
 
     # Python 索引从 0 开始，所以第 2230 个元素的索引是 2229
     start_index = start_item_number - 1
@@ -101,8 +101,8 @@ def download_stock_data_for_date(stock_codes, target_date="20251030"):
             data = xtdata.download_history_data2(
                 stock_list=[miniqmt_code],
                 period='1d',
-                start_time="20251029",  # 目标日期的前一天
-                end_time="20251031",  # 目标日期的后一天
+                start_time="20251231",  # 目标日期的前一天
+                end_time="20260105",  # 目标日期的后一天
                 incrementally=True,
                 callback=lambda data: print(f"  -> 进度: {data['finished']}/{data['total']} {data['stockcode']}")
             )
@@ -110,11 +110,11 @@ def download_stock_data_for_date(stock_codes, target_date="20251030"):
             success_count += 1
 
             # 每100只股票休息一下
-            if idx % 50 == 0:
+            if idx % 200 == 0:
                 print(f"已处理 {idx} 只股票，休息2秒...")
-                time.sleep(5)
+                time.sleep(2)
             else:
-                time.sleep(1)  # 短暂延时避免请求过频
+                time.sleep(0.2)  # 短暂延时避免请求过频
 
         except Exception as e:
             print(f"下载 {stock_code} 失败: {e}")
@@ -265,12 +265,12 @@ def main():
     # 步骤2: 下载数据
     # 【已修改】日期更新为 30 号
     print(f"\n步骤2: 下载2025年10月30日数据...")
-    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20251205")
+    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
 
     # 步骤3: 更新parquet文件
     # 【已修改】日期更新为 30 号
     print(f"\n步骤3: 更新parquet缓存文件...")
-    update_parquet_files_with_miniqmt_data("20251205")
+    update_parquet_files_with_miniqmt_data("20260105")
 
     print("\n" + "=" * 50)
     print("数据下载和更新任务完成！")

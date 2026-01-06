@@ -256,6 +256,10 @@ class StrategyRunner:
         # print("StrategyRunner monitor started (heartbeat every ~10s)")
         while not self._stop_event.is_set():
             try:
+                if datetime.now().hour >= 17:
+                    print("[monitor] 当前时间已到17点, 停止所有子策略进程")
+                    self.stop_all()
+                    return
                 ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 # print(f"[monitor] {ts} checking child processes...")
                 for name, proc in list(self.strategy_procs.items()):
@@ -330,14 +334,14 @@ def main():
     try:
         runner.prepare_and_start()
 
-        # 简单的主循环：支持每日 08:50 的重分配（本示例用睡眠替代真正的调度器）
         while True:
             now = datetime.now()
-            # 每日 08:50 触发重分配一次（仅示例，可修改）
             if now.hour == 8 and now.minute == 50:
                 runner.daily_reallocate()
-                # sleep 61s to avoid重复触发
                 time.sleep(61)
+            if now.hour == 17:
+                print("[strategy_runner] 当前时间已到17点, 准备退出主控程序")
+                break
             time.sleep(5)
     except KeyboardInterrupt:
         print("KeyboardInterrupt received, stopping strategies...")

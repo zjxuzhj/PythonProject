@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+import signal
 from xtquant import xtconstant
 from xtquant import xtdata
 from xtquant.xttrader import XtQuantTrader
@@ -36,7 +37,7 @@ import shutil
 
 # 支持环境变量覆盖（由主控程序传入），便于按比例进行资金分配
 _env_per_stock = os.environ.get('PER_STOCK_TOTAL_BUDGET')
-PER_STOCK_TOTAL_BUDGET = float(_env_per_stock) if _env_per_stock else 12000  # 每只股票的总买入预算
+PER_STOCK_TOTAL_BUDGET = float(_env_per_stock) if _env_per_stock else 13000  # 每只股票的总买入预算
 PER_FOURTH_STOCK_TOTAL_BUDGET = PER_STOCK_TOTAL_BUDGET  # 涨停后第四天的每只股票的总买入预算(暂时改为统一)
 daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
@@ -766,6 +767,33 @@ if __name__ == "__main__":
         monitor_thread.start()
         scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
+        def shutdown_and_exit():
+            try:
+                strategy_logger and strategy_logger.info("当前时间已到17点, 程序准备退出")
+            except Exception:
+                pass
+            try:
+                scheduler.shutdown(wait=False)
+            except Exception:
+                pass
+            try:
+                xt_trader.stop()
+            except Exception:
+                pass
+            try:
+                getattr(xtdata, "stop")()
+            except Exception:
+                pass
+            try:
+                signal.raise_signal(signal.SIGTERM)
+            except Exception:
+                pass
+            time.sleep(1)
+            os._exit(0)
+
+        if datetime.now().hour >= 17:
+            shutdown_and_exit()
+
         # 获取当前持仓股票集合
         positions = xt_trader.query_stock_positions(acc)
         hold_stocks = {pos.stock_code for pos in positions}
@@ -833,6 +861,22 @@ if __name__ == "__main__":
             print("定时任务已启动：每日16:05执行小市值策略日线数据下载")
         else:
             print("检测到主控环境，跳过16:05数据下载定时任务")
+
+        try:
+            scheduler.remove_job('daily_exit_1700')
+        except Exception:
+            pass
+        scheduler.add_job(
+            shutdown_and_exit,
+            trigger=CronTrigger(
+                hour=17,
+                minute=0,
+                second=0,
+                day_of_week='mon-fri'
+            ),
+            id='daily_exit_1700',
+            misfire_grace_time=60
+        )
 
         scheduler.start()
         xtdata.run()
