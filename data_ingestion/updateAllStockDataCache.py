@@ -176,7 +176,7 @@ def update_all_daily_data():
     # 3. 更新涨停原因及时间
     try:
         print("\n步骤 3/4: 更新今日涨停原因及时间...")
-        http_util.updateZTThemeAndTime()
+        http_util.updateZTThemeAndTimeByGet()
         print("涨停数据更新完毕。")
     except Exception as e:
         print(f"更新涨停数据失败: {e}")
