@@ -86,7 +86,7 @@ def update_all_daily_data():
     print(f"开始执行每日数据更新任务 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 30)
 
-    use_sina = True
+    use_sina = False
     # 1. 获取全市场实时行情数据
     try:
         print("步骤 1/4: 获取全市场实时行情...")
