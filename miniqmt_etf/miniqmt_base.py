@@ -37,7 +37,7 @@ import shutil
 
 # 支持环境变量覆盖（由主控程序传入），便于按比例进行资金分配
 _env_per_stock = os.environ.get('PER_STOCK_TOTAL_BUDGET')
-PER_STOCK_TOTAL_BUDGET = float(_env_per_stock) if _env_per_stock else 13000  # 每只股票的总买入预算
+PER_STOCK_TOTAL_BUDGET = float(_env_per_stock) if _env_per_stock else 10000  # 每只股票的总买入预算
 PER_FOURTH_STOCK_TOTAL_BUDGET = PER_STOCK_TOTAL_BUDGET  # 涨停后第四天的每只股票的总买入预算(暂时改为统一)
 daily_fourth_day_stocks = set()  # 存储当天的第四天股票列表
 # 全局存储触发价格（格式：{股票代码: [触发价列表]})
