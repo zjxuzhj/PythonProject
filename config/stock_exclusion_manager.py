@@ -3,6 +3,7 @@
 # 创建目的：将股票排除逻辑独立封装，减少策略文件体积，提升复用与可维护性。
 # 使用场景：在 first_limit_up_ma5_normal 与 first_limit_up_ma5_normal_scan 等策略/扫描模块中统一调用排除判断；
 #          通过 YAML 配置管理名称/题材模式与黑名单代码；支持可选的热加载。
+import json
 import logging
 import os
 import threading
