@@ -791,8 +791,10 @@ if __name__ == "__main__":
             time.sleep(1)
             os._exit(0)
 
-        # if datetime.now().hour >= 17:
-        #     shutdown_and_exit()
+
+        if datetime.now().hour >= 17:
+            shutdown_and_exit()
+
 
         # 获取当前持仓股票集合
         positions = xt_trader.query_stock_positions(acc)
@@ -862,7 +864,7 @@ if __name__ == "__main__":
             print("检测到主控环境，跳过16:05数据下载定时任务")
 
         # run_etf_daily_download()
-        data_updater.update_all_daily_data()
+        # data_updater.update_all_daily_data()
 
         try:
             scheduler.remove_job('daily_exit_1700')

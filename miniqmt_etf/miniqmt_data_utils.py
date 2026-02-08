@@ -1,8 +1,134 @@
 # utils/data_utils.py
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, date
+import tempfile
+from typing import Iterable, Optional, Union
 import getAllStockCsv as tools
+
+
+class StockDataCacheCleaner:
+    def __init__(self, cache_dir: str = "data_cache", base_dir: Optional[str] = None):
+        self.base_dir = base_dir or os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        self.cache_dir = cache_dir
+
+    def delete_date_data(
+        self,
+        target_date: Union[str, datetime, date],
+        symbols: Optional[Iterable[str]] = None,
+        file_date_suffix: Optional[str] = None,
+    ) -> dict:
+        target_ts = self._to_normalized_timestamp(target_date)
+        cache_path = os.path.join(self.base_dir, self.cache_dir)
+        if not os.path.isdir(cache_path):
+            return {"deleted_rows": 0, "touched_files": 0, "cache_path": cache_path}
+
+        file_paths = self._collect_cache_files(cache_path, symbols=symbols, file_date_suffix=file_date_suffix)
+
+        deleted_rows = 0
+        touched_files = 0
+        for file_path in file_paths:
+            removed = self._delete_date_from_parquet(file_path, target_ts)
+            if removed > 0:
+                deleted_rows += removed
+                touched_files += 1
+
+        return {"deleted_rows": deleted_rows, "touched_files": touched_files, "cache_path": cache_path}
+
+    def delete_date_data_for_symbol(
+        self,
+        symbol: str,
+        target_date: Union[str, datetime, date],
+        file_date_suffix: Optional[str] = None,
+    ) -> dict:
+        return self.delete_date_data(target_date, symbols=[symbol], file_date_suffix=file_date_suffix)
+
+    @staticmethod
+    def _to_normalized_timestamp(target_date: Union[str, datetime, date]) -> pd.Timestamp:
+        if isinstance(target_date, (datetime, date)):
+            return pd.Timestamp(target_date).normalize()
+
+        s = str(target_date).strip()
+        if len(s) == 8 and s.isdigit():
+            return pd.Timestamp(datetime.strptime(s, "%Y%m%d")).normalize()
+
+        if len(s) == 10 and (s[4] in "-/" and s[7] in "-/"):
+            s = s.replace("/", "-")
+            return pd.Timestamp(datetime.strptime(s, "%Y-%m-%d")).normalize()
+
+        return pd.to_datetime(s).normalize()
+
+    @staticmethod
+    def _collect_cache_files(
+        cache_path: str,
+        symbols: Optional[Iterable[str]],
+        file_date_suffix: Optional[str],
+    ) -> list[str]:
+        suffix_part = f"_{file_date_suffix}" if file_date_suffix else "_*"
+
+        if symbols:
+            file_paths: list[str] = []
+            for sym in symbols:
+                pattern = f"stock_{sym}{suffix_part}.parquet"
+                for name in os.listdir(cache_path):
+                    if name == pattern or (file_date_suffix is None and name.startswith(f"stock_{sym}_") and name.endswith(".parquet")):
+                        file_paths.append(os.path.join(cache_path, name))
+            return sorted(set(file_paths))
+
+        return sorted(
+            os.path.join(cache_path, name)
+            for name in os.listdir(cache_path)
+            if name.startswith("stock_") and name.endswith(".parquet") and (file_date_suffix is None or name.endswith(f"_{file_date_suffix}.parquet"))
+        )
+
+    def _delete_date_from_parquet(self, file_path: str, target_ts: pd.Timestamp) -> int:
+        try:
+            df = pd.read_parquet(file_path, engine="fastparquet")
+        except Exception:
+            return 0
+
+        new_df, removed = self._drop_date_from_df(df, target_ts)
+        if removed <= 0:
+            return 0
+
+        parent_dir = os.path.dirname(file_path)
+        fd, tmp_path = tempfile.mkstemp(prefix="tmp_", suffix=".parquet", dir=parent_dir)
+        os.close(fd)
+        try:
+            new_df.to_parquet(tmp_path, engine="fastparquet")
+            os.replace(tmp_path, file_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            return 0
+
+        return removed
+
+    @staticmethod
+    def _drop_date_from_df(df: pd.DataFrame, target_ts: pd.Timestamp) -> tuple[pd.DataFrame, int]:
+        if df.empty:
+            return df, 0
+
+        if "date" in df.columns:
+            date_col = pd.to_datetime(df["date"], errors="coerce")
+            mask = date_col.dt.normalize() == target_ts
+            removed = int(mask.sum())
+            return df.loc[~mask].copy(), removed
+
+        idx = df.index
+        if not isinstance(idx, pd.DatetimeIndex):
+            converted = pd.to_datetime(idx, errors="coerce")
+            df = df.copy()
+            df.index = converted
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            return df, 0
+
+        mask = df.index.normalize() == target_ts
+        removed = int(mask.sum())
+        return df.loc[~mask].copy(), removed
 
 
 # 获得今天以前的数据
@@ -112,7 +238,5 @@ def modify_last_days_and_calc_ma5(df, predict_ratio=1.04):
     ).mean().round(2)
     return modified_df
 
-
-import pandas as pd
 
 
