@@ -80,7 +80,7 @@ def download_stock_data_for_date(stock_codes, target_date="20260203"):
     failed_stocks = []
 
     # 假设你想从第 2230 个股票开始下载
-    start_item_number = 2750
+    start_item_number = 1
 
     # Python 索引从 0 开始，所以第 2230 个元素的索引是 2229
     start_index = start_item_number - 1
@@ -265,13 +265,13 @@ def main():
 
     # 步骤2: 下载数据
     # 【已修改】日期更新为 30 号
-    print(f"\n步骤2: 下载2025年10月30日数据...")
-    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
+    # print(f"\n步骤2: 下载2025年10月30日数据...")
+    # success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
 
     # 步骤3: 更新parquet文件
     # 【已修改】日期更新为 30 号
-    # print(f"\n步骤3: 更新parquet缓存文件...")
-    # update_parquet_files_with_miniqmt_data("20260123")
+    print(f"\n步骤3: 更新parquet缓存文件...")
+    update_parquet_files_with_miniqmt_data("20260123")
     #
     # print("\n" + "=" * 50)
     # print("数据下载和更新任务完成！")
