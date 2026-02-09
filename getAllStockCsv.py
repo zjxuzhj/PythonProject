@@ -43,6 +43,11 @@ class StockQuery:
         filtered_stocks = self.filter_stocks(df_csv)
         return filtered_stocks
 
+    def get_all_stocks(self):
+        df_csv = pd.read_csv(self.REPORT_CSV_PATH)
+        df_csv['clean_code'] = df_csv['stock_code'].str.extract(r'(\d{6})')[0]
+        return df_csv
+
     def filter_stocks(self, df):
         df['clean_code'] = df['stock_code'].str.extract(r'(\d{6})')[0]  # 提取纯数字代码
         # is_bse = df['clean_code'].str.startswith(('43', '83', '87', '88', '92', '68'))

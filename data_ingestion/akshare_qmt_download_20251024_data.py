@@ -53,7 +53,8 @@ def get_all_stock_codes():
     """获取所有A股股票代码列表"""
     try:
         query_tool = getAllStockCsv.StockQuery()
-        filtered_stocks = query_tool.get_all_filter_stocks()
+        # filtered_stocks = query_tool.get_all_filter_stocks()
+        filtered_stocks = query_tool.get_all_stocks()
 
         # 获取所有股票代码
         stock_codes = []
@@ -101,8 +102,8 @@ def download_stock_data_for_date(stock_codes, target_date="20260203"):
             data = xtdata.download_history_data2(
                 stock_list=[miniqmt_code],
                 period='1d',
-                start_time="20260202",  # 目标日期的前一天
-                end_time="20260206",  # 目标日期的后一天
+                start_time="20260122",  # 目标日期的前一天
+                end_time="20260126",  # 目标日期的后一天
                 incrementally=True,
                 callback=lambda data: print(f"  -> 进度: {data['finished']}/{data['total']} {data['stockcode']}")
             )
@@ -264,13 +265,13 @@ def main():
 
     # 步骤2: 下载数据
     # 【已修改】日期更新为 30 号
-    # print(f"\n步骤2: 下载2025年10月30日数据...")
-    # success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
+    print(f"\n步骤2: 下载2025年10月30日数据...")
+    success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
 
     # 步骤3: 更新parquet文件
     # 【已修改】日期更新为 30 号
-    print(f"\n步骤3: 更新parquet缓存文件...")
-    update_parquet_files_with_miniqmt_data("20260205")
+    # print(f"\n步骤3: 更新parquet缓存文件...")
+    # update_parquet_files_with_miniqmt_data("20260123")
     #
     # print("\n" + "=" * 50)
     # print("数据下载和更新任务完成！")
