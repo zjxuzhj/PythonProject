@@ -32,21 +32,21 @@ def configure_scheduler(run_now: bool) -> BackgroundScheduler:
 
     scheduler.add_job(
         run_etf_daily_download,
-        trigger=CronTrigger(hour=16, minute=0, day_of_week='mon-fri'),
+        trigger=CronTrigger(hour=15, minute=1, day_of_week='mon-fri'),
         id='etf_daily_data_downloader',
         misfire_grace_time=300,
         coalesce=True
     )
-    print("定时任务已启动：每日16:00执行ETF动量轮动日线数据下载")
+    print("定时任务已启动：每日15:01执行ETF动量轮动日线数据下载")
 
     scheduler.add_job(
         data_updater.update_all_daily_data,
-        trigger=CronTrigger(hour=16, minute=1, day_of_week='mon-fri'),
+        trigger=CronTrigger(hour=15, minute=5, day_of_week='mon-fri'),
         id='daily_data_small_downloader',
         misfire_grace_time=300,
         coalesce=True
     )
-    print("定时任务已启动：每日16:01执行小市值策略日线数据下载")
+    print("定时任务已启动：每日15:05执行小市值策略日线数据下载")
 
     if run_now:
         print("开始立即执行一次数据下载...")
