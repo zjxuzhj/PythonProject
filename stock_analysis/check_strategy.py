@@ -25,7 +25,7 @@ VOLUME_SHRINK_RATIO = 1.0
 
 # 默认配置（如果没有提供命令行参数）
 DEFAULT_STOCK_CODE = "601179"  # 默认股票代码 (例如: 中百)
-DEFAULT_MENTION_DATE = "2025-12-12"  # 默认首次提及日期
+DEFAULT_MENTION_DATE = "2025-12-15"  # 默认首次提及日期
 
 # 模拟策略配置类，用于兼容提供的get_stock_data逻辑
 class StrategyConfig:
@@ -164,7 +164,7 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
     
     df = get_stock_data(stock_code)
     if df is None:
-        return
+        return None, []
 
     df = calculate_indicators(df)
     
@@ -183,7 +183,7 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
         analysis_df = df[df.index >= first_mention_dt]
         if analysis_df.empty:
             print("提及日期之后无可用数据。")
-            return
+            return None, []
 
     # 模拟策略执行
     # 我们将遍历每一天以寻找提及后的第一个买点
@@ -194,6 +194,13 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
     entry_price = 0
     entry_date = None
     logs = []
+    trades = [] # 结构化交易记录 for visualization
+    
+    # 资金模拟
+    initial_capital = 100000.0
+    cash = initial_capital
+    shares = 0
+    total_assets = initial_capital
     
     # 场景 E 状态跟踪: 涨停突破后的顺延买入
     pending_breakout_resistance = None # 格式: {'price': float, 'date': datetime, 'desc': str}
@@ -204,14 +211,7 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
         
         # --- 场景 E (顺延买入): 检查是否是昨日涨停突破后的顺延买点 ---
         if pending_breakout_resistance:
-            # 顺延有效期: 1天 (即当前日)
-            # 检查条件: 没有跌破突破的压力位 (收盘价 >= 压力位 * 0.995 容错)
-            # 且当前不能是涨停 (如果连续涨停无法买入，继续顺延? 用户说"顺延到第二天的尾盘")
-            # 假设如果今天也是涨停，我们无法买入，视为错过或继续顺延? 
-            # 简单起见，如果今天涨停，再次顺延一天?
-            # 或者是 "如果没有跌破...就尾盘买入"。如果涨停，肯定没跌破。
-            # 但涨停买不进。
-            
+            # ... (场景 E 检查逻辑)
             is_today_limit_up = row['close'] >= row['prev_close'] * 1.095
             
             if row['close'] >= pending_breakout_resistance['price'] * 0.995:
@@ -224,22 +224,40 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                         holdings_pct = 20
                         entry_price = row['close']
                         entry_date = date
-                        logs.append(f"[{date_str}] 买入底仓 (20%): {buy_reason} 价格: {row['close']:.2f}")
+                        
+                        # 资金模拟: 买入底仓
+                        buy_amount = initial_capital * 0.2
+                        buy_shares = int(buy_amount / row['close'] / 100) * 100
+                        if buy_shares > 0 and cash >= buy_shares * row['close']:
+                            cost = buy_shares * row['close']
+                            cash -= cost
+                            shares += buy_shares
+                            logs.append(f"[{date_str}] 买入底仓 (20%): {buy_reason} 价格: {row['close']:.2f} 数量:{buy_shares}")
+                            trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "底仓(20%)"})
+                        
                     elif position < 3:
                         position += 1
                         holdings_pct = min(80, holdings_pct + 30)
-                        logs.append(f"[{date_str}] 加仓 (+30%): {buy_reason} 新仓位: {holdings_pct}% 价格: {row['close']:.2f}")
+                        
+                        # 资金模拟: 加仓 30%
+                        buy_amount = initial_capital * 0.3
+                        buy_shares = int(buy_amount / row['close'] / 100) * 100
+                        if buy_shares > 0 and cash >= buy_shares * row['close']:
+                            cost = buy_shares * row['close']
+                            cash -= cost
+                            shares += buy_shares
+                            logs.append(f"[{date_str}] 加仓 (+30%): {buy_reason} 新仓位: {holdings_pct}% 价格: {row['close']:.2f} 数量:{buy_shares}")
+                            trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "加仓(+30%)"})
                     
                     # 清除状态，本日操作完成
                     pending_breakout_resistance = None
                     continue # 跳过后续检查
                 else:
-                    # 今天也涨停，继续顺延?
+                    # ...
                     logs.append(f"[{date_str}] 场景 E 顺延: 今日继续涨停，无法买入，继续顺延。")
-                    # pending_breakout_resistance 保持不变
                     continue
             else:
-                # 跌破了，取消顺延
+                # ...
                 logs.append(f"[{date_str}] 场景 E 失效: 跌破突破位 {pending_breakout_resistance['price']:.2f} (Close: {row['close']:.2f})")
                 pending_breakout_resistance = None
         
@@ -354,7 +372,16 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                 holdings_pct = 20
                 entry_price = row['close']
                 entry_date = date
-                logs.append(f"[{date_str}] 买入底仓 (20%): {reason} 价格: {row['close']:.2f}")
+                
+                # 资金模拟: 买入底仓
+                buy_amount = initial_capital * 0.2
+                buy_shares = int(buy_amount / row['close'] / 100) * 100
+                if buy_shares > 0 and cash >= buy_shares * row['close']:
+                    cost = buy_shares * row['close']
+                    cash -= cost
+                    shares += buy_shares
+                    logs.append(f"[{date_str}] 买入底仓 (20%): {reason} 价格: {row['close']:.2f} 数量:{buy_shares}")
+                    trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "底仓(20%)"})
                 
         # --- 第二阶段: 加仓 (1 -> 2 -> 3) ---
         elif position >= 1:
@@ -394,13 +421,73 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
             is_profitable = profit_pct > 0
             
             # 先进行 卖出/止损 逻辑检查
+            
+            # 检查是否有强支撑保护
+            # 用户请求: "检测今天有没有跌破前一天的权重最高的支撑位... 如果没破... 就不执行任何减仓"
+            has_support_protection = False
+            best_support_info = None
+            
+            try:
+                # 寻找昨日最高权重支撑
+                check_date = date - datetime.timedelta(days=1)
+                
+                # 寻找支撑
+                supports = []
+                # 跳空缺口 (权重较高)
+                supports.extend(find_gaps(df, check_date, lookback_days=60))
+                # 顶底转换 (权重较高)
+                supports.extend(find_breakout_supports(df, check_date, lookback_days=60, breakout_window=20))
+                
+                # 过滤有效支撑 (必须是昨日收盘价下方的支撑，或者是附近的支撑)
+                # 如果支撑位远高于昨日收盘价，那其实是压力位，不应视为支撑
+                # 考虑到缺口可能在上方（向下跳空？但 find_gaps 找的是向上跳空支撑），所以通常 gap_low < close
+                # 我们过滤掉那些价格异常高的 (比如 > prev_close * 1.05)
+                valid_supports = [s for s in supports if s['price'] < row['prev_close'] * 1.05]
+                
+                if valid_supports:
+                    # 找权重最高，如果权重相同找价格最高(最接近)
+                    best_support = max(valid_supports, key=lambda x: (x['weight'], x['price']))
+                    
+                    # 检查是否跌破 (Close < Support)
+                    # 如果 Close >= Support，则有保护
+                    # 容错 0.5%? 用户说"没破位"，通常指 Close >= Price
+                    if row['close'] >= best_support['price'] * 0.995:
+                        has_support_protection = True
+                        best_support_info = best_support
+            except Exception as e:
+                # print(f"Support check error: {e}")
+                pass
+
             # 止损 / 趋势破坏
             # 规则: 有效跌破 MA10 -> 仅减去加仓部分，保留底仓
             if row['close'] < row['MA10']:
-                if position > 1:
+                if has_support_protection:
+                    logs.append(f"[{date_str}] 触发MA10止损但获支撑保护: 收盘 {row['close']:.2f} >= 强支撑 {best_support_info['type']}({best_support_info['price']:.2f}) 权重:{best_support_info['weight']}")
+                elif position > 1:
                     position = 1
                     holdings_pct = 20
-                    logs.append(f"[{date_str}] 减仓至底仓: 跌破 MA10。 价格: {row['close']:.2f} 盈亏: {profit_pct:.2f}%")
+                    
+                    # 资金模拟: 减仓至底仓 (保留20%)
+                    # 当前 shares 对应 holdings_pct (e.g. 50% or 80%)
+                    # 目标: 保留 initial_capital * 0.2 对应的市值? 或者简单地卖出多余的股份?
+                    # 简单逻辑: 卖出 (holdings_pct - 20) / holdings_pct * shares
+                    # 或者更准确: 卖出直到剩余价值接近 initial_capital * 0.2?
+                    # 按照策略逻辑，我们是按比例减仓。
+                    # 之前加仓是按 +30% 资金量买入的。
+                    # 那么减仓应该卖出相应的股数。
+                    # 假设每次加仓都是独立的股数块。
+                    # 简化：如果 position 从 2 降到 1，卖出最近一次加仓的股数？
+                    # 由于没记录每次买入的股数，这里简单按比例卖出。
+                    
+                    # 估算卖出比例: (current_pct - 20) / current_pct
+                    sell_ratio = (holdings_pct - 20) / holdings_pct
+                    sell_shares = int(shares * sell_ratio / 100) * 100
+                    if sell_shares > 0:
+                        revenue = sell_shares * row['close']
+                        cash += revenue
+                        shares -= sell_shares
+                        logs.append(f"[{date_str}] 减仓至底仓: 跌破 MA10。 价格: {row['close']:.2f} 数量:{sell_shares} 盈亏: {profit_pct:.2f}%")
+                        trades.append({"date": date_str, "type": "Sell", "price": row['close'], "desc": "减仓至底仓"})
                 else:
                     # 底仓不卖
                     pass
@@ -410,13 +497,26 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                 # continue
             
             # 规则: 跌破 MA5 但守住 MA10 -> 减仓
-            if row['close'] < row['MA5'] and row['close'] > row['MA10']:
+            elif row['close'] < row['MA5'] and row['close'] > row['MA10']:
+                 if has_support_protection:
+                     logs.append(f"[{date_str}] 触发MA5减仓但获支撑保护: 收盘 {row['close']:.2f} >= 强支撑 {best_support_info['type']}({best_support_info['price']:.2f}) 权重:{best_support_info['weight']}")
                  # 如果是重仓，减仓。如果是底仓，可能持有或减仓。
                  # 策略说 "减仓 30%-50%"。
-                 if position > 1:
+                 elif position > 1:
                      position -= 1 # 简单的降级逻辑
                      holdings_pct = max(20, holdings_pct - 30)
-                     logs.append(f"[{date_str}] 减仓: 跌破 MA5 但守住 MA10。 新仓位: {holdings_pct}%")
+                     
+                     # 资金模拟: 减仓 30% (卖出 30% 对应的份额)
+                     # 卖出 shares * (30 / old_pct)
+                     old_pct = holdings_pct + 30
+                     sell_ratio = 30 / old_pct
+                     sell_shares = int(shares * sell_ratio / 100) * 100
+                     if sell_shares > 0:
+                         revenue = sell_shares * row['close']
+                         cash += revenue
+                         shares -= sell_shares
+                         logs.append(f"[{date_str}] 减仓: 跌破 MA5 但守住 MA10。 新仓位: {holdings_pct}% 数量:{sell_shares}")
+                         trades.append({"date": date_str, "type": "Sell", "price": row['close'], "desc": "减仓"})
             
             # 加仓逻辑
             # 用户反馈: "场景D: 支撑位回踩不破且缩量需要加仓30%... 比如西电在25-12-21，当天就回踩了支撑位，需要收盘时买入"
@@ -488,7 +588,16 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                          # 这里直接执行加仓，不通过 add_signal 标志位，避免与上面的 is_profitable 逻辑混淆
                          position += 1
                          holdings_pct = min(80, holdings_pct + 30)
-                         logs.append(f"[{date_str}] 加仓 (+30%): 场景 D (回踩支撑 {matched_support_desc} 不破且缩量); 新仓位: {holdings_pct}% 价格: {row['close']:.2f}")
+                         
+                         # 资金模拟: 加仓 30%
+                         buy_amount = initial_capital * 0.3
+                         buy_shares = int(buy_amount / row['close'] / 100) * 100
+                         if buy_shares > 0 and cash >= buy_shares * row['close']:
+                             cost = buy_shares * row['close']
+                             cash -= cost
+                             shares += buy_shares
+                             logs.append(f"[{date_str}] 加仓 (+30%): 场景 D (回踩支撑 {matched_support_desc} 不破且缩量); 新仓位: {holdings_pct}% 价格: {row['close']:.2f} 数量:{buy_shares}")
+                             trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "加仓(+30%)"})
                          continue # 本日已操作，跳过后续检查
                          
                  except Exception as e:
@@ -544,7 +653,16 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                 if add_signal:
                     position += 1
                     holdings_pct = min(80, holdings_pct + 30)
-                    logs.append(f"[{date_str}] 加仓 (+30%): {add_reason} 新仓位: {holdings_pct}% 价格: {row['close']:.2f}")
+                    
+                    # 资金模拟: 加仓 30%
+                    buy_amount = initial_capital * 0.3
+                    buy_shares = int(buy_amount / row['close'] / 100) * 100
+                    if buy_shares > 0 and cash >= buy_shares * row['close']:
+                        cost = buy_shares * row['close']
+                        cash -= cost
+                        shares += buy_shares
+                        logs.append(f"[{date_str}] 加仓 (+30%): {add_reason} 新仓位: {holdings_pct}% 价格: {row['close']:.2f} 数量:{buy_shares}")
+                        trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "加仓(+30%)"})
 
                 # 场景 E: 突破压力位 (尾盘买入) - 独立于 add_signal 避免冲突
                 elif not add_signal:
@@ -563,7 +681,16 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                              best_r = max(broken_resistances, key=lambda x: x['price'])
                              position += 1
                              holdings_pct = min(80, holdings_pct + 30)
-                             logs.append(f"[{date_str}] 加仓 (+30%): 场景 E (突破压力位 {best_r['price']:.2f}); 新仓位: {holdings_pct}% 价格: {row['close']:.2f}")
+                             
+                             # 资金模拟: 加仓 30%
+                             buy_amount = initial_capital * 0.3
+                             buy_shares = int(buy_amount / row['close'] / 100) * 100
+                             if buy_shares > 0 and cash >= buy_shares * row['close']:
+                                 cost = buy_shares * row['close']
+                                 cash -= cost
+                                 shares += buy_shares
+                                 logs.append(f"[{date_str}] 加仓 (+30%): 场景 E (突破压力位 {best_r['price']:.2f}); 新仓位: {holdings_pct}% 价格: {row['close']:.2f} 数量:{buy_shares}")
+                                 trades.append({"date": date_str, "type": "Buy", "price": row['close'], "desc": "加仓(+30%)"})
                     except Exception as e:
                         pass
 
@@ -575,7 +702,7 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
     print("\n--- 当前状态 ---")
     if analysis_df.empty:
         print("无数据可用。")
-        return
+        return None, []
         
     latest = df.iloc[-1]
     latest_date = latest.name.strftime("%Y-%m-%d")
@@ -594,12 +721,28 @@ def check_strategy(stock_code, first_mention_date_str=None, platform_days=PLATFO
                 print(f"预估盈亏 (底仓): {pnl:.2f}%")
         else:
             print("建仓日期: N/A")
+    
+    # 计算总资产
+    market_value = shares * latest['close']
+    total_assets = cash + market_value
+    total_pnl = (total_assets - initial_capital) / initial_capital * 100
+    
+    print("-" * 20)
+    print(f"初始资金: {initial_capital:,.2f}")
+    print(f"当前现金: {cash:,.2f}")
+    print(f"持仓市值: {market_value:,.2f} ({shares} 股)")
+    print(f"总资产:   {total_assets:,.2f}")
+    print(f"总收益率: {total_pnl:.2f}%")
+    print("-" * 20)
+            
+    return df, trades
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="检查焦佬策略 (股票)")
     parser.add_argument("code", nargs='?', default=DEFAULT_STOCK_CODE, help=f"股票代码 (6位) [默认: {DEFAULT_STOCK_CODE}]")
     parser.add_argument("-d", "--date", default=DEFAULT_MENTION_DATE, help=f"首次提及日期 (YYYY-MM-DD 或 MM.DD) [默认: {DEFAULT_MENTION_DATE}]")
     parser.add_argument("-p", "--platform", type=int, default=PLATFORM_DAYS_DEFAULT, help=f"平台天数 (默认: {PLATFORM_DAYS_DEFAULT})")
+    parser.add_argument("-v", "--visualize", action="store_true", help="生成可视化图表")
     
     args = parser.parse_args()
     
@@ -612,4 +755,26 @@ if __name__ == "__main__":
         m, d = date_input.split('.')
         date_input = f"{year}-{m}-{d}"
         
-    check_strategy(args.code, date_input, args.platform)
+    df, trades = check_strategy(args.code, date_input, args.platform)
+    
+    if args.visualize and df is not None and not df.empty:
+        try:
+            # Add project root to sys.path to find visualize_strategy_pyecharts
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if project_root not in sys.path:
+                sys.path.append(project_root)
+            
+            from visualize_strategy_pyecharts import generate_chart
+            # Determine visualization range: start from mention date - 20 days
+            start_viz = pd.to_datetime(date_input) - datetime.timedelta(days=20)
+            generate_chart(df, trades, args.code, start_date=start_viz.strftime("%Y-%m-%d"))
+        except ImportError:
+            print("Visualization module not found or failed to import.")
+            # Try importing from parent dir if needed, but current sys.path setup should handle it
+            try:
+                sys.path.append('..')
+                from visualize_strategy_pyecharts import generate_chart
+                start_viz = pd.to_datetime(date_input) - datetime.timedelta(days=20)
+                generate_chart(df, trades, args.code, start_date=start_viz.strftime("%Y-%m-%d"))
+            except Exception as e:
+                print(f"Failed to generate visualization: {e}")

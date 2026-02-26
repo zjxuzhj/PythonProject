@@ -10,6 +10,9 @@ from data_ingestion import http_util
 import importlib
 import importlib.util
 from typing import Any
+import akshare_proxy_patch
+
+
 
 # ----------------- 全局对象初始化 -----------------
 # 这些对象在模块加载时创建，可以被后续的所有函数共享
@@ -86,7 +89,9 @@ def update_all_daily_data():
     print(f"开始执行每日数据更新任务 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 30)
 
-    use_sina = True
+    akshare_proxy_patch.install_patch("101.201.173.125", "", 30)
+
+    use_sina = False
     # 1. 获取全市场实时行情数据
     try:
         print("步骤 1/4: 获取全市场实时行情...")
@@ -118,6 +123,28 @@ def update_all_daily_data():
             else:
                 file_name = f"stock_{get_stock_prefix(symbol)}_20240201.parquet"
             cache_path = os.path.join(cache_dir, file_name)
+
+            # 增加对退市股票的过滤逻辑：
+            # 如果该股票文件不存在，且当日没有有效成交（成交量为0 或 收盘价为0等），
+            # 则不创建新文件。
+            is_new_file = not os.path.exists(cache_path)
+            
+            # 检查当日数据有效性
+            is_valid_trade = False
+            if use_sina:
+                 if row['成交量'] > 0 and row['最新价'] > 0:
+                     is_valid_trade = True
+            else:
+                 # 东方财富数据源检查
+                 # 有些停牌或退市股票可能还有价格信息，但成交量为0
+                 # 或者价格为0
+                 if row['成交量'] > 0 and row['最新价'] > 0:
+                     is_valid_trade = True
+            
+            # 如果是新文件且没有有效交易，跳过创建
+            if is_new_file and not is_valid_trade:
+                # print(f"  - 跳过无效/退市股票 {symbol} (无成交/无文件)")
+                continue
 
             try:
                 df = pd.read_parquet(cache_path, engine='fastparquet')
