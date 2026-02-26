@@ -300,6 +300,99 @@ def find_resistances(df, current_date, lookback_days=60):
             
     # 按价格排序
     resistances.sort(key=lambda x: x['price'])
+    
+    # 3. 统一最近 N 天 (例如 8 天) 的压力位
+    # 逻辑：对于最近 8 天内出现的所有压力位，无论是否相邻，都应视为同一个"近期压力区域"。
+    # 取这 8 天内的最高收盘价 (或者 High) 作为唯一的压力位，并合并描述。
+    
+    # 定义近期窗口
+    unify_window_days = 8
+    unify_start_date = current_date - timedelta(days=unify_window_days)
+    
+    # 分离出"近期"和"远期"压力位
+    recent_resistances = []
+    older_resistances = []
+    
+    for r in resistances:
+        # 使用压力位的形成日期 (r['date']) 判断
+        if r['date'] >= unify_start_date:
+            recent_resistances.append(r)
+        else:
+            older_resistances.append(r)
+            
+    if recent_resistances:
+        # 找到近期压力位中的最高价 (作为统一压力位)
+        max_res = max(recent_resistances, key=lambda x: x['price'])
+        
+        # 找到最早的开始日期和最晚的结束日期
+        start_dates = []
+        end_dates = []
+        
+        for r in recent_resistances:
+            end_dates.append(r['date'])
+            try:
+                start_str = r['desc'].split(' ')[0]
+                start_dates.append(pd.to_datetime(start_str))
+            except:
+                start_dates.append(r['date'])
+                
+        min_start_date = min(start_dates)
+        max_end_date = max(end_dates)
+        
+        # 构造统一的描述
+        # 如果 max_res 是上影线密集区，保持其类型，否则使用通用描述
+        type_suffix = max_res['type'].replace('上影线密集区', '')
+        desc = f"{min_start_date.strftime('%Y-%m-%d')} 至 {max_end_date.strftime('%Y-%m-%d')} 近期统一密集区，最高{type_suffix} {max_res['price']:.2f}"
+        
+        unified_res = {
+            'date': max_res['date'],
+            'type': max_res['type'], # 保持最高价的类型
+            'price': max_res['price'],
+            'weight': max_res['weight'], # 保持最高价的权重 (或者适当增加?)
+            'desc': desc
+        }
+        
+        # 将统一后的压力位放回列表
+        # 注意：这里我们替换掉了所有近期压力位，只保留一个
+        resistances = older_resistances + [unified_res]
+    
+    # 重新排序
+    resistances.sort(key=lambda x: x['price'])
+
+    # 过滤掉低于"最近显著高点"的早期压力位
+    # 逻辑：如果最近有一个显著的高点 (比如 12-12 的收盘/最高)，那么在这个日期之前的、价格低于这个高点的压力位，通常已经被突破或失效，不应作为当前的主要压力参考
+    # 我们寻找最近的一个"波段高点"或"放量长阳"
+    
+    # 简单策略：找到 resistances 中日期最近的一个，或者价格最高的一个?
+    # 用户案例：12-12 (收盘9.08, 最高9.54) 是一个关键节点。
+    # 12-15 也是一个关键节点 (最高9.89, 收盘9.60)。
+    # 12-23 分析时，12-15 的压力位有效。
+    # 但 11 月份的 8.43, 8.65 等压力位，因为低于 12-12 的价格，应该被过滤。
+    
+    # 算法：
+    # 1. 找到过去 20 天内 (breakout_window) 的最高收盘价 max_recent_close
+    # 2. 过滤掉所有 date < max_recent_close_date 且 price < max_recent_close 的压力位
+    
+    recent_days = 20
+    recent_start = current_date - timedelta(days=recent_days)
+    recent_mask = (analysis_df.index >= recent_start)
+    recent_df = analysis_df.loc[recent_mask]
+    
+    if not recent_df.empty:
+        max_recent_close = recent_df['close'].max()
+        max_recent_close_date = recent_df['close'].idxmax()
+        
+        filtered_resistances = []
+        for r in resistances:
+            # 如果压力位形成日期早于最近高点日期，且价格低于最近高点收盘价
+            # 则认为已失效 (被最近的上涨覆盖)
+            # 注意：r['date'] 在 find_resistances 里是区间结束日，或者单日
+            if r['date'] < max_recent_close_date and r['price'] < max_recent_close:
+                continue
+            filtered_resistances.append(r)
+        
+        resistances = filtered_resistances
+
     return resistances
 
 def find_dense_touch_levels(df, current_date, lookback_days=60):
@@ -420,6 +513,9 @@ def find_breakout_supports(df, current_date, lookback_days=60, breakout_window=3
     supports = []
     
     # 截取数据
+    if 'prev_close' not in df.columns:
+        df['prev_close'] = df['close'].shift(1)
+        
     start_date = current_date - timedelta(days=lookback_days)
     mask = (df.index >= start_date) & (df.index <= current_date)
     analysis_df = df.loc[mask].copy()
@@ -521,6 +617,31 @@ def find_breakout_supports(df, current_date, lookback_days=60, breakout_window=3
             if p_date >= r_date:
                 continue
                 
+            # NEW: 验证该价格作为压力位的有效性 (触碰次数 >= 4 且 跨度 > 5天)
+            # 获取突破日之前的数据
+            pre_breakout_df = analysis_df[analysis_df.index < r_date]
+            
+            # 定义压力位触碰 (Resistance Touch):
+            # 1. High 必须足够接近或超过压力位 (High >= Price * 0.995) - 用户认为 9.54 对于 9.60 不算触碰
+            # 2. Close 必须在压力位下方或附近 (Close <= Price * 1.01) - 排除已经站稳的日子
+            # 3. Open 必须在压力位下方或附近 (Open <= Price * 1.01) - 排除从上方跌破的大阴线 (Breakdown)
+            # 4. PrevClose 必须在压力位下方或附近 (PrevClose <= Price * 1.01) - 确保是从下方反弹触碰，而非下跌中继
+            
+            touch_mask = (
+                (pre_breakout_df['high'] >= price * 0.995) & 
+                (pre_breakout_df['close'] <= price * 1.01) &
+                (pre_breakout_df['open'] <= price * 1.01) &
+                (pre_breakout_df['prev_close'] <= price * 1.01)
+            )
+            touch_df = pre_breakout_df[touch_mask]
+            
+            if len(touch_df) < 4:
+                continue # 触碰次数不足
+                
+            span_days = (touch_df.index.max() - touch_df.index.min()).days
+            if span_days <= 5:
+                continue # 时间跨度不足
+
             # 必须是最近才突破的 (即 r_date 当天突破，或者 r_date 之前没突破)
             # 简化逻辑：r_row['close'] > price，且 r_row['open'] < price (或者 gap up)
             # 且 price 在 processed_prices 中不存在 (避免重复添加)
@@ -792,6 +913,64 @@ def analyze_support_resistance(symbol, date_str):
                 'desc': desc
             })
 
+    # 动态调整权重：基于价格位置和形成时间
+    # 逻辑：
+    # 1. 价格越高（越接近当前价格），权重越高（作为近期支撑更重要）
+    # 2. 形成时间越近，权重越高（记忆效应更强）
+    
+    # 支撑位权重调整
+    if supports:
+        valid_s_temp = [s for s in supports if s['price'] < current_price * 1.1]
+        if valid_s_temp:
+            max_price = max(s['price'] for s in valid_s_temp)
+            min_price = min(s['price'] for s in valid_s_temp)
+            price_range = max_price - min_price if max_price > min_price else 1.0
+            
+            for s in supports:
+                # 价格因子
+                if s['price'] >= min_price:
+                    price_score = (s['price'] - min_price) / price_range * 4
+                else:
+                    price_score = 0
+                
+                # 时间因子
+                days_diff = (target_date - s['date']).days
+                time_score = max(0, 4 - (days_diff / 8))
+                
+                s['weight'] += int(price_score + time_score)
+
+    # 压力位权重调整 (Resistance Dominance Logic)
+    # 逻辑：
+    # 1. 价格越低（越接近当前价格），权重越高（作为第一阻力更重要）
+    # 2. 时间相近时，价格较高的压力位应该具有更高的“统治力”（Dominate），或者价格较低的权重降低？
+    #    用户需求：9.40 低于 9.71，但 9.40 是近期压力。用户说 "9.40这个值明显低于9.71作为一个压力位却比临近的压力位低，这个权重应该下放"
+    #    理解：如果两个压力位时间接近（5天内），价格较低的那个（9.40）权重应该降低，因为 9.71 才是真正的高点压力。
+    
+    if resistances:
+        # 按日期排序
+        resistances.sort(key=lambda x: x['date'])
+        
+        for i in range(len(resistances)):
+            r1 = resistances[i]
+            for j in range(i + 1, len(resistances)):
+                r2 = resistances[j]
+                
+                # 检查时间是否接近 (5个交易日内，约7个自然日)
+                days_diff = abs((r1['date'] - r2['date']).days)
+                if days_diff <= 7:
+                    # 比较价格
+                    if r1['price'] < r2['price']:
+                        # r1 价格低，权重下放
+                        r1['weight'] -= 2
+                        r1['desc'] += " | 临近有更高压力，权重降低"
+                    elif r2['price'] < r1['price']:
+                        # r2 价格低，权重下放
+                        r2['weight'] -= 2
+                        r2['desc'] += " | 临近有更高压力，权重降低"
+        
+        # 恢复按价格排序 (用于输出)
+        resistances.sort(key=lambda x: x['price'])
+
     print("\n" + "="*50)
     print("【支撑位分析 (Support)】")
     print("="*50)
@@ -869,8 +1048,12 @@ def analyze_support_resistance(symbol, date_str):
     if not valid_resistances:
         print("近期未发现明显技术压力位。")
     else:
-        # 按价格升序排列（离当前价格最近的压力在前）
-        valid_resistances.sort(key=lambda x: x['price'])
+        # 按权重降序排列（权重高的在前），如果权重相同按价格升序（离当前价格最近的在前）
+        valid_resistances.sort(key=lambda x: (x['weight'], -x['price']), reverse=True)
+        # 上面的排序逻辑：weight 越大越好 (reverse=True -> 降序)
+        # price 越小越好 (离当前价格近)。但 reverse=True 会让 price 大的在前。
+        # 所以我们需要自定义 key：(weight, -price) -> 权重大的在前，价格小的在前 (因为 -price 大的在前 = price 小的在前)
+        
         for r in valid_resistances[:5]:
             print(f"价格: {r['price']:.2f} | 权重: {r['weight']} | 类型: {r['type']}")
             print(f"  说明: {r['desc']}")
@@ -880,8 +1063,8 @@ def analyze_support_resistance(symbol, date_str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='股票支撑压力位分析工具')
-    parser.add_argument('symbol', nargs='?', default='600879', help='股票代码 (默认: 601179)')
-    parser.add_argument('date', nargs='?', default='2025-12-02', help='分析日期 YYYY-MM-DD (默认: 2026-02-06)')
+    parser.add_argument('symbol', nargs='?', default='601179', help='股票代码 (默认: 601179)')
+    parser.add_argument('date', nargs='?', default='2025-12-22', help='分析日期 YYYY-MM-DD (默认: 2026-02-06)')
     
     args = parser.parse_args()
     
