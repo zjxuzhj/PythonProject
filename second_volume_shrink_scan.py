@@ -44,7 +44,7 @@ def _is_downtrend(close, ma10, ma20, idx: int):
     return c < m20 and m10 < m20 and m20 < m20_prev
 
 
-def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs_prev_ratio: float = 0.5):
+def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs_prev_ratio: float = 0.5, require_limit_up_between: bool = False):
     if df is None or df.empty:
         return None
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -111,7 +111,7 @@ def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs
                 continue
             if (idx2 - idx1) < 3:
                 continue
-            if (idx2 - idx1) > 5:
+            if (idx2 - idx1) > 10:
                 continue
             # Relaxed condition: No strict volume comparison vol2 vs vol1
             # Relaxed condition: No strict close1 == min check
@@ -120,6 +120,8 @@ def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs
                 continue
             has_volume_spike = False
             has_price_spike = False
+            has_limit_up_between = False
+            
             if high is not None and idx2 - idx1 > 1:
                 between_start = idx1 + 1
                 between_end = idx2
@@ -128,12 +130,22 @@ def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs
                 ma20_window = vol_ma20.iloc[between_start:between_end]
                 high_window = high.iloc[between_start:between_end]
                 prev_close_window = prev_close.iloc[between_start:between_end]
+                
                 if not vol_window.empty:
                     has_volume_spike = ((vol_window > ma5_window) & (vol_window > ma20_window)).any()
                 if not high_window.empty:
                     has_price_spike = ((high_window - prev_close_window) / prev_close_window > 0.045).any()
-            if not (has_volume_spike and has_price_spike):
-                continue
+                
+                if 'is_limit' in df.columns:
+                     limit_window = df['is_limit'].iloc[between_start:between_end]
+                     has_limit_up_between = limit_window.any()
+
+            if require_limit_up_between:
+                if not has_limit_up_between:
+                    continue
+            else:
+                if not (has_volume_spike and has_price_spike):
+                    continue
             limit_up1 = False
             limit_down1 = False
             if 'is_limit' in df.columns:
@@ -249,11 +261,88 @@ def _calc_turnover_rate(volume_value, float_shares_wan):
         return None
 
 
-def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float = 0.9):
+def _calc_close_increase(df: pd.DataFrame, start_idx: int, day_offset: int):
+    """
+    计算从start_idx后第day_offset天的收盘价涨幅
+    涨幅定义为：(第day_offset天收盘价 - start_idx日收盘价) / start_idx日收盘价 * 100
+    """
+    target_idx = start_idx + day_offset
+    if target_idx >= len(df):
+        return None
+        
+    base_price = df['close'].iloc[start_idx]
+    if base_price <= 0:
+        return None
+        
+    target_price = df['close'].iloc[target_idx]
+    if pd.isna(target_price):
+        return None
+        
+    increase = (target_price - base_price) / base_price * 100
+    return round(increase, 2)
+
+
+def _calc_sector_avg_increase(sector_codes: list, query_tool, config, target_date, days=3):
+    """
+    计算板块内所有股票在target_date之前days天的平均涨幅
+    """
+    total_increase = 0
+    valid_count = 0
+    
+    for code in sector_codes:
+        if _is_bj_stock(code):
+            continue
+        # 这里为了效率，可能需要优化，比如预加载或缓存
+        # 但考虑到板块内股票数量有限（通常几十只），且外层循环已经过滤了很多，暂时直接获取
+        # 注意：get_stock_data 可能会比较慢，如果有缓存会更好
+        df, _ = normal.get_stock_data(code, config)
+        if df is None or df.empty:
+            continue
+            
+        # 确保日期索引
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        
+        # 找到 target_date 在 df 中的位置
+        # 如果 target_date 不在 df 中（比如停牌），找最近的一个交易日
+        if target_date not in df.index:
+             # 简单处理：如果找不到当天，就跳过
+             continue
+             
+        idx = df.index.get_loc(target_date)
+        if idx < days:
+            continue
+            
+        # 计算过去days天的涨幅: (Close[i] - Close[i-days]) / Close[i-days]
+        # 或者使用区间涨幅
+        # 这里按题目要求：前3个平均涨幅。通常指前3天的累计涨幅
+        prev_close = df['close'].iloc[idx - days]
+        curr_close = df['close'].iloc[idx]
+        
+        if prev_close > 0:
+            increase = (curr_close - prev_close) / prev_close * 100
+            total_increase += increase
+            valid_count += 1
+            
+    if valid_count == 0:
+        return 0.0
+    return total_increase / valid_count
+
+
+def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float = 0.9, require_limit_up_between: bool = False):
     config = StrategyConfig()
     query_tool = getAllStockCsv.StockQuery()
     stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
     results = []
+    
+    # 预加载板块成分股缓存，避免重复查询
+    # l2_name -> [code1, code2, ...]
+    # 注意：这里我们无法预计算板块涨幅，因为每只股票的触发日期(second_date)可能不同
+    # 所以必须在循环内部针对特定的日期计算板块涨幅
+    
+    print(f"扫描参数: 最近{recent_days}天, 缩量比例{second_vs_prev_ratio}, 中间涨停要求: {'是' if require_limit_up_between else '否'}")
+
     for code, name in stock_list:
         if _is_bj_stock(code):
             continue
@@ -268,11 +357,33 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
         match = _find_second_volume_shrink(
             df,
             recent_days=recent_days,
-            second_vs_prev_ratio=second_vs_prev_ratio
+            second_vs_prev_ratio=second_vs_prev_ratio,
+            require_limit_up_between=require_limit_up_between
         )
         if match is None:
             continue
+        
+        # --- 板块过滤逻辑 ---
+        # 1. 获取申万二级行业
+        _, sw_l2, _ = query_tool.get_sw_industry(code)
+        if not sw_l2: # 如果没有行业信息，默认保留或剔除？这里选择保留但标记
+            sector_avg_inc = 0.0
+        else:
+            # 2. 获取该板块成分股
+            sector_codes = query_tool.get_sw_l2_constituents(sw_l2)
+            # 3. 计算板块在触发日(second_date)前3天的平均涨幅
+            # 注意：这里计算的是触发日当天的板块表现（相对于3天前）
+            trigger_date = match['second_date']
+            sector_avg_inc = _calc_sector_avg_increase(sector_codes, query_tool, config, trigger_date, days=3)
+            
+            # 4. 过滤条件：板块平均涨幅 > 1.5%
+            if sector_avg_inc <= 1.5:
+                continue
+        # -------------------
+
         first_idx = match['first_idx']
+        second_idx = match['second_idx']
+        
         if first_idx >= 4:
             volumes = df['volume'].iloc[first_idx - 4:first_idx + 1].tolist()
             turnovers = [_calc_turnover_rate(v, float_shares) for v in volumes]
@@ -283,9 +394,17 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
                 continue
         first_turnover = _calc_turnover_rate(match['first_volume'], float_shares)
         second_turnover = _calc_turnover_rate(match['second_volume'], float_shares)
+        
+        # 计算后续收盘价涨幅
+        inc_1d = _calc_close_increase(df, second_idx, 1)
+        inc_2d = _calc_close_increase(df, second_idx, 2)
+        inc_3d = _calc_close_increase(df, second_idx, 3)
+        
         results.append({
             "代码": code,
             "名称": name,
+            "行业": sw_l2,  # 新增行业列
+            "板块3日涨幅(%)": round(sector_avg_inc, 2), # 新增板块涨幅列
             "触发日期": match['second_date'].strftime('%Y-%m-%d'),
             "第一次缩量日期": match['first_date'].strftime('%Y-%m-%d'),
             "第一次缩量量能": match['first_volume'],
@@ -294,7 +413,10 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
             "第一次换手率(%)": first_turnover,
             "第二次换手率(%)": second_turnover,
             "形态类型": match['pattern'],
-            "分数": match['score']
+            "分数": match['score'],
+            "1日后收盘涨幅(%)": inc_1d if inc_1d is not None else "-",
+            "2日后收盘涨幅(%)": inc_2d if inc_2d is not None else "-",
+            "3日后收盘涨幅(%)": inc_3d if inc_3d is not None else "-"
         })
     result_df = pd.DataFrame(results)
     if not result_df.empty:
@@ -302,10 +424,48 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
     return result_df
 
 
-if __name__ == '__main__':
-    result_df = scan_second_volume_shrink(recent_days=5)
+def _calc_stats(result_df: pd.DataFrame):
     if result_df.empty:
-        print("最近5个交易日未发现二次缩量股票")
+        return
+
+    print("\n" + "="*50)
+    print("统计结果 (胜率: 涨幅>0的占比, 盈亏比: 平均盈利/平均亏损)")
+    print("="*50)
+
+    for day in [1, 2, 3]:
+        col_name = f"{day}日后收盘涨幅(%)"
+        if col_name not in result_df.columns:
+            continue
+            
+        # 过滤掉无效数据
+        valid_data = result_df[result_df[col_name] != "-"]
+        if valid_data.empty:
+            print(f"{day}日后: 无有效数据")
+            continue
+            
+        values = pd.to_numeric(valid_data[col_name])
+        total_count = len(values)
+        win_count = len(values[values > 0])
+        loss_count = len(values[values < 0])
+        
+        win_rate = (win_count / total_count * 100) if total_count > 0 else 0
+        
+        avg_win = values[values > 0].mean() if win_count > 0 else 0
+        avg_loss = abs(values[values < 0].mean()) if loss_count > 0 else 0
+        
+        pl_ratio = (avg_win / avg_loss) if avg_loss > 0 else float('inf')
+        pl_ratio_str = f"{pl_ratio:.2f}" if avg_loss > 0 else "Inf"
+        
+        print(f"{day}日后: 样本数={total_count}, 胜率={win_rate:.2f}%, 盈亏比={pl_ratio_str} (平均盈利={avg_win:.2f}%, 平均亏损={avg_loss:.2f}%)")
+    print("="*50)
+
+if __name__ == '__main__':
+    # 默认不强制要求涨停，保持原逻辑
+    # 如果需要强制要求中间有涨停，请将 require_limit_up_between 设为 True
+    result_df = scan_second_volume_shrink(recent_days=5, require_limit_up_between=True)
+    if result_df.empty:
+        print("最近5个交易日未发现符合条件的二次缩量股票")
     else:
         print(result_df.to_string(index=False))
         print(f"\n总数: {len(result_df)}只股票")
+        _calc_stats(result_df)

@@ -451,9 +451,54 @@ class StockQuery:
             self.df['stock_code'].astype(str),
             self.df['time']
         ))
+        
+        # 申万行业映射 (处理可能为空的情况)
+        if 'sw_l1' in self.df.columns:
+            self.code_to_sw_l1 = dict(zip(self.df['stock_code'].astype(str), self.df['sw_l1'].fillna('')))
+            self.code_to_sw_l2 = dict(zip(self.df['stock_code'].astype(str), self.df['sw_l2'].fillna('')))
+            self.code_to_sw_l3 = dict(zip(self.df['stock_code'].astype(str), self.df['sw_l3'].fillna('')))
+        else:
+            self.code_to_sw_l1 = {}
+            self.code_to_sw_l2 = {}
+            self.code_to_sw_l3 = {}
+
         # 名称到代码（1对多）
         self.name_to_codes = self.df.groupby('stock_name')['stock_code'] \
             .apply(list).to_dict()
+
+    def get_sw_industry(self, code):
+        """
+        根据股票代码获取申万行业信息 (一二三级)
+        :param code: 股票代码
+        :return: (l1, l2, l3) 行业名称元组，如果未找到则返回空字符串
+        """
+        code = str(code)
+        if not hasattr(self, 'code_to_sw_l1'):
+            return ("", "", "")
+            
+        l1 = self.code_to_sw_l1.get(code, "")
+        l2 = self.code_to_sw_l2.get(code, "")
+        l3 = self.code_to_sw_l3.get(code, "")
+        
+        # 兼容性处理：如果CSV中有列但某些行是NaN，上面的dict.get会返回""或nan字符串
+        # 确保返回字符串
+        def _ensure_str(val):
+            if pd.isna(val) or val == 'nan':
+                return ""
+            return str(val)
+            
+        return (_ensure_str(l1), _ensure_str(l2), _ensure_str(l3))
+
+    def get_sw_l2_constituents(self, l2_name):
+        """
+        获取指定申万二级行业的所有成分股代码
+        :param l2_name: 二级行业名称
+        :return: 股票代码列表
+        """
+        if not hasattr(self, 'code_to_sw_l2'):
+            return []
+            
+        return [code for code, industry in self.code_to_sw_l2.items() if industry == l2_name]
 
     def update_times(self, time_dict):
         """
