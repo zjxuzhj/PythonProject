@@ -282,52 +282,55 @@ def _calc_close_increase(df: pd.DataFrame, start_idx: int, day_offset: int):
     return round(increase, 2)
 
 
-def _calc_sector_avg_increase(sector_codes: list, query_tool, config, target_date, days=3):
+def _calc_sector_stats(sector_codes: list, query_tool, config, target_date):
     """
-    计算板块内所有股票在target_date之前days天的平均涨幅
+    计算:
+    1. 板块内所有股票在target_date前3天的平均涨幅
+    2. 板块内当天(target_date)涨幅前3名的平均涨幅
     """
-    total_increase = 0
-    valid_count = 0
+    inc_3d_list = []
+    inc_1d_list = []
     
     for code in sector_codes:
         if _is_bj_stock(code):
             continue
-        # 这里为了效率，可能需要优化，比如预加载或缓存
-        # 但考虑到板块内股票数量有限（通常几十只），且外层循环已经过滤了很多，暂时直接获取
-        # 注意：get_stock_data 可能会比较慢，如果有缓存会更好
         df, _ = normal.get_stock_data(code, config)
         if df is None or df.empty:
             continue
             
-        # 确保日期索引
         if not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index)
         df = df.sort_index()
         
-        # 找到 target_date 在 df 中的位置
-        # 如果 target_date 不在 df 中（比如停牌），找最近的一个交易日
         if target_date not in df.index:
-             # 简单处理：如果找不到当天，就跳过
              continue
              
         idx = df.index.get_loc(target_date)
-        if idx < days:
-            continue
-            
-        # 计算过去days天的涨幅: (Close[i] - Close[i-days]) / Close[i-days]
-        # 或者使用区间涨幅
-        # 这里按题目要求：前3个平均涨幅。通常指前3天的累计涨幅
-        prev_close = df['close'].iloc[idx - days]
-        curr_close = df['close'].iloc[idx]
         
-        if prev_close > 0:
-            increase = (curr_close - prev_close) / prev_close * 100
-            total_increase += increase
-            valid_count += 1
-            
-    if valid_count == 0:
-        return 0.0
-    return total_increase / valid_count
+        # Calculate 1-day increase (for Top 3)
+        if idx >= 1:
+            prev_close_1d = df['close'].iloc[idx - 1]
+            curr_close = df['close'].iloc[idx]
+            if prev_close_1d > 0:
+                inc_1d = (curr_close - prev_close_1d) / prev_close_1d * 100
+                inc_1d_list.append(inc_1d)
+        
+        # Calculate 3-day increase (for Sector Avg)
+        if idx >= 3:
+            prev_close_3d = df['close'].iloc[idx - 3]
+            curr_close = df['close'].iloc[idx]
+            if prev_close_3d > 0:
+                inc_3d = (curr_close - prev_close_3d) / prev_close_3d * 100
+                inc_3d_list.append(inc_3d)
+
+    # 1. Sector 3-day Avg
+    sector_3d_avg = sum(inc_3d_list) / len(inc_3d_list) if inc_3d_list else 0.0
+    
+    # 2. Top 3 1-day Avg
+    top3_1d_list = sorted(inc_1d_list, reverse=True)[:3]
+    top3_1d_avg = sum(top3_1d_list) / len(top3_1d_list) if top3_1d_list else 0.0
+    
+    return sector_3d_avg, top3_1d_avg
 
 
 def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float = 0.9, require_limit_up_between: bool = False):
@@ -368,17 +371,22 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
         _, sw_l2, _ = query_tool.get_sw_industry(code)
         if not sw_l2: # 如果没有行业信息，默认保留或剔除？这里选择保留但标记
             sector_avg_inc = 0.0
+            top3_1d_inc = 0.0
         else:
             # 2. 获取该板块成分股
             sector_codes = query_tool.get_sw_l2_constituents(sw_l2)
             # 3. 计算板块在触发日(second_date)前3天的平均涨幅
             # 注意：这里计算的是触发日当天的板块表现（相对于3天前）
             trigger_date = match['second_date']
-            sector_avg_inc = _calc_sector_avg_increase(sector_codes, query_tool, config, trigger_date, days=3)
+            sector_avg_inc, top3_1d_inc = _calc_sector_stats(sector_codes, query_tool, config, trigger_date)
             
             # 4. 过滤条件：板块平均涨幅 > 1.5%
             if sector_avg_inc <= 1.5:
                 continue
+            
+            # 4. 过滤条件：板块前3个票当天平均涨幅 > 5%
+            # if top3_1d_inc <= 7.0:
+            #     continue
         # -------------------
 
         first_idx = match['first_idx']
@@ -405,6 +413,7 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
             "名称": name,
             "行业": sw_l2,  # 新增行业列
             "板块3日涨幅(%)": round(sector_avg_inc, 2), # 新增板块涨幅列
+            "板块前3当日涨幅(%)": round(top3_1d_inc, 2), # 新增板块前3平均涨幅列
             "触发日期": match['second_date'].strftime('%Y-%m-%d'),
             "第一次缩量日期": match['first_date'].strftime('%Y-%m-%d'),
             "第一次缩量量能": match['first_volume'],
