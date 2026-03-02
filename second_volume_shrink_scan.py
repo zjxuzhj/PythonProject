@@ -465,7 +465,18 @@ def _calc_stats(result_df: pd.DataFrame):
         pl_ratio = (avg_win / avg_loss) if avg_loss > 0 else float('inf')
         pl_ratio_str = f"{pl_ratio:.2f}" if avg_loss > 0 else "Inf"
         
-        print(f"{day}日后: 样本数={total_count}, 胜率={win_rate:.2f}%, 盈亏比={pl_ratio_str} (平均盈利={avg_win:.2f}%, 平均亏损={avg_loss:.2f}%)")
+        # 计算盈利期望 (Expectancy)
+        # Expectancy = (Win Rate * Average Win) - (Loss Rate * Average Loss)
+        # Loss Rate = 1 - Win Rate (ignoring 0% returns for simplicity, or treat them as neutral)
+        # Here we use the actual counts
+        win_prob = win_count / total_count
+        loss_prob = loss_count / total_count
+        # Draw probability (0% return)
+        draw_prob = (total_count - win_count - loss_count) / total_count
+        
+        expectancy = (win_prob * avg_win) - (loss_prob * avg_loss)
+        
+        print(f"{day}日后: 样本数={total_count}, 胜率={win_rate:.2f}%, 盈亏比={pl_ratio_str}, 期望={expectancy:.2f}% (平均盈利={avg_win:.2f}%, 平均亏损={avg_loss:.2f}%)")
     print("="*50)
 
 if __name__ == '__main__':
