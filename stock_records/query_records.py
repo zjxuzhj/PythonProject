@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 
+# 用来给股票做笔记的功能
 # Get DB path relative to script location
 DB_PATH = os.path.join(os.path.dirname(__file__), 'analysis_records.db')
 

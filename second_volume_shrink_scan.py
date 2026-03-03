@@ -44,7 +44,7 @@ def _is_downtrend(close, ma10, ma20, idx: int):
     return c < m20 and m10 < m20 and m20 < m20_prev
 
 
-def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs_prev_ratio: float = 0.5, require_limit_up_between: bool = False):
+def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs_prev_ratio: float = 0.5, require_limit_up_between: bool = False, start_date: str = None, end_date: str = None, require_continuous_shrink: bool = False):
     if df is None or df.empty:
         return None
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -68,17 +68,40 @@ def _find_second_volume_shrink(df: pd.DataFrame, recent_days: int = 5, second_vs
     first_candidates = vol < vol_ma5
     if not first_candidates.any():
         return None
-    last_days = df.index[-recent_days:] if len(df) >= recent_days else df.index
-    last_set = set(last_days)
+
+    if start_date and end_date:
+        s_date = pd.to_datetime(start_date)
+        e_date = pd.to_datetime(end_date)
+        target_dates = df.index[(df.index >= s_date) & (df.index <= e_date)]
+    else:
+        target_dates = df.index[-recent_days:] if len(df) >= recent_days else df.index
+
+    target_set = set(target_dates)
     for idx2 in range(len(df)):
         date2 = df.index[idx2]
-        if date2 not in last_set:
+        if date2 not in target_set:
             continue
         vol2 = vol.iloc[idx2]
         if pd.isna(vol2):
             continue
-        if idx2 < 1:
+        if idx2 < 3:
             continue
+        
+        # Check continuous shrink condition before second shrink day
+        # Requirement: vol[i-1] < vol_ma5[i-1] AND vol[i-2] < vol_ma5[i-2]
+        if require_continuous_shrink:
+             v_prev1 = vol.iloc[idx2 - 1]
+             v_prev2 = vol.iloc[idx2 - 2]
+             
+             ma5_prev1 = vol_ma5.iloc[idx2 - 1]
+             ma5_prev2 = vol_ma5.iloc[idx2 - 2]
+             
+             if pd.isna(v_prev1) or pd.isna(v_prev2) or pd.isna(ma5_prev1) or pd.isna(ma5_prev2):
+                 continue
+                 
+             if not (v_prev1 < ma5_prev1 and v_prev2 < ma5_prev2):
+                 continue
+
         prev_vol = vol.iloc[idx2 - 1]
         if pd.isna(prev_vol) or prev_vol <= 0:
             continue
@@ -333,7 +356,7 @@ def _calc_sector_stats(sector_codes: list, query_tool, config, target_date):
     return sector_3d_avg, top3_1d_avg
 
 
-def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float = 0.9, require_limit_up_between: bool = False):
+def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float = 0.9, require_limit_up_between: bool = False, start_date: str = None, end_date: str = None, require_continuous_shrink: bool = False):
     config = StrategyConfig()
     query_tool = getAllStockCsv.StockQuery()
     stock_list = query_tool.get_all_filter_stocks()[['stock_code', 'stock_name']].values
@@ -344,7 +367,10 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
     # 注意：这里我们无法预计算板块涨幅，因为每只股票的触发日期(second_date)可能不同
     # 所以必须在循环内部针对特定的日期计算板块涨幅
     
-    print(f"扫描参数: 最近{recent_days}天, 缩量比例{second_vs_prev_ratio}, 中间涨停要求: {'是' if require_limit_up_between else '否'}")
+    if start_date and end_date:
+        print(f"扫描参数: 日期范围 {start_date} 至 {end_date}, 缩量比例{second_vs_prev_ratio}, 中间涨停要求: {'是' if require_limit_up_between else '否'}, 连续缩量: {'是' if require_continuous_shrink else '否'}")
+    else:
+        print(f"扫描参数: 最近{recent_days}天, 缩量比例{second_vs_prev_ratio}, 中间涨停要求: {'是' if require_limit_up_between else '否'}, 连续缩量: {'是' if require_continuous_shrink else '否'}")
 
     for code, name in stock_list:
         if _is_bj_stock(code):
@@ -361,7 +387,10 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
             df,
             recent_days=recent_days,
             second_vs_prev_ratio=second_vs_prev_ratio,
-            require_limit_up_between=require_limit_up_between
+            require_limit_up_between=require_limit_up_between,
+            start_date=start_date,
+            end_date=end_date,
+            require_continuous_shrink=require_continuous_shrink
         )
         if match is None:
             continue
@@ -381,7 +410,7 @@ def scan_second_volume_shrink(recent_days: int = 5, second_vs_prev_ratio: float 
             sector_avg_inc, top3_1d_inc = _calc_sector_stats(sector_codes, query_tool, config, trigger_date)
             
             # 4. 过滤条件：板块平均涨幅 > 1.5%
-            if sector_avg_inc <= 1.5:
+            if sector_avg_inc <= 2:
                 continue
             
             # 4. 过滤条件：板块前3个票当天平均涨幅 > 5%
@@ -482,9 +511,25 @@ def _calc_stats(result_df: pd.DataFrame):
 if __name__ == '__main__':
     # 默认不强制要求涨停，保持原逻辑
     # 如果需要强制要求中间有涨停，请将 require_limit_up_between 设为 True
-    result_df = scan_second_volume_shrink(recent_days=5, require_limit_up_between=True)
+    
+    # 示例：回测 2026年1月1日 到 2026年2月28日 的数据
+    # result_df = scan_second_volume_shrink(
+    #     recent_days=5,
+    #     require_limit_up_between=True,
+    #     start_date='2026-01-01',
+    #     end_date='2026-02-28'
+    # )
+    
+    # 原逻辑（最近5个交易日）
+    # require_continuous_shrink=True 表示要求二缩当天之前两个交易日成交量均小于五日均量
+    result_df = scan_second_volume_shrink(
+        recent_days=5, 
+        require_limit_up_between=True, 
+        require_continuous_shrink=True
+    )
+
     if result_df.empty:
-        print("最近5个交易日未发现符合条件的二次缩量股票")
+        print("指定范围内未发现符合条件的二次缩量股票")
     else:
         print(result_df.to_string(index=False))
         print(f"\n总数: {len(result_df)}只股票")
