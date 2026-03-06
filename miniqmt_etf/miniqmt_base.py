@@ -792,8 +792,8 @@ if __name__ == "__main__":
             os._exit(0)
 
 
-        if datetime.now().hour >= 17:
-            shutdown_and_exit()
+        # if datetime.now().hour >= 17:
+        #     shutdown_and_exit()
 
 
         # 获取当前持仓股票集合

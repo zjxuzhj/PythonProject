@@ -24,8 +24,8 @@ VOLUME_SURGE_RATIO = 1.5
 VOLUME_SHRINK_RATIO = 1.0
 
 # 默认配置（如果没有提供命令行参数）
-DEFAULT_STOCK_CODE = "601179"  # 默认股票代码 (例如: 中百)
-DEFAULT_MENTION_DATE = "2025-12-15"  # 默认首次提及日期
+DEFAULT_STOCK_CODE = "000801"  # 默认股票代码 (例如: 中百)
+DEFAULT_MENTION_DATE = "2026-02-09"  # 默认首次提及日期
 
 # 使用示例
 # python stock_analysis/check_strategy.py 002465 -d 2025-10-28 -v

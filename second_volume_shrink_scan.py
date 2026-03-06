@@ -525,7 +525,7 @@ if __name__ == '__main__':
     result_df = scan_second_volume_shrink(
         recent_days=5, 
         require_limit_up_between=True, 
-        require_continuous_shrink=True
+        require_continuous_shrink=False
     )
 
     if result_df.empty:
