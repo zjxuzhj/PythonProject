@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
+import argparse
 
 import pandas as pd
 import xtquant.xtdata as xtdata
@@ -69,53 +70,35 @@ def get_all_stock_codes():
         return []
 
 
-def download_stock_data_for_date(stock_codes, target_date="20260203"):
+def download_stock_data_for_date_range(stock_codes, start_date, end_date):
     """
-    使用miniqmt下载指定日期的股票数据
+    使用miniqmt下载指定时间段的股票数据
     """
-    print(f"开始下载 {target_date} 的股票数据...")
+    print(f"开始下载 {start_date} 到 {end_date} 的股票数据...")
 
     total_stocks = len(stock_codes)
     success_count = 0
     failed_stocks = []
 
-    # 假设你想从第 2230 个股票开始下载
     start_item_number = 1
-
-    # Python 索引从 0 开始，所以第 2230 个元素的索引是 2229
     start_index = start_item_number - 1
-
-    # 1. 使用切片 [start_index:] 来获取一个从第 2230 个元素开始的新列表
     stocks_to_process = stock_codes[start_index:]
 
-    # 2. 遍历这个新列表，并让 idx 从 2230 开始计数
-    # 这样 idx 就能和你的总进度对应上
     for idx, stock_code in enumerate(stocks_to_process, start_item_number):
         try:
-            # 转换为miniqmt格式
             miniqmt_code = convert_to_miniqmt_format(stock_code)
+            # print(f"[{idx}/{total_stocks}] 下载 {stock_code} -> {miniqmt_code}")
 
-            print(f"[{idx}/{total_stocks}] 下载 {stock_code} -> {miniqmt_code}")
-
-            # 下载当天的日线数据，会自动更新到本地数据文件
-            # 【已修改】按要求，下载范围为目标日期的前一天(29号)和后一天(31号)
-            data = xtdata.download_history_data2(
-                stock_list=[miniqmt_code],
+            data = xtdata.download_history_data(
+                stock_code=miniqmt_code,
                 period='1d',
-                start_time="20260122",  # 目标日期的前一天
-                end_time="20260126",  # 目标日期的后一天
-                incrementally=True,
-                callback=lambda data: print(f"  -> 进度: {data['finished']}/{data['total']} {data['stockcode']}")
+                start_time=start_date,
+                end_time=end_date
             )
 
             success_count += 1
-
-            # 每100只股票休息一下
-            if idx % 200 == 0:
-                print(f"已处理 {idx} 只股票，休息2秒...")
-                time.sleep(2)
-            else:
-                time.sleep(0.2)  # 短暂延时避免请求过频
+            if idx % 100 == 0:
+                print(f"[{idx}/{total_stocks}] 已处理 {idx} 只股票")
 
         except Exception as e:
             print(f"下载 {stock_code} 失败: {e}")
@@ -126,19 +109,15 @@ def download_stock_data_for_date(stock_codes, target_date="20260203"):
     print(f"成功: {success_count}/{total_stocks}")
     print(f"失败: {len(failed_stocks)}")
 
-    if failed_stocks:
-        print(f"失败的股票: {failed_stocks[:10]}...")  # 只显示前10个
-
     return success_count, failed_stocks
 
 
-def update_parquet_files_with_miniqmt_data(target_date="20251030"):
+def update_parquet_files_with_miniqmt_data(start_date, end_date):
     """
     从miniqmt下载的数据中提取信息，更新parquet文件
     """
-    print(f"\n开始更新parquet文件，插入 {target_date} 的数据...")
+    print(f"\n开始更新parquet文件，插入 {start_date} 到 {end_date} 的数据...")
 
-    # 获取所有股票代码
     stock_codes = get_all_stock_codes()
     if not stock_codes:
         print("无法获取股票代码列表")
@@ -150,35 +129,32 @@ def update_parquet_files_with_miniqmt_data(target_date="20251030"):
     success_count = 0
     failed_count = 0
 
+    miniqmt_codes = [convert_to_miniqmt_format(code) for code in stock_codes]
+    print(f"开始批量获取本地数据...")
+    
+    # 批量获取数据，防止多次调用导致底层崩溃
+    all_data = xtdata.get_local_data(
+        field_list=['open', 'high', 'low', 'close', 'volume'],
+        stock_list=miniqmt_codes,
+        period='1d',
+        start_time=start_date,
+        end_time=end_date
+    )
+
     for idx, stock_code in enumerate(stock_codes, 1):
         try:
-            # 转换为miniqmt格式
             miniqmt_code = convert_to_miniqmt_format(stock_code)
 
-            # 从miniqmt获取数据
-            # 【注意】这里 start_time 和 end_time 都是 target_date
-            # 这是正确的，因为我们只关心从本地数据中提取 30 号当天的数据
-            data = xtdata.get_local_data(
-                field_list=['open', 'high', 'low', 'close', 'volume'],
-                stock_list=[miniqmt_code],
-                period='1d',
-                start_time=target_date,
-                end_time=target_date
-            )
-
-            if miniqmt_code not in data or data[miniqmt_code].empty:
+            if miniqmt_code not in all_data or all_data[miniqmt_code].empty:
                 print(f"[{idx}/{len(stock_codes)}] {stock_code}: 无数据")
                 failed_count += 1
                 continue
 
-            # 获取当天数据
-            day_data = data[miniqmt_code].iloc[0]
+            df_new = all_data[miniqmt_code]
             root_dir = get_project_root()
-            # 构建parquet文件路径
             file_name = f"stock_{stock_code}_20240201.parquet"
-            cache_path = os.path.join(root_dir,cache_dir, file_name)
+            cache_path = os.path.join(root_dir, cache_dir, file_name)
 
-            # 读取现有parquet文件
             try:
                 df = pd.read_parquet(cache_path, engine='fastparquet')
                 if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
@@ -188,59 +164,72 @@ def update_parquet_files_with_miniqmt_data(target_date="20251030"):
                 failed_count += 1
                 continue
 
-            # 准备新数据
-            target_date_obj = pd.to_datetime(target_date, format='%Y%m%d')
+            new_rows = []
+            for date_idx, day_data in df_new.iterrows():
+                target_date_obj = pd.to_datetime(str(date_idx))
+                new_data = {
+                    "股票代码": stock_code[2:],
+                    "open": day_data['open'],
+                    "close": day_data['close'],
+                    "high": day_data['high'],
+                    "low": day_data['low'],
+                    "volume": day_data['volume'],
+                    "成交额": 0,
+                    "振幅": 0,
+                    "涨跌幅": 0,
+                    "涨跌额": 0,
+                    "换手率": 0
+                }
+                new_rows.append(pd.DataFrame([new_data], index=[target_date_obj]))
 
-            # 计算涨跌幅等指标
-            if len(df) > 0:
-                last_close = df['close'].iloc[-1]  # 前一交易日收盘价
-                current_close = day_data['close']
+            if new_rows:
+                df_to_add = pd.concat(new_rows)
+                for idx_to_add, row_to_add in df_to_add.iterrows():
+                    if idx_to_add in df.index:
+                        df.loc[idx_to_add, list(row_to_add.keys())] = list(row_to_add.values)
+                    else:
+                        df = pd.concat([df, row_to_add.to_frame().T])
 
-                # 计算涨跌额和涨跌幅
-                change_amount = current_close - last_close
-                change_percent = (change_amount / last_close) * 100 if last_close != 0 else 0
-
-                # 计算振幅
-                amplitude = ((day_data['high'] - day_data['low']) / last_close) * 100 if last_close != 0 else 0
-            else:
-                change_amount = 0
-                change_percent = 0
-                amplitude = 0
-
-            # 构建新数据行（按照原有格式）
-            new_data = {
-                "股票代码": stock_code[2:],  # 去掉sh/sz前缀
-                "open": day_data['open'],
-                "close": day_data['close'],
-                "high": day_data['high'],
-                "low": day_data['low'],
-                "volume": day_data['volume'],
-                "成交额": 0,  # miniqmt数据中没有成交额，设为0
-                "振幅": round(amplitude, 2),
-                "涨跌幅": round(change_percent, 2),
-                "涨跌额": round(change_amount, 2),
-                "换手率": 0  # miniqmt数据中没有换手率，设为0
-            }
-
-            # 检查是否已存在该日期的数据
-            if target_date_obj in df.index:
-                # 更新现有数据
-                df.loc[target_date_obj, list(new_data.keys())] = list(new_data.values())
-                print(f"[{idx}/{len(stock_codes)}] {stock_code}: 更新数据")
-            else:
-                # 添加新数据，按时间顺序插入
-                new_row = pd.DataFrame([new_data], index=[target_date_obj])
-                df = pd.concat([df, new_row])
-                # 按日期索引排序，确保时间顺序正确
                 df = df.sort_index()
-                print(f"[{idx}/{len(stock_codes)}] {stock_code}: 新增数据（按时间顺序插入）")
+                # 去重，保留最新数据
+                df = df[~df.index.duplicated(keep='last')]
 
-            # 保存更新后的数据
-            df.to_parquet(cache_path, engine='fastparquet', compression='snappy')
-            success_count += 1
+                # 在计算前先转换为数值类型，避免object类型导致的错误
+                numeric_cols = ['open', 'close', 'high', 'low', 'volume', '成交额', '振幅', '涨跌幅', '涨跌额', '换手率']
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(float)
+
+                df['pre_close'] = df['close'].shift(1)
+                df['涨跌额'] = (df['close'] - df['pre_close']).round(2)
+                
+                # Vectorized calculations for percentages
+                df['涨跌幅'] = 0.0
+                mask = (df['pre_close'].notna()) & (df['pre_close'] != 0)
+                df.loc[mask, '涨跌幅'] = ((df.loc[mask, '涨跌额'] / df.loc[mask, 'pre_close']) * 100).round(2)
+                
+                df['振幅'] = 0.0
+                df.loc[mask, '振幅'] = (((df.loc[mask, 'high'] - df.loc[mask, 'low']) / df.loc[mask, 'pre_close']) * 100).round(2)
+
+                df['涨跌额'] = df['涨跌额'].fillna(0.0)
+                df['涨跌幅'] = df['涨跌幅'].fillna(0.0)
+                df['振幅'] = df['振幅'].fillna(0.0)
+                df = df.drop(columns=['pre_close'])
+
+                try:
+                    df.to_parquet(cache_path, engine='fastparquet', compression='snappy')
+                    print(f"[{idx}/{len(stock_codes)}] {stock_code}: 更新了 {len(new_rows)} 天的数据")
+                    success_count += 1
+                except Exception as e:
+                    print(f"[{idx}/{len(stock_codes)}] {stock_code}: 保存parquet失败 - {e}")
+                    failed_count += 1
+            else:
+                failed_count += 1
 
         except Exception as e:
+            import traceback
             print(f"[{idx}/{len(stock_codes)}] {stock_code}: 处理失败 - {e}")
+            traceback.print_exc()
             failed_count += 1
             continue
 
@@ -251,32 +240,38 @@ def update_parquet_files_with_miniqmt_data(target_date="20251030"):
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description="下载并补充股票数据")
+    parser.add_argument("--start_date", type=str, default="20260316", help="开始日期 YYYYMMDD")
+    parser.add_argument("--end_date", type=str, default="20260319", help="结束日期 YYYYMMDD")
+    parser.add_argument("--download_only", action="store_true", help="只下载不更新parquet")
+    parser.add_argument("--update_only", action="store_true", help="只更新parquet不下载")
+    
+    args = parser.parse_args()
+
+    start_date = args.start_date
+    end_date = args.end_date
+
     print("=" * 50)
-    # 【已修改】日期更新为 30 号
-    print("2025年10月30日股票数据下载和更新工具")
+    print(f"股票数据下载和更新工具: {start_date} - {end_date}")
     print("=" * 50)
 
-    # 步骤1: 获取所有股票代码
-    print("\n步骤1: 获取股票代码列表...")
-    stock_codes = get_all_stock_codes()
-    if not stock_codes:
-        print("无法获取股票代码，程序退出")
-        return
+    if not args.update_only:
+        print("\n步骤1: 获取股票代码列表...")
+        stock_codes = get_all_stock_codes()
+        if not stock_codes:
+            print("无法获取股票代码，程序退出")
+            return
 
-    # 步骤2: 下载数据
-    # 【已修改】日期更新为 30 号
-    # print(f"\n步骤2: 下载2025年10月30日数据...")
-    # success_count, failed_stocks = download_stock_data_for_date(stock_codes, "20260105")
+        print(f"\n步骤2: 下载 {start_date} 到 {end_date} 数据...")
+        download_stock_data_for_date_range(stock_codes, start_date, end_date)
 
-    # 步骤3: 更新parquet文件
-    # 【已修改】日期更新为 30 号
-    print(f"\n步骤3: 更新parquet缓存文件...")
-    update_parquet_files_with_miniqmt_data("20260123")
-    #
-    # print("\n" + "=" * 50)
-    # print("数据下载和更新任务完成！")
-    # print("=" * 50)
+    if not args.download_only:
+        print(f"\n步骤3: 更新parquet缓存文件...")
+        update_parquet_files_with_miniqmt_data(start_date, end_date)
 
+    print("\n" + "=" * 50)
+    print("数据下载和更新任务完成！")
+    print("=" * 50)
 
 if __name__ == "__main__":
     main()
