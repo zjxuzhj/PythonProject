@@ -10,7 +10,8 @@
         "thesis": "风电",
         "guidance": "关注",
         "created_at": "2026-02-27 00:32:13",
-        "updated_at": "2026-02-27 00:32:13"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.26 11:17"
     },
     {
         "code": "600509",
@@ -23,7 +24,8 @@
         "thesis": "电力",
         "guidance": "关注",
         "created_at": "2026-02-27 00:44:58",
-        "updated_at": "2026-02-27 00:44:58"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.26 9:42"
     },
     {
         "code": "301091",
@@ -46,7 +48,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:01:38",
-        "updated_at": "2026-02-27 10:01:38"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.27 9:15"
     },
     {
         "code": "002440",
@@ -57,7 +60,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:01:38",
-        "updated_at": "2026-02-27 10:01:38"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "3.11 9:24"
     },
     {
         "code": "600410",
@@ -68,7 +72,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:01:38",
-        "updated_at": "2026-02-27 10:01:38"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.27 9:40"
     },
     {
         "code": "000801",
@@ -79,7 +84,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:01:38",
-        "updated_at": "2026-02-27 10:01:38"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "3.4 10:14"
     },
     {
         "code": "002915",
@@ -167,7 +173,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:03",
-        "updated_at": "2026-02-27 10:08:03"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.10 13:45"
     },
     {
         "code": "600845",
@@ -178,7 +185,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:03",
-        "updated_at": "2026-02-27 10:08:03"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "1.16 9:45"
     },
     {
         "code": "002361",
@@ -211,7 +219,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:03",
-        "updated_at": "2026-02-27 10:08:03"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "3.6 10:05"
     },
     {
         "code": "002165",
@@ -222,7 +231,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:03",
-        "updated_at": "2026-02-27 10:08:03"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.10 14:13"
     },
     {
         "code": "601933",
@@ -233,7 +243,8 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:03",
-        "updated_at": "2026-02-27 10:08:03"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "12.2 13:25"
     },
     {
         "code": "600879",
@@ -266,6 +277,379 @@
         "thesis": "待补充",
         "guidance": "待补充",
         "created_at": "2026-02-27 10:08:04",
-        "updated_at": "2026-02-27 10:08:04"
+        "updated_at": "2026-03-27 16:52:36",
+        "recommendation_time": "2.6 8:25"
+    },
+    {
+        "code": "000759",
+        "name": "中百集团",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "我平铺了中百，永辉，步步高",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.2 13:25",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002251",
+        "name": "步步高",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "我平铺了中百，永辉，步步高",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.2 13:25",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002514",
+        "name": "宝馨科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "我发现了个好东西   宝馨科技 这趋势走的很舒服",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.9 13:39",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002045",
+        "name": "国光电器",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "国光电器，佳缘科技 可以看看 看到75",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.4 10:13",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "301117",
+        "name": "佳缘科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "国光电器，佳缘科技 可以看看 看到75",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.11 13:40",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "000532",
+        "name": "华金资本",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "关注一下华金资本",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.16 11:10",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "000949",
+        "name": "新乡化纤",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "新乡化纤  可以观察",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "12.18 9:32",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002549",
+        "name": "凯美特气",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "凯美我觉得不错",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "1.23 9:39",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002315",
+        "name": "焦点科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "焦点科技 值得买 都还可以",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "1.29 10:23",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002015",
+        "name": "协鑫能科",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "可以关注一下协鑫",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.5 9:20",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603008",
+        "name": "喜临门",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "我觉得喜临门不错",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.4 9:42",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002866",
+        "name": "传艺科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "传艺科技 这个东西可看",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.4 10:02",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "000901",
+        "name": "航天科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "注意航天科技 航天发展",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.11 13:22",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "000547",
+        "name": "航天发展",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "注意航天科技 航天发展",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.11 13:22",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002541",
+        "name": "鸿路钢构",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "鸿路看起来还可以",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "2.26 9:20",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002539",
+        "name": "云图控股",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "云图控股 这个东西可以看看 磷化肥，化工",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.3 10:34",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002162",
+        "name": "悦心健康",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "悦心健康 看起来还可以",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.4 11:20",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603588",
+        "name": "高能环境",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "环境方面可以关注一下高能",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.5 9:25",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002733",
+        "name": "雄韬股份",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "氢可以关注雄韬 石化机械",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.5 12:11",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "000852",
+        "name": "石化机械",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "氢可以关注雄韬 石化机械",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.5 12:11",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603618",
+        "name": "杭电股份",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "杭电可以轻仓打野试水",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.11 13:17",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002455",
+        "name": "百川股份",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "闰土和百川股份可以看看",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.11 9:24",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002558",
+        "name": "巨人网络",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "可以看看 游戏 娱乐业，巨人  冰川  可以看看",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.13 14:46",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "300533",
+        "name": "冰川网络",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "可以看看 游戏 娱乐业，巨人  冰川  可以看看",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.13 14:46",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603027",
+        "name": "千禾味业",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "今天的千禾味业  有动作。还有天味食品",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.17 13:46",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603317",
+        "name": "天味食品",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "今天的千禾味业  有动作。还有天味食品",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.17 13:46",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002265",
+        "name": "建设工业",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "高端制造估计会有一波，建设工业，第一时间能想到的东西",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.20 17:43",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "300059",
+        "name": "东方财富",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "盯住东财就好了",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.23 13:35",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002797",
+        "name": "第一创业",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "我昨天买的第一创业",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.24 10:00",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "603906",
+        "name": "龙蟠科技",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "可以关注一下龙蟠科技",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.25 9:58",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
+    },
+    {
+        "code": "002941",
+        "name": "新疆交建",
+        "sector": "焦佬推荐",
+        "confidence": 5,
+        "intro": "关注一下新疆交建",
+        "thesis": "",
+        "guidance": "",
+        "recommendation_time": "3.27 9:24",
+        "created_at": "2026-03-27 16:52:36",
+        "updated_at": "2026-03-27 16:52:36"
     }
 ]

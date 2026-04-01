@@ -44,7 +44,7 @@ class StockPoolManager:
             print(f"保存失败: {e}")
 
     def add_stock(self, code: str, name: str, sector: str, confidence: int, 
-                  intro: str, thesis: str, guidance: str):
+                  intro: str, thesis: str, guidance: str, recommendation_time: str = ""):
         """添加新股票"""
         # 检查是否已存在
         for stock in self.stocks:
@@ -61,6 +61,7 @@ class StockPoolManager:
             "intro": intro,
             "thesis": thesis,
             "guidance": guidance,
+            "recommendation_time": recommendation_time,
             "created_at": now,
             "updated_at": now
         }
@@ -85,7 +86,7 @@ class StockPoolManager:
             if stock['code'] == code:
                 found = True
                 # 更新允许的字段
-                allowed_fields = ['name', 'sector', 'confidence', 'intro', 'thesis', 'guidance']
+                allowed_fields = ['name', 'sector', 'confidence', 'intro', 'thesis', 'guidance', 'recommendation_time']
                 updated = False
                 for key, value in kwargs.items():
                     if key in allowed_fields and value is not None and value != "":

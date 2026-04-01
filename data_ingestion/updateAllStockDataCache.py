@@ -89,7 +89,7 @@ def update_all_daily_data():
     print(f"开始执行每日数据更新任务 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 30)
 
-    akshare_proxy_patch.install_patch("101.201.173.125", "", 30)
+    akshare_proxy_patch.install_patch("101.201.173.125", "202604014XVZIYJT", 30)
 
     use_sina = False
     # 1. 获取全市场实时行情数据
